@@ -1182,7 +1182,7 @@ async function approveImage(idx) {
 // ── Regeneration (async + polling) ───────────────────────────────────────────
 async function regenImage(idx) {
   if (!HAS_GENERATOR) {
-    showToast('Image generator not available — check GOOGLE_AI_API_KEY', true);
+    showToast('Image generator not available — check WAVESPEED_API_KEY', true);
     return;
   }
 
@@ -1465,7 +1465,7 @@ def api_approve():
 def api_regenerate():
     """Start an async EN image regeneration job (Gemini). Returns a job_id immediately."""
     if not HAS_GENERATOR:
-        return jsonify({"success": False, "error": "Image generator not available. Check GOOGLE_AI_API_KEY and google-genai install."}), 503
+        return jsonify({"success": False, "error": "Image generator not available. Check WAVESPEED_API_KEY."}), 503
 
     data       = request.get_json(force=True)
     date       = data.get("date", "")
@@ -1826,7 +1826,7 @@ if __name__ == "__main__":
     print(f"  Content dir : {CONTENT_DIR}")
     dates = list_available_dates()
     print(f"  Found dates : {', '.join(dates) if dates else 'none'}")
-    print(f"  Generator   : {'available' if HAS_GENERATOR else 'unavailable (check GOOGLE_AI_API_KEY)'}")
+    print(f"  Generator   : {'available' if HAS_GENERATOR else 'unavailable (check WAVESPEED_API_KEY)'}")
     print(f"\n  → http://localhost:5001\n")
     print("  Press Ctrl+C to stop.\n")
     app.run(host="127.0.0.1", port=5001, debug=False, threaded=True)

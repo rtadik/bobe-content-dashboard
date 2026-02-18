@@ -225,6 +225,105 @@ def append_content_row(week_of, content_item):
     wb.save(str(path))
 
 
+def translate_text_to_russian(en_content, platform="twitter"):
+    """
+    Translate English content to Russian using Google Gemini API.
+    Preserves --- tweet separators, keeps English hashtags, adds Cyrillic hashtags.
+    Returns translated text string.
+    """
+    from google import genai
+
+    api_key = os.getenv("GOOGLE_AI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GOOGLE_AI_API_KEY not set in .env")
+
+    client = genai.Client(api_key=api_key)
+
+    platform_note = ""
+    if platform == "twitter":
+        platform_note = (
+            "This is a Twitter thread. Each tweet is separated by '---' on its own line. "
+            "Keep the '---' separators exactly as they are. "
+            "Keep each tweet under 280 characters. "
+        )
+    elif platform == "telegram":
+        platform_note = "This is a Telegram post. Preserve formatting and line breaks. "
+
+    prompt = f"""Translate the following English crypto/fintech content to Russian.
+
+Rules:
+- Translate naturally, not word-for-word. Use professional Russian crypto/fintech terminology.
+- NEVER use em-dashes (—), en-dashes (–), or double-hyphens (--) as punctuation. Use commas, colons, or rephrase instead.
+- {platform_note}
+- Keep brand names unchanged: BoBe, USDT, DCA, etc.
+- Keep any hashtags at the end unchanged (English hashtags stay as-is).
+- The tone should be transparent, educational, no hype, no guaranteed return claims.
+
+Content to translate:
+{en_content}"""
+
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=prompt,
+    )
+    return response.text.strip()
+
+
+def translate_hashtags_to_russian(en_hashtags):
+    """
+    Translate English hashtags to Russian: keep originals, add Cyrillic versions.
+    en_hashtags: comma-separated string like "#DeFi, #TradingBot"
+    Returns comma-separated string with both EN and RU hashtags.
+    """
+    from google import genai
+
+    api_key = os.getenv("GOOGLE_AI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GOOGLE_AI_API_KEY not set in .env")
+
+    client = genai.Client(api_key=api_key)
+
+    prompt = f"""Given these English crypto hashtags: {en_hashtags}
+
+Create a combined hashtag list that includes:
+1. The original English hashtags (keep them exactly)
+2. Russian/Cyrillic equivalents for each (where translation makes sense)
+
+Return ONLY a comma-separated list of hashtags, nothing else.
+Example input: #DeFi, #TradingBot
+Example output: #DeFi, #TradingBot, #Крипто, #ТорговыйБот"""
+
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=prompt,
+    )
+    return response.text.strip()
+
+
+def update_ru_columns(week_of, row_index, content_ru, image_prompt_ru, image_path_ru, hashtags_ru):
+    """
+    Update columns J-M (Content_RU, Image_Prompt_RU, Image_Path_RU, Hashtags_RU)
+    for a specific row in the workbook.
+    row_index: 1-based index into Content sheet data rows (1 = first data row = Excel row 2).
+    """
+    path = OUTPUT_DIR / f"{week_of}-weekly-content.xlsx"
+    if not path.exists():
+        raise FileNotFoundError(f"Weekly workbook not found: {path}")
+
+    wb = load_workbook(str(path))
+    ws = wb["Content"]
+
+    excel_row = row_index + 1  # +1 for header row
+
+    # Columns J=10, K=11, L=12, M=13
+    ws.cell(row=excel_row, column=10, value=content_ru)
+    ws.cell(row=excel_row, column=11, value=image_prompt_ru)
+    ws.cell(row=excel_row, column=12, value=image_path_ru)
+    ws.cell(row=excel_row, column=13, value=hashtags_ru)
+
+    wb.save(str(path))
+
+
 def finalize(week_of):
     """Send macOS notification and print completion summary."""
     path = OUTPUT_DIR / f"{week_of}-weekly-content.xlsx"

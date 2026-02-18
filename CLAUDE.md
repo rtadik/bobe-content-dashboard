@@ -61,7 +61,7 @@ This file is the single source of truth for how Claude should understand and ope
 ├── scripts/
 │   ├── apify_scraper.py          # Twitter + Reddit scraping via Apify API
 │   ├── excel_manager.py          # Excel styling helpers (library only — no CLI)
-│   ├── nano_banana.py            # EN image generation via Google Gemini API
+│   ├── nano_banana.py            # EN image generation via WaveSpeed GPT-Image-1.5
 │   ├── wavespeed_img.py          # RU image generation via WaveSpeed.ai Seedream 4.5
 │   ├── weekly_pipeline.py        # Weekly pipeline orchestrator (14-col workbook, bilingual)
 │   ├── web_viewer.py             # Flask dashboard server (localhost:5001, EN/RU toggle)
@@ -116,7 +116,7 @@ One-time setup command. Implements the full content automation infrastructure fr
 |--------|---------|-----------|
 | `apify_scraper.py` | Scrape Twitter/Reddit via Apify for trending topics | `--platform`, `--keywords`, `--count`, `--days`, `--top`, `--output`, `--mock` |
 | `excel_manager.py` | Excel styling library (no CLI) | Import only: `style_header_cell`, `style_data_cell`, color constants |
-| `nano_banana.py` | Generate EN branded images via Gemini API | `--prompt`, `--output`, `--style` (minimal, tech, notification), `--mock` |
+| `nano_banana.py` | Generate EN branded images via WaveSpeed GPT-Image-1.5 | `--prompt`, `--output`, `--style` (minimal, tech, notification), `--mock`, `--no-reference` |
 | `wavespeed_img.py` | Generate RU branded images via WaveSpeed Seedream 4.5 | `--prompt`, `--topic`, `--headline`, `--style`, `--output`, `--mock` |
 | `weekly_pipeline.py` | Weekly pipeline orchestrator (14-col bilingual workbook) | `--action` (create-workbook, save-content, finalize, scrape), `--week-of`, `--mock` |
 | `web_viewer.py` | Flask dashboard server with EN/RU toggle | Runs on localhost:5001, weekly workbooks only |
@@ -133,7 +133,7 @@ One-time setup command. Implements the full content automation infrastructure fr
 - Odd items (1,3,5...) = Twitter; Even items (2,4,6...) = Telegram
 - Per day: topics 1-2 get Twitter thread format (5 tweets); topic 3 gets single tweet format
 - Image styles: Pain Point → minimal, Education → tech, Transparency/Product → notification
-- Images: 42 total — 21 EN via Gemini (`nano_banana.py`) + 21 RU via Seedream 4.5 (`wavespeed_img.py`)
+- Images: 42 total — 21 EN via GPT-Image-1.5 (`nano_banana.py`) + 21 RU via Seedream 4.5 (`wavespeed_img.py`)
 - RU image naming: append `_ru` before `.png` (e.g., `topic_slug_twitter_ru.png`)
 
 ---
@@ -154,7 +154,7 @@ One-time setup command. Implements the full content automation infrastructure fr
 | Service | Environment Variable | Purpose |
 |---------|---------------------|---------|
 | Apify | `APIFY_API_TOKEN` | Twitter + Reddit scraping |
-| Google AI | `GOOGLE_AI_API_KEY` | Gemini EN image generation |
+| Google AI | `GOOGLE_AI_API_KEY` | Gemini text translation (RU content) |
 | WaveSpeed | `WAVESPEED_API_KEY` | Seedream 4.5 RU image generation ($0.04/image) |
 
 Store in `.env` (never commit). See `reference/api-setup.md` for setup.

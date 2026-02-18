@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-BoBe Content Pipeline - Image Generator (Gemini)
-Generates branded images using Google's Gemini image generation API.
-Sends actual BoBe logo + mascot reference images for accurate character/logo fidelity.
+BoBe Content Pipeline - Image Generator (WaveSpeed GPT-Image-1.5)
+Generates branded images using WaveSpeed.ai's GPT-Image-1.5 Edit API.
+Sends BoBe logo + mascot reference images for accurate character/logo fidelity.
 
 Environment variables (loaded from .env):
-  GOOGLE_AI_API_KEY: Your Google AI Studio API key
+  WAVESPEED_API_KEY: Your WaveSpeed.ai API key
 
 Usage:
   python scripts/nano_banana.py --topic "DCA bots beat emotion" --headline "Steady is good." --output image.png
@@ -16,18 +16,25 @@ Usage:
 
 import os
 import sys
-import argparse
+import time
 import base64
+import argparse
+import requests
 from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).parent.parent / ".env")
 
-GOOGLE_AI_API_KEY = os.environ.get("GOOGLE_AI_API_KEY")
+WAVESPEED_API_KEY = os.environ.get("WAVESPEED_API_KEY")
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs" / "content"
 BRAND_DIR = Path(__file__).parent.parent / "reference" / "bobe-brand"
+
+API_BASE = "https://api.wavespeed.ai/api/v3"
+EDIT_ENDPOINT = f"{API_BASE}/openai/gpt-image-1.5/edit"
+TEXT_ENDPOINT = f"{API_BASE}/openai/gpt-image-1.5/text-to-image"
+POLL_ENDPOINT = f"{API_BASE}/predictions"
 
 # Default reference images sent with every generation
 DEFAULT_REFERENCES = [
@@ -47,21 +54,18 @@ STYLE_PRESETS = {
 
 
 def load_reference_images(paths: list) -> list:
-    """Load reference images, skipping any that don't exist."""
-    from google.genai import types
-
-    parts = []
+    """Load reference images as base64 data URIs for the WaveSpeed API."""
+    images = []
     for path in paths:
         p = Path(path)
         if not p.exists():
             print(f"  Warning: reference image not found, skipping: {p}")
             continue
         mime = "image/jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else "image/png"
-        with open(p, "rb") as f:
-            data = f.read()
-        parts.append(types.Part.from_bytes(data=data, mime_type=mime))
+        b64 = base64.b64encode(p.read_bytes()).decode()
+        images.append(f"data:{mime};base64,{b64}")
         print(f"  Reference loaded: {p.name}")
-    return parts
+    return images
 
 
 def build_prompt(
@@ -93,52 +97,83 @@ Generate a new high-quality 16:9 social media banner image with these requiremen
     return prompt
 
 
+def _poll_result(request_id, headers, timeout=180):
+    """Poll WaveSpeed API for job completion and return the image URL."""
+    start = time.time()
+    while time.time() - start < timeout:
+        poll = requests.get(f"{POLL_ENDPOINT}/{request_id}/result", headers=headers)
+        poll.raise_for_status()
+        result = poll.json()
+        status = result["data"]["status"]
+        if status == "completed":
+            return result["data"]["outputs"][0]
+        elif status == "failed":
+            raise RuntimeError(f"Image generation failed: {result['data'].get('error')}")
+        time.sleep(3)
+    raise TimeoutError(f"Image generation timed out after {timeout}s")
+
+
 def generate_image(prompt: str, output_path: str, reference_paths: list = None) -> str:
-    """Generate an image using Google Gemini with reference images for mascot/logo fidelity."""
-    try:
-        from google import genai
-        from google.genai import types
-    except ImportError:
-        print("Error: google-genai package not installed.")
-        print("Run: pip install google-genai")
-        sys.exit(1)
+    """Generate an image using WaveSpeed GPT-Image-1.5 with reference images for brand fidelity.
 
-    if not GOOGLE_AI_API_KEY:
-        raise ValueError("GOOGLE_AI_API_KEY not set. Check your .env file.")
+    If reference_paths are provided, uses the Edit endpoint (supports up to 10 reference images).
+    If no references, falls back to the Text-to-Image endpoint.
+    """
+    if not WAVESPEED_API_KEY:
+        raise ValueError("WAVESPEED_API_KEY not set. Check your .env file.")
 
-    client = genai.Client(api_key=GOOGLE_AI_API_KEY)
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {WAVESPEED_API_KEY}",
+    }
 
-    # Build multimodal contents: reference images first, then text prompt
     if reference_paths is None:
         reference_paths = DEFAULT_REFERENCES
 
+    # Load reference images
     print(f"  Loading {len(reference_paths)} reference images...")
-    image_parts = load_reference_images(reference_paths)
+    ref_images = load_reference_images(reference_paths)
 
-    if not image_parts:
-        print("  Warning: no reference images loaded — falling back to text-only prompt")
+    if ref_images:
+        # Use Edit endpoint with reference images + input_fidelity
+        print(f"  Generating image with {len(ref_images)} reference(s) via GPT-Image-1.5 Edit...")
+        print(f"  Prompt: {prompt[:120].strip()}...")
 
-    # Combine: images + text instruction
-    contents = image_parts + [types.Part.from_text(text=prompt)]
+        payload = {
+            "prompt": prompt,
+            "images": ref_images,
+            "size": "1536*1024",
+            "quality": "medium",
+            "input_fidelity": "high",
+            "output_format": "png",
+        }
+        resp = requests.post(EDIT_ENDPOINT, json=payload, headers=headers)
+        resp.raise_for_status()
+    else:
+        # Fallback to Text-to-Image (no references)
+        print("  No reference images, using GPT-Image-1.5 Text-to-Image...")
+        print(f"  Prompt: {prompt[:120].strip()}...")
 
-    print(f"  Generating image with {len(image_parts)} reference(s)...")
-    print(f"  Prompt: {prompt[:120].strip()}...")
+        payload = {
+            "prompt": prompt,
+            "size": "1536*1024",
+            "quality": "medium",
+            "output_format": "png",
+        }
+        resp = requests.post(TEXT_ENDPOINT, json=payload, headers=headers)
+        resp.raise_for_status()
 
-    response = client.models.generate_content(
-        model="gemini-3-pro-image-preview",
-        contents=contents,
-        config=types.GenerateContentConfig(
-            response_modalities=["IMAGE", "TEXT"],
-        ),
-    )
+    data = resp.json()
+    request_id = data["data"]["id"]
+    print(f"  Submitted: {request_id}")
 
-    # Extract image data from response
-    for part in response.candidates[0].content.parts:
-        if part.inline_data is not None:
-            image_data = part.inline_data.data
-            return save_image(image_data, output_path)
+    # Poll for completion
+    image_url = _poll_result(request_id, headers)
 
-    raise RuntimeError("No image data returned from Gemini API")
+    # Download and save
+    img_resp = requests.get(image_url)
+    img_resp.raise_for_status()
+    return save_image(img_resp.content, output_path)
 
 
 def save_image(image_data: bytes, path: str) -> str:
@@ -166,7 +201,7 @@ def mock_generate(output_path: str) -> str:
     with open(placeholder_path, "wb") as f:
         f.write(minimal_png)
 
-    print(f"  Mock placeholder: {placeholder_path}")
+    print(f"  [MOCK] Placeholder created: {placeholder_path}")
     return placeholder_path
 
 
@@ -189,7 +224,7 @@ def generate_for_content(topic: str, content_text: str, date: str, platform: str
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate BoBe branded images with Gemini + reference images")
+    parser = argparse.ArgumentParser(description="Generate BoBe branded images with WaveSpeed GPT-Image-1.5 + reference images")
     parser.add_argument("--prompt", default=None,
                         help="Full custom text instruction (overrides topic/headline builder)")
     parser.add_argument("--topic", default="automated crypto trading",
@@ -244,7 +279,7 @@ def main():
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    print(f"\nGenerating BoBe image...")
+    print(f"\nGenerating BoBe image via WaveSpeed GPT-Image-1.5...")
     print(f"Style: {args.style}")
     print(f"Output: {output_path}")
     print(f"References: {len(reference_paths)} image(s)")

@@ -1,4 +1,4 @@
-# View Content
+    # View Content
 
 > Launch the BoBe content dashboard at http://localhost:5001
 
