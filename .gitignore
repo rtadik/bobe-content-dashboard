@@ -1,0 +1,11 @@
+.env
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+outputs/content/*.xlsx
+outputs/content/*.png
+outputs/content/*.jpeg
+outputs/content/images/
+outputs/content/*.json
+dist/
