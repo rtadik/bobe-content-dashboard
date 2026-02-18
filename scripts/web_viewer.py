@@ -41,6 +41,13 @@ try:
 except Exception:
     HAS_GENERATOR = False
 
+try:
+    from weekly_pipeline import translate_text_to_russian, translate_hashtags_to_russian, update_ru_columns
+    from wavespeed_img import translate_image as wavespeed_translate_image
+    HAS_RU_GENERATOR = True
+except Exception:
+    HAS_RU_GENERATOR = False
+
 app = Flask(__name__)
 
 # ── Async job tracking ────────────────────────────────────────────────────────
@@ -727,6 +734,56 @@ HTML = """<!DOCTYPE html>
     color: var(--blue);
   }
 
+  /* ── Generate RU button ── */
+  .generate-ru-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: rgba(21,137,220,0.05);
+    border: 1px dashed rgba(21,137,220,0.2);
+    border-radius: 9px;
+    margin-bottom: 4px;
+  }
+  .generate-ru-bar .ru-gen-label {
+    flex: 1;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .generate-ru-bar .ru-gen-label.done {
+    color: var(--green);
+  }
+  .generate-ru-btn {
+    background: var(--blue-dim);
+    border: 1px solid rgba(21,137,220,0.3);
+    color: var(--blue);
+    padding: 5px 14px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 500;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .generate-ru-btn:hover:not(:disabled) {
+    background: rgba(21,137,220,0.2);
+    border-color: rgba(21,137,220,0.5);
+  }
+  .generate-ru-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .generate-ru-btn.generating {
+    background: var(--yellow-dim);
+    border-color: rgba(224,193,69,0.3);
+    color: var(--yellow);
+  }
+  .generate-ru-btn.done {
+    background: var(--green-dim);
+    border-color: rgba(91,214,159,0.3);
+    color: var(--green);
+  }
+
   /* ── Error banner ── */
   .error-banner {
     background: rgba(255,79,218,0.1);
@@ -803,14 +860,28 @@ HTML = """<!DOCTYPE html>
     <div class="card-img ru-only" {% if t.image_filename_ru %}data-src="/images/{{ t.image_filename_ru }}"{% endif %}
          title="{% if t.image_filename_ru %}Click to enlarge{% endif %}">
       {% if t.image_filename_ru %}
-      <img src="/images/{{ t.image_filename_ru }}" alt="{{ t.topic }}" loading="lazy">
+      <img id="img-ru-{{ loop.index }}" src="/images/{{ t.image_filename_ru }}" alt="{{ t.topic }}" loading="lazy">
       <div class="img-overlay"></div>
       {% else %}
-      <div class="no-img">
+      <div class="no-img" id="no-img-ru-{{ loop.index }}">
         <span class="no-img-icon">🖼</span>
         <span>No Russian image</span>
       </div>
       {% endif %}
+      <div class="img-loading-overlay" id="overlay-ru-{{ loop.index }}">
+        <div class="spinner"></div>
+        <span class="spinner-label">Regenerating RU image…</span>
+      </div>
+    </div>
+
+    <!-- RU Image actions -->
+    <div class="image-actions ru-only">
+      <span class="img-status" style="font-size:0.72rem;color:var(--muted)">
+        {% if t.image_filename_ru %}RU image{% else %}No RU image{% endif %}
+      </span>
+      <button class="action-btn regen-btn" id="regen-ru-{{ loop.index }}"
+              onclick="regenRuImage({{ loop.index }})"
+              {% if not t.image_filename_ru %}disabled{% endif %}>↻ Regenerate</button>
     </div>
 
     <!-- Image approval actions -->
@@ -908,16 +979,26 @@ HTML = """<!DOCTYPE html>
       </div>
       {% endif %}
 
-      <!-- RU Hashtags -->
-      {% if t.hashtag_list_ru %}
+      <!-- RU Generate button + Hashtags -->
       <div class="ru-only">
+        <div class="generate-ru-bar" id="ru-gen-bar-{{ loop.index }}">
+          <span class="ru-gen-label" id="ru-gen-label-{{ loop.index }}">
+            {% if t.twitter_ru or t.telegram_ru %}Russian content ready{% else %}No Russian content yet{% endif %}
+          </span>
+          <button class="generate-ru-btn" id="ru-gen-btn-{{ loop.index }}"
+                  onclick="generateRussian({{ loop.index }})"
+                  {% if t.twitter_ru and t.telegram_ru %}disabled{% endif %}>
+            {% if t.twitter_ru and t.telegram_ru %}✓ Generated{% else %}Generate Russian{% endif %}
+          </button>
+        </div>
+        {% if t.hashtag_list_ru %}
         <div class="hashtags">
           {% for tag in t.hashtag_list_ru %}
           <span class="tag" data-tag="{{ tag }}" title="Click to copy">{{ tag }}</span>
           {% endfor %}
         </div>
+        {% endif %}
       </div>
-      {% endif %}
 
     </div>
   </div>
@@ -936,6 +1017,7 @@ HTML = """<!DOCTYPE html>
 const TOPICS       = {{ topics_json | safe }};
 const CURRENT_DATE = {{ date_json | safe }};
 const HAS_GENERATOR = {{ has_generator | safe }};
+const HAS_RU_GENERATOR = {{ has_ru_generator | safe }};
 
 // ── Language toggle ──────────────────────────────────────────────────────────
 function setLang(lang) {
@@ -1066,7 +1148,11 @@ async function loadApprovals() {
     const data = await res.json();
     TOPICS.forEach((t, i) => {
       const entry = data[t.topic];
-      if (entry) setApprovalUI(i + 1, entry.status);
+      if (entry) {
+        setApprovalUI(i + 1, entry.status);
+        if (entry.ru_status) t.ru_status = entry.ru_status;
+      }
+      updateRuGenButton(i + 1);
     });
   } catch (e) {
     console.warn('Could not load approvals:', e);
@@ -1086,6 +1172,7 @@ async function approveImage(idx) {
       body: JSON.stringify({ date: CURRENT_DATE, topic: t.topic, status: newStatus }),
     });
     setApprovalUI(idx, newStatus);
+    updateRuGenButton(idx);
     showToast(newStatus === 'approved' ? 'Image approved ✓' : 'Approval removed');
   } catch (e) {
     showToast('Could not save approval', true);
@@ -1159,6 +1246,190 @@ async function pollJob(jobId, intervalMs = 3000, maxWaitMs = 300000) {
   return { status: 'error', error: 'Timed out waiting for generation' };
 }
 
+// ── Russian generation ───────────────────────────────────────────────────────
+function updateRuGenButton(idx) {
+  const t = TOPICS[idx - 1];
+  const btn = document.getElementById(`ru-gen-btn-${idx}`);
+  const label = document.getElementById(`ru-gen-label-${idx}`);
+  if (!btn) return;
+
+  // Check if EN is approved
+  const approveBtn = document.getElementById(`approve-${idx}`);
+  const isApproved = approveBtn && approveBtn.classList.contains('approved');
+
+  // Check if RU content already exists
+  const hasRu = t.twitter_ru || t.telegram_ru;
+
+  if (hasRu) {
+    btn.textContent = '✓ Generated';
+    btn.disabled = true;
+    btn.classList.add('done');
+    label.textContent = 'Russian content ready';
+    label.classList.add('done');
+  } else if (!isApproved) {
+    btn.textContent = 'Generate Russian';
+    btn.disabled = true;
+    btn.title = 'Approve EN content first';
+    label.textContent = 'Approve English content first';
+  } else {
+    btn.textContent = 'Generate Russian';
+    btn.disabled = false;
+    btn.title = '';
+    label.textContent = 'Ready to generate Russian content';
+  }
+
+  // Check if currently generating (from ru_status)
+  if (t.ru_status === 'generating') {
+    btn.textContent = 'Generating...';
+    btn.disabled = true;
+    btn.classList.add('generating');
+    label.textContent = 'Generation in progress...';
+  }
+}
+
+async function generateRussian(idx) {
+  if (!HAS_RU_GENERATOR) {
+    showToast('Russian generator not available', true);
+    return;
+  }
+
+  const t = TOPICS[idx - 1];
+  const btn = document.getElementById(`ru-gen-btn-${idx}`);
+  const label = document.getElementById(`ru-gen-label-${idx}`);
+
+  btn.textContent = 'Translating text...';
+  btn.disabled = true;
+  btn.classList.add('generating');
+  label.textContent = 'Translating text...';
+
+  try {
+    const startRes = await fetch('/api/generate-ru', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: CURRENT_DATE, topic_index: idx - 1 }),
+    });
+    const startData = await startRes.json();
+    if (!startData.success) {
+      showToast('Could not start: ' + (startData.error || 'Unknown'), true);
+      btn.textContent = 'Generate Russian';
+      btn.disabled = false;
+      btn.classList.remove('generating');
+      label.textContent = 'Error, try again';
+      return;
+    }
+
+    const jobId = startData.job_id;
+    const result = await pollRuJob(jobId, idx, btn, label);
+
+    if (result.status === 'done') {
+      btn.textContent = '✓ Generated';
+      btn.classList.remove('generating');
+      btn.classList.add('done');
+      label.textContent = 'Russian content ready';
+      label.classList.add('done');
+      showToast('Russian content generated. Reloading...');
+      // Reload page to show new RU content
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      btn.textContent = 'Generate Russian';
+      btn.disabled = false;
+      btn.classList.remove('generating');
+      label.textContent = 'Generation failed';
+      showToast('Generation failed: ' + (result.error || 'Unknown error'), true);
+    }
+  } catch (e) {
+    btn.textContent = 'Generate Russian';
+    btn.disabled = false;
+    btn.classList.remove('generating');
+    label.textContent = 'Error, try again';
+    showToast('Generation failed: ' + e.message, true);
+  }
+}
+
+async function pollRuJob(jobId, idx, btn, label) {
+  const deadline = Date.now() + 300000;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 3000));
+    const res = await fetch(`/api/ru-status/${jobId}`);
+    const data = await res.json();
+    // Update phase text
+    if (data.phase === 'translating_text') {
+      btn.textContent = 'Translating text...';
+      label.textContent = 'Translating text via Gemini...';
+    } else if (data.phase === 'translating_image') {
+      btn.textContent = 'Translating image...';
+      label.textContent = 'Translating image via Seedream 4.5...';
+    }
+    if (data.status === 'done' || data.status === 'error') return data;
+  }
+  return { status: 'error', error: 'Timed out' };
+}
+
+// ── RU image regeneration ─────────────────────────────────────────────────────
+async function regenRuImage(idx) {
+  if (!HAS_RU_GENERATOR) {
+    showToast('RU image generator not available', true);
+    return;
+  }
+
+  const t = TOPICS[idx - 1];
+  const overlay = document.getElementById(`overlay-ru-${idx}`);
+  const regenBtn = document.getElementById(`regen-ru-${idx}`);
+  const imgEl = document.getElementById(`img-ru-${idx}`);
+  const cardImg = imgEl ? imgEl.closest('.card-img') : null;
+
+  if (overlay) overlay.classList.add('active');
+  if (regenBtn) regenBtn.disabled = true;
+
+  try {
+    const startRes = await fetch('/api/regenerate-ru', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: CURRENT_DATE, topic_index: idx - 1 }),
+    });
+    const startData = await startRes.json();
+    if (!startData.success) {
+      showToast('Could not start RU regen: ' + (startData.error || 'Unknown'), true);
+      return;
+    }
+
+    const jobId = startData.job_id;
+    const result = await pollJob(jobId);
+
+    if (result.status === 'done' && result.ru_image) {
+      const newSrc = `/images/${result.ru_image}?t=${Date.now()}`;
+      if (imgEl) {
+        imgEl.src = newSrc;
+      } else {
+        // Replace "no image" placeholder with actual img element
+        const noImg = document.getElementById(`no-img-ru-${idx}`);
+        if (noImg && noImg.parentNode) {
+          const img = document.createElement('img');
+          img.id = `img-ru-${idx}`;
+          img.src = newSrc;
+          img.alt = t.topic;
+          img.loading = 'lazy';
+          noImg.parentNode.insertBefore(img, noImg);
+          const overlay2 = document.createElement('div');
+          overlay2.className = 'img-overlay';
+          noImg.parentNode.insertBefore(overlay2, noImg);
+          noImg.remove();
+        }
+      }
+      if (cardImg) cardImg.dataset.src = `/images/${result.ru_image}`;
+      TOPICS[idx - 1].image_filename_ru = result.ru_image;
+      showToast('RU image regenerated');
+    } else {
+      showToast('RU regen failed: ' + (result.error || 'Unknown error'), true);
+    }
+  } catch (e) {
+    showToast('RU regen failed: ' + e.message, true);
+  } finally {
+    if (overlay) overlay.classList.remove('active');
+    if (regenBtn) regenBtn.disabled = false;
+  }
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 loadApprovals();
 </script>
@@ -1225,6 +1496,18 @@ def api_regenerate():
             approvals = load_approvals(date)
             approvals[topic] = {"status": "pending", "image": filename}
             save_approvals(date, approvals)
+
+            # Persist new image path to workbook so it survives page reloads
+            xlsx_path = find_excel(date)
+            if xlsx_path:
+                relative_path = f"outputs/content/images/{filename}"
+                wb = openpyxl.load_workbook(str(xlsx_path))
+                ws = wb["Content"]
+                for row in ws.iter_rows(min_row=2):
+                    if row[2].value == topic:  # col C = Topic
+                        row[7].value = relative_path  # col H = Image_Path
+                wb.save(str(xlsx_path))
+
             with _jobs_lock:
                 _jobs[job_id] = {"status": "done", "filename": filename, "error": None}
         except Exception as e:
@@ -1243,6 +1526,227 @@ def api_regen_status(job_id):
     if job is None:
         return jsonify({"status": "unknown"}), 404
     return jsonify(job)
+
+
+# ── Russian generation API ─────────────────────────────────────────────────
+
+@app.route("/api/generate-ru", methods=["POST"])
+def api_generate_ru():
+    """Start async Russian content generation for a topic. Requires EN to be approved."""
+    if not HAS_RU_GENERATOR:
+        return jsonify({"success": False, "error": "Russian generator not available. Check imports."}), 503
+
+    data = request.get_json(force=True)
+    date = data.get("date", "")
+    topic_index = data.get("topic_index")  # 0-based index into topics list
+
+    if not date or topic_index is None:
+        return jsonify({"success": False, "error": "date and topic_index required"}), 400
+
+    # Validate EN is approved
+    approvals = load_approvals(date)
+    xlsx = find_excel(date)
+    if not xlsx:
+        return jsonify({"success": False, "error": f"No workbook found for {date}"}), 404
+
+    topics = load_content(xlsx)
+    if topic_index < 0 or topic_index >= len(topics):
+        return jsonify({"success": False, "error": "Invalid topic_index"}), 400
+
+    topic_data = topics[topic_index]
+    topic_name = topic_data["topic"]
+
+    approval_entry = approvals.get(topic_name, {})
+    if approval_entry.get("status") != "approved":
+        return jsonify({"success": False, "error": "English content must be approved first"}), 400
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {"status": "running", "phase": "translating_text", "error": None}
+
+    # Update approval state to show generating
+    approvals[topic_name]["ru_status"] = "generating"
+    save_approvals(date, approvals)
+
+    def _run_ru_generation():
+        try:
+            week_of = date.replace("week:", "")
+            xlsx_path = find_excel(date)
+
+            # Find the workbook row indices for this topic (Twitter + Telegram rows)
+            wb_data = openpyxl.load_workbook(str(xlsx_path), read_only=True, data_only=True)
+            ws = wb_data["Content"]
+            topic_rows = []  # list of (row_index_1based, platform)
+            for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=1):
+                if row and row[2] == topic_name:
+                    platform = (row[3] or "").lower()
+                    topic_rows.append((idx, platform))
+            wb_data.close()
+
+            if not topic_rows:
+                raise RuntimeError(f"Topic not found in workbook: {topic_name}")
+
+            # Phase 1: Translate text
+            with _jobs_lock:
+                _jobs[job_id]["phase"] = "translating_text"
+
+            for row_idx, platform in topic_rows:
+                plat_key = "twitter" if "twitter" in platform else "telegram"
+                en_content = topic_data.get(plat_key) or ""
+                if not en_content:
+                    continue
+
+                content_ru = translate_text_to_russian(en_content, platform=plat_key)
+
+                # Translate hashtags
+                en_hashtags = topic_data.get("hashtags", "")
+                hashtags_ru = translate_hashtags_to_russian(str(en_hashtags)) if en_hashtags else ""
+
+                # Update workbook (leave image columns empty for now)
+                update_ru_columns(
+                    week_of, row_idx,
+                    content_ru=content_ru,
+                    image_prompt_ru="",
+                    image_path_ru="",
+                    hashtags_ru=hashtags_ru,
+                )
+
+            # Phase 2: Translate image
+            with _jobs_lock:
+                _jobs[job_id]["phase"] = "translating_image"
+
+            en_image = topic_data.get("image_filename")
+            ru_image_filename = None
+            if en_image:
+                en_image_path = IMAGES_DIR / en_image
+                if en_image_path.exists():
+                    # Build RU image path: insert _ru before .png
+                    stem = Path(en_image).stem
+                    parent = Path(en_image).parent
+                    ru_image_filename = str(parent / f"{stem}_ru.png")
+                    ru_output_path = IMAGES_DIR / ru_image_filename
+
+                    wavespeed_translate_image(str(en_image_path), str(ru_output_path))
+
+                    # Update image path in workbook for first row of this topic
+                    if topic_rows:
+                        first_row_idx = topic_rows[0][0]
+                        relative_path = f"outputs/content/images/{ru_image_filename}"
+                        wb2 = openpyxl.load_workbook(str(xlsx_path))
+                        ws2 = wb2["Content"]
+                        ws2.cell(row=first_row_idx + 1, column=12, value=relative_path)
+                        wb2.save(str(xlsx_path))
+
+            # Update approval state
+            approvals_updated = load_approvals(date)
+            approvals_updated[topic_name]["ru_status"] = "done"
+            save_approvals(date, approvals_updated)
+
+            with _jobs_lock:
+                _jobs[job_id] = {
+                    "status": "done",
+                    "phase": "done",
+                    "error": None,
+                    "ru_image": ru_image_filename,
+                }
+
+        except Exception as e:
+            approvals_err = load_approvals(date)
+            if topic_name in approvals_err:
+                approvals_err[topic_name]["ru_status"] = "error"
+                save_approvals(date, approvals_err)
+            with _jobs_lock:
+                _jobs[job_id] = {"status": "error", "phase": "error", "error": str(e)}
+
+    threading.Thread(target=_run_ru_generation, daemon=True).start()
+    return jsonify({"success": True, "job_id": job_id})
+
+
+@app.route("/api/ru-status/<job_id>")
+def api_ru_status(job_id):
+    """Poll for Russian generation job completion."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        return jsonify({"status": "unknown"}), 404
+    return jsonify(job)
+
+
+# ── RU image regeneration API ──────────────────────────────────────────────
+
+@app.route("/api/regenerate-ru", methods=["POST"])
+def api_regenerate_ru():
+    """Re-translate the EN image to RU via WaveSpeed Seedream 4.5."""
+    if not HAS_RU_GENERATOR:
+        return jsonify({"success": False, "error": "RU image generator not available. Check wavespeed_img import."}), 503
+
+    data = request.get_json(force=True)
+    date = data.get("date", "")
+    topic_index = data.get("topic_index")  # 0-based
+
+    if not date or topic_index is None:
+        return jsonify({"success": False, "error": "date and topic_index required"}), 400
+
+    xlsx = find_excel(date)
+    if not xlsx:
+        return jsonify({"success": False, "error": f"No workbook found for {date}"}), 404
+
+    topics = load_content(xlsx)
+    if topic_index < 0 or topic_index >= len(topics):
+        return jsonify({"success": False, "error": "Invalid topic_index"}), 400
+
+    topic_data = topics[topic_index]
+    topic_name = topic_data["topic"]
+    en_image = topic_data.get("image_filename")
+
+    if not en_image:
+        return jsonify({"success": False, "error": "No EN image to translate from"}), 400
+
+    en_image_path = IMAGES_DIR / en_image
+    if not en_image_path.exists():
+        return jsonify({"success": False, "error": f"EN image not found: {en_image}"}), 404
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {"status": "running", "phase": "translating_image", "error": None}
+
+    def _run_ru_regen():
+        try:
+            # Build RU image path: insert _ru before .png (remove old _ru suffix if re-regenerating)
+            stem = Path(en_image).stem
+            parent = Path(en_image).parent
+            # Strip existing _ru suffix to avoid _ru_ru
+            base_stem = re.sub(r"_ru$", "", stem)
+            ru_image_filename = str(parent / f"{base_stem}_ru.png")
+            ru_output_path = IMAGES_DIR / ru_image_filename
+
+            wavespeed_translate_image(str(en_image_path), str(ru_output_path))
+
+            # Update workbook col L (Image_Path_RU) for rows matching this topic
+            xlsx_path = find_excel(date)
+            if xlsx_path:
+                relative_path = f"outputs/content/images/{ru_image_filename}"
+                wb = openpyxl.load_workbook(str(xlsx_path))
+                ws = wb["Content"]
+                for row in ws.iter_rows(min_row=2):
+                    if row[2].value == topic_name:  # col C = Topic
+                        row[11].value = relative_path  # col L = Image_Path_RU
+                wb.save(str(xlsx_path))
+
+            with _jobs_lock:
+                _jobs[job_id] = {
+                    "status": "done",
+                    "phase": "done",
+                    "error": None,
+                    "ru_image": ru_image_filename,
+                }
+
+        except Exception as e:
+            with _jobs_lock:
+                _jobs[job_id] = {"status": "error", "phase": "error", "error": str(e)}
+
+    threading.Thread(target=_run_ru_regen, daemon=True).start()
+    return jsonify({"success": True, "job_id": job_id})
 
 
 # ── Flask routes ───────────────────────────────────────────────────────────────
@@ -1266,6 +1770,7 @@ def index():
             topics=[], date="—", available_dates=[],
             topics_json="[]", date_json='""',
             has_generator="true" if HAS_GENERATOR else "false",
+            has_ru_generator="true" if HAS_RU_GENERATOR else "false",
             error="No weekly content Excel files found in outputs/content/",
         )
 
@@ -1278,6 +1783,9 @@ def index():
     else:
         topics = load_content(xlsx)
 
+    # Load approvals to embed ru_status in topic data
+    current_approvals = load_approvals(selected)
+
     topics_json = json.dumps([
         {
             "topic":             t["topic"],
@@ -1286,6 +1794,13 @@ def index():
             "image_filename":    t.get("image_filename", ""),
             "image_filename_ru": t.get("image_filename_ru", ""),
             "date":              t.get("date", ""),
+            "twitter":           t.get("twitter", ""),
+            "telegram":          t.get("telegram", ""),
+            "hashtags":          t.get("hashtags", ""),
+            "twitter_ru":        t.get("twitter_ru", ""),
+            "telegram_ru":       t.get("telegram_ru", ""),
+            "hashtags_ru":       t.get("hashtags_ru", ""),
+            "ru_status":         current_approvals.get(t["topic"], {}).get("ru_status", ""),
         }
         for t in topics
     ])
@@ -1298,6 +1813,7 @@ def index():
         topics_json=topics_json,
         date_json=json.dumps(selected),
         has_generator="true" if HAS_GENERATOR else "false",
+        has_ru_generator="true" if HAS_RU_GENERATOR else "false",
         error=error,
     )
 
