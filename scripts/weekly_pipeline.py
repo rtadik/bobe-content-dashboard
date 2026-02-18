@@ -25,10 +25,14 @@ Content JSON format for save-content:
   "topic": "Topic text here",
   "platform": "Twitter",
   "format": "thread",
-  "content": "Full content text...",
+  "content": "English content...",
   "image_prompt": "Detailed prompt for nano_banana.py...",
-  "image_path": "outputs/content/2026-02-16_mon_topic-slug_twitter.png",
+  "image_path": "outputs/content/images/2026-02-16-weekly/2026-02-16_mon_topic-slug_twitter.png",
   "hashtags": ["#DeFi", "#TradingBot"],
+  "content_ru": "Russian content...",
+  "image_prompt_ru": "Russian image prompt with Cyrillic headline...",
+  "image_path_ru": "outputs/content/images/2026-02-16-weekly/2026-02-16_mon_topic-slug_twitter_ru.png",
+  "hashtags_ru": ["#DeFi", "#Крипто"],
   "status": "Draft"
 }
 """
@@ -156,9 +160,10 @@ def create_weekly_workbook(week_of):
 
     content_headers = [
         "Date", "Day", "Topic", "Platform Target", "Format",
-        "Content", "Image Prompt", "Image Path", "Hashtags", "Status",
+        "Content", "Image Prompt", "Image Path", "Hashtags",
+        "Content_RU", "Image_Prompt_RU", "Image_Path_RU", "Hashtags_RU", "Status",
     ]
-    content_col_widths = [12, 6, 30, 14, 10, 70, 50, 40, 35, 12]
+    content_col_widths = [12, 6, 30, 14, 10, 70, 50, 40, 35, 70, 50, 40, 35, 12]
 
     for i, (header, width) in enumerate(zip(content_headers, content_col_widths), 1):
         cell = ws2.cell(row=1, column=i, value=header)
@@ -192,6 +197,9 @@ def append_content_row(week_of, content_item):
     hashtags = content_item.get("hashtags", [])
     hashtag_str = ", ".join(hashtags) if isinstance(hashtags, list) else str(hashtags)
 
+    hashtags_ru = content_item.get("hashtags_ru", [])
+    hashtag_ru_str = ", ".join(hashtags_ru) if isinstance(hashtags_ru, list) else str(hashtags_ru)
+
     values = [
         content_item.get("date", ""),
         content_item.get("day", ""),
@@ -202,6 +210,10 @@ def append_content_row(week_of, content_item):
         content_item.get("image_prompt", ""),
         content_item.get("image_path", ""),
         hashtag_str,
+        content_item.get("content_ru", ""),
+        content_item.get("image_prompt_ru", ""),
+        content_item.get("image_path_ru", ""),
+        hashtag_ru_str,
         content_item.get("status", "Draft"),
     ]
 

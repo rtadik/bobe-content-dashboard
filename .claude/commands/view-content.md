@@ -1,6 +1,6 @@
 # View Content
 
-> Launch the BoBe content dashboard at http://localhost:5000
+> Launch the BoBe content dashboard at http://localhost:5001
 
 ## Variables
 
@@ -25,7 +25,7 @@ cd "/Users/rt/Claude Code/bobe-image-content-gen" && ./venv/bin/python scripts/w
 ### Step 3 — Confirm to the user
 
 Tell the user:
-- Dashboard is running at **http://localhost:5000**
+- Dashboard is running at **http://localhost:5001**
 - Auto-loads the most recent pipeline output
 - Use the date picker (top-right) to switch between pipeline runs
 - Click any image to enlarge it (lightbox)

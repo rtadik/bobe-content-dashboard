@@ -4,11 +4,11 @@ BoBe Static Site Builder
 
 Renders the content dashboard as static HTML files for deployment
 to Cloudflare Pages or GitHub Pages. Zero hosting cost.
+Includes bilingual EN/RU toggle matching the Flask dashboard.
 
 Usage:
   python scripts/build_static.py                          # build all dates to dist/
   python scripts/build_static.py --output dist             # explicit output dir
-  python scripts/build_static.py --date 2026-02-18         # build single date
   python scripts/build_static.py --date week:2026-02-16    # build single weekly date
 """
 
@@ -37,22 +37,18 @@ except ImportError:
 def sanitize_date_id(date_id):
     """Convert date identifier to a safe filename.
     'week:2026-02-16' -> 'week-2026-02-16'
-    '2026-02-18' -> '2026-02-18'
     """
     return date_id.replace(":", "-")
 
 
 def date_display_label(date_id):
-    """Human-readable label for a date identifier.
-    'week:2026-02-16' -> 'Week of 2026-02-16'
-    '2026-02-18' -> '2026-02-18'
-    """
+    """Human-readable label for a date identifier."""
     if date_id.startswith("week:"):
         return f"Week of {date_id[5:]}"
     return date_id
 
 
-# ── Jinja2 HTML template (simplified from web_viewer.py) ───────────────────
+# ── Jinja2 HTML template ───────────────────────────────────────────────────────
 
 STATIC_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -145,6 +141,33 @@ STATIC_HTML = """<!DOCTYPE html>
     outline: none;
   }
   .date-select:hover { border-color: var(--blue); }
+
+  /* Language toggle */
+  .lang-toggle {
+    display: flex;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .lang-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    padding: 5px 14px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    transition: all 0.15s;
+  }
+  .lang-btn.active { background: var(--blue); color: #fff; }
+  .lang-btn:hover:not(.active) { color: var(--text); }
+
+  /* EN/RU visibility */
+  .ru-only { display: none; }
+  body.lang-ru .ru-only { display: block; }
+  body.lang-ru .en-only { display: none; }
 
   /* Grid */
   .grid {
@@ -299,10 +322,7 @@ STATIC_HTML = """<!DOCTYPE html>
   }
   .content-box::-webkit-scrollbar { width: 4px; }
   .content-box::-webkit-scrollbar-track { background: transparent; }
-  .content-box::-webkit-scrollbar-thumb {
-    background: var(--border);
-    border-radius: 4px;
-  }
+  .content-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
   .tweet-divider {
     border: none;
@@ -316,10 +336,7 @@ STATIC_HTML = """<!DOCTYPE html>
     justify-content: space-between;
   }
 
-  .char-count {
-    font-size: 0.72rem;
-    color: var(--muted);
-  }
+  .char-count { font-size: 0.72rem; color: var(--muted); }
 
   .copy-btn {
     background: var(--blue);
@@ -405,10 +422,7 @@ STATIC_HTML = """<!DOCTYPE html>
     z-index: 500;
     white-space: nowrap;
   }
-  #toast.show {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   /* Empty state */
   .empty {
@@ -455,6 +469,10 @@ STATIC_HTML = """<!DOCTYPE html>
     {% endfor %}
   </select>
   {% endif %}
+  <div class="lang-toggle">
+    <button class="lang-btn active" id="btn-en" onclick="setLang('en')">EN</button>
+    <button class="lang-btn" id="btn-ru" onclick="setLang('ru')">RU</button>
+  </div>
 </header>
 
 <main class="grid">
@@ -462,8 +480,8 @@ STATIC_HTML = """<!DOCTYPE html>
   {% for t in topics %}
   <div class="card" id="card-{{ loop.index }}">
 
-    <!-- Image -->
-    <div class="card-img" {% if t.image_filename %}data-src="images/{{ t.image_filename }}"{% endif %}
+    <!-- EN Image -->
+    <div class="card-img en-only" {% if t.image_filename %}data-src="images/{{ t.image_filename }}"{% endif %}
          title="{% if t.image_filename %}Click to enlarge{% endif %}">
       {% if t.image_filename %}
       <img src="images/{{ t.image_filename }}" alt="{{ t.topic }}" loading="lazy">
@@ -472,6 +490,20 @@ STATIC_HTML = """<!DOCTYPE html>
       <div class="no-img">
         <span class="no-img-icon">&#128444;</span>
         <span>No image generated</span>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- RU Image -->
+    <div class="card-img ru-only" {% if t.image_filename_ru %}data-src="images/{{ t.image_filename_ru }}"{% endif %}
+         title="{% if t.image_filename_ru %}Click to enlarge{% endif %}">
+      {% if t.image_filename_ru %}
+      <img src="images/{{ t.image_filename_ru }}" alt="{{ t.topic }}" loading="lazy">
+      <div class="img-overlay"></div>
+      {% else %}
+      <div class="no-img">
+        <span class="no-img-icon">&#128444;</span>
+        <span>No Russian image</span>
       </div>
       {% endif %}
     </div>
@@ -496,39 +528,85 @@ STATIC_HTML = """<!DOCTYPE html>
 
       <!-- Twitter panel -->
       <div class="panel active" id="twitter-{{ loop.index }}">
-        {% if t.twitter %}
-        {% set tweets = t.twitter.split('---') %}
-        <div class="content-box" id="tw-box-{{ loop.index }}">{% for tweet in tweets %}{{ tweet.strip() }}{% if not loop.last %}
+        <!-- EN Twitter -->
+        <div class="en-only">
+          {% if t.twitter %}
+          {% set tweets = t.twitter.split('---') %}
+          <div class="content-box">{% for tweet in tweets %}{{ tweet.strip() }}{% if not loop.last %}
 <hr class="tweet-divider">
 {% endif %}{% endfor %}</div>
-        <div class="content-actions">
-          <span class="char-count">{{ t.twitter|length }} chars</span>
-          <button class="copy-btn" data-raw="{{ t.twitter | e }}">Copy</button>
+          <div class="content-actions">
+            <span class="char-count">{{ t.twitter|length }} chars</span>
+            <button class="copy-btn" data-raw="{{ t.twitter | e }}">Copy</button>
+          </div>
+          {% else %}
+          <div class="content-box" style="color:var(--muted);font-style:italic;">No Twitter content</div>
+          {% endif %}
         </div>
-        {% else %}
-        <div class="content-box" style="color:var(--muted);font-style:italic;">No Twitter content</div>
-        {% endif %}
+        <!-- RU Twitter -->
+        <div class="ru-only">
+          {% if t.twitter_ru %}
+          {% set tweets_ru = t.twitter_ru.split('---') %}
+          <div class="content-box">{% for tweet in tweets_ru %}{{ tweet.strip() }}{% if not loop.last %}
+<hr class="tweet-divider">
+{% endif %}{% endfor %}</div>
+          <div class="content-actions">
+            <span class="char-count">{{ t.twitter_ru|length }} chars</span>
+            <button class="copy-btn" data-raw="{{ t.twitter_ru | e }}">Copy</button>
+          </div>
+          {% else %}
+          <div class="content-box" style="color:var(--muted);font-style:italic;">&#1053;&#1077;&#1090; &#1082;&#1086;&#1085;&#1090;&#1077;&#1085;&#1090;&#1072; &#1076;&#1083;&#1103; Twitter</div>
+          {% endif %}
+        </div>
       </div>
 
       <!-- Telegram panel -->
       <div class="panel" id="telegram-{{ loop.index }}">
-        {% if t.telegram %}
-        <div class="content-box" id="tg-box-{{ loop.index }}">{{ t.telegram }}</div>
-        <div class="content-actions">
-          <span class="char-count">{{ t.telegram|length }} chars</span>
-          <button class="copy-btn" data-raw="{{ t.telegram | e }}">Copy</button>
+        <!-- EN Telegram -->
+        <div class="en-only">
+          {% if t.telegram %}
+          <div class="content-box">{{ t.telegram }}</div>
+          <div class="content-actions">
+            <span class="char-count">{{ t.telegram|length }} chars</span>
+            <button class="copy-btn" data-raw="{{ t.telegram | e }}">Copy</button>
+          </div>
+          {% else %}
+          <div class="content-box" style="color:var(--muted);font-style:italic;">No Telegram content</div>
+          {% endif %}
         </div>
-        {% else %}
-        <div class="content-box" style="color:var(--muted);font-style:italic;">No Telegram content</div>
-        {% endif %}
+        <!-- RU Telegram -->
+        <div class="ru-only">
+          {% if t.telegram_ru %}
+          <div class="content-box">{{ t.telegram_ru }}</div>
+          <div class="content-actions">
+            <span class="char-count">{{ t.telegram_ru|length }} chars</span>
+            <button class="copy-btn" data-raw="{{ t.telegram_ru | e }}">Copy</button>
+          </div>
+          {% else %}
+          <div class="content-box" style="color:var(--muted);font-style:italic;">&#1053;&#1077;&#1090; &#1082;&#1086;&#1085;&#1090;&#1077;&#1085;&#1090;&#1072; &#1076;&#1083;&#1103; Telegram</div>
+          {% endif %}
+        </div>
       </div>
 
-      <!-- Hashtags -->
+      <!-- EN Hashtags -->
       {% if t.hashtag_list %}
-      <div class="hashtags">
-        {% for tag in t.hashtag_list %}
-        <span class="tag" data-tag="{{ tag }}" title="Click to copy">{{ tag }}</span>
-        {% endfor %}
+      <div class="en-only">
+        <div class="hashtags">
+          {% for tag in t.hashtag_list %}
+          <span class="tag" data-tag="{{ tag }}" title="Click to copy">{{ tag }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- RU Hashtags -->
+      {% if t.hashtag_list_ru %}
+      <div class="ru-only">
+        <div class="hashtags">
+          {% for tag in t.hashtag_list_ru %}
+          <span class="tag" data-tag="{{ tag }}" title="Click to copy">{{ tag }}</span>
+          {% endfor %}
+        </div>
       </div>
       {% endif %}
 
@@ -547,6 +625,15 @@ STATIC_HTML = """<!DOCTYPE html>
 <footer class="site-footer">Generated by BoBe Content Pipeline</footer>
 
 <script>
+// Language toggle
+function setLang(lang) {
+  document.body.classList.toggle('lang-ru', lang === 'ru');
+  document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+  document.getElementById('btn-ru').classList.toggle('active', lang === 'ru');
+  localStorage.setItem('bobe-lang', lang);
+}
+(function(){ if(localStorage.getItem('bobe-lang')==='ru') setLang('ru'); })();
+
 // Toast
 let toastTimer;
 function showToast(msg) {
@@ -657,7 +744,7 @@ def build_site(output_dir, dates=None):
     # Discover available dates
     all_dates = list_available_dates()
     if not all_dates:
-        print("No content files found in outputs/content/")
+        print("No weekly content files found in outputs/content/")
         return
 
     build_dates = dates if dates else all_dates
@@ -676,9 +763,9 @@ def build_site(output_dir, dates=None):
     date_options = []
     for d in all_dates:
         date_options.append({
-            "date_id": d,
+            "date_id":  d,
             "filename": sanitize_date_id(d) + ".html",
-            "label": date_display_label(d),
+            "label":    date_display_label(d),
         })
 
     # Set up Jinja2 environment
@@ -698,24 +785,24 @@ def build_site(output_dir, dates=None):
         topics = load_content(xlsx)
         safe_name = sanitize_date_id(date_id)
 
-        # Copy images for this date's topics
+        # Copy EN and RU images for this date's topics
         for t in topics:
-            img_rel = t.get("image_filename")
-            if not img_rel:
-                continue
+            for img_key in ("image_filename", "image_filename_ru"):
+                img_rel = t.get(img_key)
+                if not img_rel:
+                    continue
 
-            src = IMAGES_DIR / img_rel
-            if not src.exists():
-                # Backward compat: check CONTENT_DIR root
-                src = CONTENT_DIR / img_rel
-            if not src.exists():
-                continue
+                src = IMAGES_DIR / img_rel
+                if not src.exists():
+                    src = CONTENT_DIR / img_rel
+                if not src.exists():
+                    continue
 
-            dst = images_out / img_rel
-            if str(dst) not in images_copied:
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(str(src), str(dst))
-                images_copied.add(str(dst))
+                dst = images_out / img_rel
+                if str(dst) not in images_copied:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(str(src), str(dst))
+                    images_copied.add(str(dst))
 
         # Render the page
         html = template.render(
@@ -750,8 +837,8 @@ def build_site(output_dir, dates=None):
     size_mb = total_size / (1024 * 1024)
 
     print(f"\n  Build complete:")
-    print(f"    Pages: {pages_built}")
-    print(f"    Images: {len(images_copied)}")
+    print(f"    Pages:  {pages_built}")
+    print(f"    Images: {len(images_copied)} (EN + RU)")
     print(f"    Total size: {size_mb:.1f} MB")
     print(f"    Output: {output.resolve()}")
 

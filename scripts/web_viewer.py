@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
 BoBe Content Dashboard — Flask web viewer
-Reads the most recent (or specified) Excel from outputs/content/
-and serves a visual dashboard at http://localhost:5001
+Reads the most recent (or specified) weekly Excel from outputs/content/
+and serves a bilingual (EN/RU) visual dashboard at http://localhost:5001
 
 Usage:
-  python scripts/web_viewer.py              # auto-loads latest Excel
-  python scripts/web_viewer.py 2026-02-18  # loads specific date
+  python scripts/web_viewer.py                       # auto-loads latest weekly workbook
+  python scripts/web_viewer.py week:2026-02-16       # loads specific week
 """
 
 import sys
@@ -53,12 +53,7 @@ _jobs_lock = threading.Lock()
 
 def list_available_dates():
     dates = []
-    # Daily files: YYYY-MM-DD-content.xlsx
-    for f in sorted(CONTENT_DIR.glob("*-content.xlsx"), reverse=True):
-        m = re.match(r"(\d{4}-\d{2}-\d{2})-content\.xlsx", f.name)
-        if m:
-            dates.append(m.group(1))
-    # Weekly files: YYYY-MM-DD-weekly-content.xlsx — prefix with "week:"
+    # Weekly files only: YYYY-MM-DD-weekly-content.xlsx — prefix with "week:"
     for f in sorted(CONTENT_DIR.glob("*-weekly-content.xlsx"), reverse=True):
         m = re.match(r"(\d{4}-\d{2}-\d{2})-weekly-content\.xlsx", f.name)
         if m:
@@ -71,25 +66,18 @@ def find_excel(date=None):
         week_of = date[len("week:"):]
         p = CONTENT_DIR / f"{week_of}-weekly-content.xlsx"
         return p if p.exists() else None
-    if date:
-        p = CONTENT_DIR / f"{date}-content.xlsx"
-        return p if p.exists() else None
-    # Default: most recent of either type (daily or weekly), prefer most recent by date
+    # Default: most recent weekly workbook
     dates = list_available_dates()
     if not dates:
         return None
-    d = dates[0]
-    if d.startswith("week:"):
-        week_of = d[len("week:"):]
-        return CONTENT_DIR / f"{week_of}-weekly-content.xlsx"
-    return CONTENT_DIR / f"{d}-content.xlsx"
+    week_of = dates[0][len("week:"):]
+    return CONTENT_DIR / f"{week_of}-weekly-content.xlsx"
 
 
 # ── Image resolution ──────────────────────────────────────────────────────────
 
 def resolve_image(raw_path, topic):
-    """Return path relative to IMAGES_DIR of the best matching image, or None.
-    Falls back to checking CONTENT_DIR root for backward compatibility."""
+    """Return path relative to IMAGES_DIR of the best matching image, or None."""
     if not raw_path:
         return None
 
@@ -101,7 +89,7 @@ def resolve_image(raw_path, topic):
         except ValueError:
             return candidate.name
 
-    # Strategy 2: exact filename match — search recursively in IMAGES_DIR, then flat CONTENT_DIR
+    # Strategy 2: exact filename match — search recursively in IMAGES_DIR
     filename = Path(raw_path).name
     for png in sorted(IMAGES_DIR.glob("**/*.png")):
         if png.name == filename:
@@ -109,10 +97,10 @@ def resolve_image(raw_path, topic):
     if (CONTENT_DIR / filename).exists():
         return filename
 
-    # Strategy 3: strip date prefix + platform suffix from stored path, fuzzy match
+    # Strategy 3: fuzzy slug match
     stem = Path(raw_path).stem
     parts = stem.split("_")
-    slug_parts = [p for p in parts[1:] if p not in ("twitter", "telegram", "v2", "v1")]
+    slug_parts = [p for p in parts[1:] if p not in ("twitter", "telegram", "v2", "v1", "ru")]
     slug = "_".join(slug_parts)
     if slug:
         for png in sorted(IMAGES_DIR.glob("**/*.png")):
@@ -155,8 +143,11 @@ def save_approvals(date, approvals):
 
 def load_content(xlsx_path):
     """
-    Read Sheet 2 and return list of topic dicts grouped by topic.
-    Each dict: {topic, date, img_prompt, image_filename, twitter, telegram, hashtag_list}
+    Read the Content sheet and return list of topic dicts grouped by topic.
+    Supports 10-column (old weekly) and 14-column (bilingual weekly) workbooks.
+    Each dict: {topic, date, day, img_prompt, image_filename, img_prompt_ru,
+                image_filename_ru, twitter, telegram, twitter_ru, telegram_ru,
+                hashtag_list, hashtag_list_ru}
     """
     wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
     if "Content" not in wb.sheetnames:
@@ -167,49 +158,67 @@ def load_content(xlsx_path):
     topics = {}
     topic_order = []
 
-    # Detect weekly workbook by checking whether the header row has 10 columns (Day inserted at B)
     header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
-    is_weekly = len([h for h in header_row if h]) == 10
+    num_cols = len([h for h in header_row if h])
+    has_ru = num_cols >= 14
 
     for row in ws.iter_rows(min_row=2, values_only=True):
         if not row or not row[1]:
             continue
-        if is_weekly:
-            date, day, topic, platform, fmt, content, img_prompt, img_path, hashtags, status = row
+
+        if has_ru:
+            (date, day, topic, platform, fmt, content, img_prompt, img_path, hashtags,
+             content_ru, img_prompt_ru, img_path_ru, hashtags_ru, status) = row[:14]
         else:
-            date, topic, platform, fmt, content, img_prompt, img_path, hashtags, status = row
-            day = None
+            # Old 10-column weekly (graceful degradation — no RU fields)
+            date, day, topic, platform, fmt, content, img_prompt, img_path, hashtags, status = row[:10]
+            content_ru = img_prompt_ru = img_path_ru = hashtags_ru = ""
 
         if topic not in topics:
             topics[topic] = {
-                "topic": topic,
-                "date": str(date) if date else "",
-                "day": day or "",
-                "img_prompt": img_prompt or "",
-                "raw_image_path": img_path or "",
-                "image_filename": None,
-                "twitter": None,
-                "telegram": None,
-                "hashtags": hashtags or "",
+                "topic":            topic,
+                "date":             str(date) if date else "",
+                "day":              day or "",
+                "img_prompt":       img_prompt or "",
+                "raw_image_path":   img_path or "",
+                "image_filename":   None,
+                "img_prompt_ru":    img_prompt_ru or "",
+                "raw_image_path_ru": img_path_ru or "",
+                "image_filename_ru": None,
+                "twitter":          None,
+                "telegram":         None,
+                "twitter_ru":       None,
+                "telegram_ru":      None,
+                "hashtags":         hashtags or "",
+                "hashtags_ru":      hashtags_ru or "",
             }
             topic_order.append(topic)
 
         platform_lower = (platform or "").lower()
         if "twitter" in platform_lower:
             topics[topic]["twitter"] = content or ""
+            if content_ru:
+                topics[topic]["twitter_ru"] = content_ru or ""
         elif "telegram" in platform_lower:
             topics[topic]["telegram"] = content or ""
             if hashtags:
                 topics[topic]["hashtags"] = hashtags
+            if content_ru:
+                topics[topic]["telegram_ru"] = content_ru or ""
+            if hashtags_ru:
+                topics[topic]["hashtags_ru"] = hashtags_ru
 
     wb.close()
 
     result = []
     for key in topic_order:
         t = topics[key]
-        t["image_filename"] = resolve_image(t["raw_image_path"], t["topic"])
+        t["image_filename"]    = resolve_image(t["raw_image_path"],    t["topic"])
+        t["image_filename_ru"] = resolve_image(t["raw_image_path_ru"], t["topic"])
         raw = t["hashtags"]
         t["hashtag_list"] = [h.strip() for h in str(raw).split(",") if h.strip()] if raw else []
+        raw_ru = t["hashtags_ru"]
+        t["hashtag_list_ru"] = [h.strip() for h in str(raw_ru).split(",") if h.strip()] if raw_ru else []
         result.append(t)
 
     return result
@@ -313,6 +322,36 @@ HTML = """<!DOCTYPE html>
     outline: none;
   }
   .date-select:hover { border-color: var(--blue); }
+
+  /* ── Language toggle ── */
+  .lang-toggle {
+    display: flex;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .lang-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    padding: 5px 14px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    transition: all 0.15s;
+  }
+  .lang-btn.active {
+    background: var(--blue);
+    color: #fff;
+  }
+  .lang-btn:hover:not(.active) { color: var(--text); }
+
+  /* EN/RU visibility */
+  .ru-only { display: none; }
+  body.lang-ru .ru-only { display: block; }
+  body.lang-ru .en-only { display: none; }
 
   /* ── Grid ── */
   .grid {
@@ -727,6 +766,10 @@ HTML = """<!DOCTYPE html>
     </select>
   </form>
   {% endif %}
+  <div class="lang-toggle">
+    <button class="lang-btn active" id="btn-en" onclick="setLang('en')">EN</button>
+    <button class="lang-btn" id="btn-ru" onclick="setLang('ru')">RU</button>
+  </div>
 </header>
 
 {% if error %}
@@ -738,8 +781,8 @@ HTML = """<!DOCTYPE html>
   {% for t in topics %}
   <div class="card" id="card-{{ loop.index }}">
 
-    <!-- Image -->
-    <div class="card-img" {% if t.image_filename %}data-src="/images/{{ t.image_filename }}"{% endif %}
+    <!-- EN Image -->
+    <div class="card-img en-only" {% if t.image_filename %}data-src="/images/{{ t.image_filename }}"{% endif %}
          title="{% if t.image_filename %}Click to enlarge{% endif %}">
       {% if t.image_filename %}
       <img id="img-{{ loop.index }}" src="/images/{{ t.image_filename }}" alt="{{ t.topic }}" loading="lazy">
@@ -750,11 +793,24 @@ HTML = """<!DOCTYPE html>
         <span>No image generated</span>
       </div>
       {% endif %}
-      <!-- Loading overlay for regeneration -->
       <div class="img-loading-overlay" id="overlay-{{ loop.index }}">
         <div class="spinner"></div>
         <span class="spinner-label">Generating new image…</span>
       </div>
+    </div>
+
+    <!-- RU Image -->
+    <div class="card-img ru-only" {% if t.image_filename_ru %}data-src="/images/{{ t.image_filename_ru }}"{% endif %}
+         title="{% if t.image_filename_ru %}Click to enlarge{% endif %}">
+      {% if t.image_filename_ru %}
+      <img src="/images/{{ t.image_filename_ru }}" alt="{{ t.topic }}" loading="lazy">
+      <div class="img-overlay"></div>
+      {% else %}
+      <div class="no-img">
+        <span class="no-img-icon">🖼</span>
+        <span>No Russian image</span>
+      </div>
+      {% endif %}
     </div>
 
     <!-- Image approval actions -->
@@ -781,39 +837,85 @@ HTML = """<!DOCTYPE html>
 
       <!-- Twitter panel -->
       <div class="panel active" id="twitter-{{ loop.index }}">
-        {% if t.twitter %}
-        {% set tweets = t.twitter.split('---') %}
-        <div class="content-box" id="tw-box-{{ loop.index }}">{% for tweet in tweets %}{{ tweet.strip() }}{% if not loop.last %}
+        <!-- EN Twitter -->
+        <div class="en-only">
+          {% if t.twitter %}
+          {% set tweets = t.twitter.split('---') %}
+          <div class="content-box" id="tw-box-{{ loop.index }}">{% for tweet in tweets %}{{ tweet.strip() }}{% if not loop.last %}
 <hr class="tweet-divider">
 {% endif %}{% endfor %}</div>
-        <div class="content-actions">
-          <span class="char-count" id="tw-chars-{{ loop.index }}">{{ t.twitter|length }} chars</span>
-          <button class="copy-btn" data-target="tw-box-{{ loop.index }}" data-raw="{{ t.twitter | e }}">Copy</button>
+          <div class="content-actions">
+            <span class="char-count">{{ t.twitter|length }} chars</span>
+            <button class="copy-btn" data-raw="{{ t.twitter | e }}">Copy</button>
+          </div>
+          {% else %}
+          <div class="content-box" style="color:var(--muted);font-style:italic;">No Twitter content</div>
+          {% endif %}
         </div>
-        {% else %}
-        <div class="content-box" style="color:var(--muted);font-style:italic;">No Twitter content</div>
-        {% endif %}
+        <!-- RU Twitter -->
+        <div class="ru-only">
+          {% if t.twitter_ru %}
+          {% set tweets_ru = t.twitter_ru.split('---') %}
+          <div class="content-box" id="tw-box-ru-{{ loop.index }}">{% for tweet in tweets_ru %}{{ tweet.strip() }}{% if not loop.last %}
+<hr class="tweet-divider">
+{% endif %}{% endfor %}</div>
+          <div class="content-actions">
+            <span class="char-count">{{ t.twitter_ru|length }} chars</span>
+            <button class="copy-btn" data-raw="{{ t.twitter_ru | e }}">Copy</button>
+          </div>
+          {% else %}
+          <div class="content-box" style="color:var(--muted);font-style:italic;">Нет контента для Twitter</div>
+          {% endif %}
+        </div>
       </div>
 
       <!-- Telegram panel -->
       <div class="panel" id="telegram-{{ loop.index }}">
-        {% if t.telegram %}
-        <div class="content-box" id="tg-box-{{ loop.index }}">{{ t.telegram }}</div>
-        <div class="content-actions">
-          <span class="char-count">{{ t.telegram|length }} chars</span>
-          <button class="copy-btn" data-raw="{{ t.telegram | e }}">Copy</button>
+        <!-- EN Telegram -->
+        <div class="en-only">
+          {% if t.telegram %}
+          <div class="content-box" id="tg-box-{{ loop.index }}">{{ t.telegram }}</div>
+          <div class="content-actions">
+            <span class="char-count">{{ t.telegram|length }} chars</span>
+            <button class="copy-btn" data-raw="{{ t.telegram | e }}">Copy</button>
+          </div>
+          {% else %}
+          <div class="content-box" style="color:var(--muted);font-style:italic;">No Telegram content</div>
+          {% endif %}
         </div>
-        {% else %}
-        <div class="content-box" style="color:var(--muted);font-style:italic;">No Telegram content</div>
-        {% endif %}
+        <!-- RU Telegram -->
+        <div class="ru-only">
+          {% if t.telegram_ru %}
+          <div class="content-box" id="tg-box-ru-{{ loop.index }}">{{ t.telegram_ru }}</div>
+          <div class="content-actions">
+            <span class="char-count">{{ t.telegram_ru|length }} chars</span>
+            <button class="copy-btn" data-raw="{{ t.telegram_ru | e }}">Copy</button>
+          </div>
+          {% else %}
+          <div class="content-box" style="color:var(--muted);font-style:italic;">Нет контента для Telegram</div>
+          {% endif %}
+        </div>
       </div>
 
-      <!-- Hashtags -->
+      <!-- EN Hashtags -->
       {% if t.hashtag_list %}
-      <div class="hashtags">
-        {% for tag in t.hashtag_list %}
-        <span class="tag" data-tag="{{ tag }}" title="Click to copy">{{ tag }}</span>
-        {% endfor %}
+      <div class="en-only">
+        <div class="hashtags">
+          {% for tag in t.hashtag_list %}
+          <span class="tag" data-tag="{{ tag }}" title="Click to copy">{{ tag }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- RU Hashtags -->
+      {% if t.hashtag_list_ru %}
+      <div class="ru-only">
+        <div class="hashtags">
+          {% for tag in t.hashtag_list_ru %}
+          <span class="tag" data-tag="{{ tag }}" title="Click to copy">{{ tag }}</span>
+          {% endfor %}
+        </div>
       </div>
       {% endif %}
 
@@ -824,16 +926,26 @@ HTML = """<!DOCTYPE html>
 {% else %}
   <div class="empty">
     <h2>No content found for {{ date }}</h2>
-    <p>Run <code>/content-pipeline</code> to generate content first.</p>
+    <p>Run <code>/weekly-pipeline</code> to generate content first.</p>
   </div>
 {% endif %}
 </main>
 
 <script>
 // ── Topic data embedded from server ────────────────────────────────────────
-const TOPICS      = {{ topics_json | safe }};
+const TOPICS       = {{ topics_json | safe }};
 const CURRENT_DATE = {{ date_json | safe }};
 const HAS_GENERATOR = {{ has_generator | safe }};
+
+// ── Language toggle ──────────────────────────────────────────────────────────
+function setLang(lang) {
+  document.body.classList.toggle('lang-ru', lang === 'ru');
+  document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+  document.getElementById('btn-ru').classList.toggle('active', lang === 'ru');
+  localStorage.setItem('bobe-lang', lang);
+}
+// Restore language preference on load
+(function(){ if(localStorage.getItem('bobe-lang')==='ru') setLang('ru'); })();
 
 // ── Toast ───────────────────────────────────────────────────────────────────
 let toastTimer;
@@ -909,7 +1021,6 @@ const lbClose   = document.getElementById('lightbox-close');
 
 document.querySelectorAll('.card-img[data-src]').forEach(el => {
   el.addEventListener('click', (e) => {
-    // Don't open lightbox when clicking action buttons or overlay
     if (e.target.closest('.img-loading-overlay')) return;
     lightImg.src = el.dataset.src;
     lightbox.classList.add('open');
@@ -995,13 +1106,11 @@ async function regenImage(idx) {
   const imgEl      = document.getElementById(`img-${idx}`);
   const cardImg    = imgEl ? imgEl.closest('.card-img') : null;
 
-  // Lock UI & show spinner
   overlay.classList.add('active');
   approveBtn.disabled = true;
   regenBtn.disabled   = true;
 
   try {
-    // Step 1: start the job (returns immediately)
     const startRes = await fetch('/api/regenerate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1018,7 +1127,6 @@ async function regenImage(idx) {
       return;
     }
 
-    // Step 2: poll until done
     const jobId = startData.job_id;
     const result = await pollJob(jobId);
 
@@ -1071,7 +1179,7 @@ def api_approve():
     data   = request.get_json(force=True)
     date   = data.get("date", "")
     topic  = data.get("topic", "")
-    status = data.get("status", "approved")  # "approved" | "pending"
+    status = data.get("status", "approved")
 
     if not date or not topic:
         return jsonify({"success": False, "error": "date and topic required"}), 400
@@ -1084,7 +1192,7 @@ def api_approve():
 
 @app.route("/api/regenerate", methods=["POST"])
 def api_regenerate():
-    """Start an async regeneration job. Returns a job_id immediately."""
+    """Start an async EN image regeneration job (Gemini). Returns a job_id immediately."""
     if not HAS_GENERATOR:
         return jsonify({"success": False, "error": "Image generator not available. Check GOOGLE_AI_API_KEY and google-genai install."}), 503
 
@@ -1099,8 +1207,9 @@ def api_regenerate():
 
     topic_slug   = re.sub(r"[^a-z0-9]+", "_", topic.lower())[:30].strip("_")
     timestamp    = int(time.time())
-    subdir       = f"{date}-daily"
-    filename     = f"{subdir}/{date}_{topic_slug}_regen_{timestamp}.png"
+    date_slug    = date.replace("week:", "")
+    subdir       = f"{date_slug}-weekly"
+    filename     = f"{subdir}/{date_slug}_{topic_slug}_regen_{timestamp}.png"
     regen_dir    = IMAGES_DIR / subdir
     regen_dir.mkdir(parents=True, exist_ok=True)
     output_path  = str(IMAGES_DIR / filename)
@@ -1140,10 +1249,8 @@ def api_regen_status(job_id):
 
 @app.route("/images/<path:filename>")
 def serve_image(filename):
-    # Serve from IMAGES_DIR (subfolders supported via <path:filename>)
     if (IMAGES_DIR / filename).exists():
         return send_from_directory(str(IMAGES_DIR), filename)
-    # Fallback to CONTENT_DIR root for backward compatibility
     return send_from_directory(str(CONTENT_DIR), filename)
 
 
@@ -1159,7 +1266,7 @@ def index():
             topics=[], date="—", available_dates=[],
             topics_json="[]", date_json='""',
             has_generator="true" if HAS_GENERATOR else "false",
-            error="No content Excel files found in outputs/content/",
+            error="No weekly content Excel files found in outputs/content/",
         )
 
     selected = date_param if date_param in available_dates else available_dates[0]
@@ -1173,10 +1280,12 @@ def index():
 
     topics_json = json.dumps([
         {
-            "topic":          t["topic"],
-            "img_prompt":     t.get("img_prompt", ""),
-            "image_filename": t.get("image_filename", ""),
-            "date":           t.get("date", ""),
+            "topic":             t["topic"],
+            "img_prompt":        t.get("img_prompt", ""),
+            "img_prompt_ru":     t.get("img_prompt_ru", ""),
+            "image_filename":    t.get("image_filename", ""),
+            "image_filename_ru": t.get("image_filename_ru", ""),
+            "date":              t.get("date", ""),
         }
         for t in topics
     ])

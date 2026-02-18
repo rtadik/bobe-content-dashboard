@@ -1,6 +1,6 @@
 # Weekly Pipeline
 
-> Fully automated BoBe weekly content pipeline. Run once to generate 21 content sets (3/day × 7 days) — Twitter threads, Telegram posts, and branded images — saved to a weekly Excel workbook. Zero user input required after triggering.
+> Fully automated BoBe weekly content pipeline. Run once to generate 21 bilingual content sets (3/day × 7 days) — Twitter threads, Telegram posts, and branded images in English AND Russian — saved to a weekly Excel workbook. Zero user input required after triggering.
 
 ## Variables
 
@@ -26,9 +26,9 @@ week_of: $ARGUMENTS (optional — if provided must be YYYY-MM-DD; defaults to Mo
 
 3. **Verify prerequisites**:
    ```bash
-   ls scripts/weekly_pipeline.py scripts/nano_banana.py scripts/apify_scraper.py
+   ls scripts/weekly_pipeline.py scripts/nano_banana.py scripts/wavespeed_img.py scripts/apify_scraper.py
    ```
-   Confirm `.env` has `APIFY_API_TOKEN` and `GOOGLE_AI_API_KEY`.
+   Confirm `.env` has `APIFY_API_TOKEN`, `GOOGLE_AI_API_KEY`, and `WAVESPEED_API_KEY`.
 
 4. **Read now** (required for all content generation):
    - `reference/content-guidelines.md`
@@ -113,34 +113,65 @@ Expected: `Weekly workbook created: outputs/content/{week_of}-weekly-content.xls
 
 ## Phase 4: Content Generation Loop
 
-Each of the 21 topics gets **both** a Twitter version and a Telegram version = **42 content items total**.
+Each of the 21 topics gets **both** a Twitter version and a Telegram version in **English AND Russian** = **42 content items total** (21 EN + 21 RU, stored as 42 rows in the workbook).
+
 Number them sequentially: topic 1 Twitter = item 1, topic 1 Telegram = item 2, topic 2 Twitter = item 3, topic 2 Telegram = item 4, etc.
 
 **Format assignment (per topic):**
 - Twitter: use thread format (5 tweets) for topics 1–2 of each day; single post format (1 tweet, ≤280 chars) for topic 3 of each day
 - Telegram: always long-form (400–1200 chars, educational tone, ends with engagement question)
 
-**CRITICAL CONTENT RULE — No em-dashes or double-hyphens:**
-- **NEVER** use `—` (em-dash U+2014), `–` (en-dash U+2013), or `--` (double-hyphen) as punctuation in any generated content
+---
+
+### CRITICAL CONTENT RULES
+
+**No em-dashes or double-hyphens (English AND Russian):**
+- **NEVER** use `—` (em-dash U+2014), `–` (en-dash U+2013), or `--` (double-hyphen) as punctuation in any generated content — in either language
 - Replace with commas, colons, or rephrase the sentence entirely
 - The `---` tweet separator is the only exception (it is structural, not punctuation)
 - Violating this rule requires regenerating the affected content before saving
 
+**Russian translation rules:**
+- Tone: conversational, like a knowledgeable friend. Not formal, not slang.
+- Twitter: maintain ~280 char target (allow up to 340 chars since Russian runs ~30% longer)
+- Telegram: maintain structure, engagement question at end
+- Keep English fintech hashtags (#DeFi, #USDT, #BoBe) AND add 1–2 Cyrillic ones (#Крипто, #АвтоТрейдинг, #Доходность)
+- The `---` tweet separator stays unchanged in Russian threads
+- No em-dashes, en-dashes, or double-hyphens in Russian content either
+
+---
+
 **For each topic N (show progress: "Generating 4/21..."):**
 
-Apply the content-generator skill. Generate content aligned with BoBe's voice (transparent, educational, no hype, no guaranteed return claims). Output:
+**Step 4a — Generate English content** using the content-generator skill (BoBe voice: transparent, educational, no hype, no guaranteed return claims):
 - Twitter thread: 5 tweets separated by `---`, each ≤280 chars, hook + insight + insight + BoBe connection + soft CTA
-- Twitter single: 1 tweet ≤280 chars with 2-3 hashtags
+- Twitter single: 1 tweet ≤280 chars with 2–3 hashtags
 - Telegram: 400–1200 chars, educational tone, ends with engagement question
 
-**Pre-compute the image path** using this pattern (do not wait for image generation):
+**Step 4b — Translate to Russian** (immediately after English, while context is warm):
+- Produce a full Russian translation of the Twitter content for this topic
+- Produce a full Russian translation of the Telegram content for this topic
+- Follow the Russian translation rules above
+- Generate `image_prompt_ru`: same structure as EN image_prompt but with a Russian headline in Cyrillic
+- Generate `hashtags_ru`: keep EN hashtags + add 1–2 Cyrillic ones
+
+**Pre-compute the image paths** using these patterns:
+
+EN image path:
 ```
 outputs/content/images/{week_of}-weekly/{week_of}_{day_lowercase}_{topic_slug}_{platform_lower}.png
 ```
+
+RU image path (append `_ru` before `.png`):
+```
+outputs/content/images/{week_of}-weekly/{week_of}_{day_lowercase}_{topic_slug}_{platform_lower}_ru.png
+```
+
 Where `topic_slug` = first 30 chars of topic, lowercased, spaces→underscores, special chars removed.
 Where `platform_lower` = "twitter" or "telegram".
 
 **Write Twitter content to `/tmp/weekly_content_{2N-1}.json` and Telegram to `/tmp/weekly_content_{2N}.json`:**
+
 ```json
 {
   "date": "YYYY-MM-DD",
@@ -152,7 +183,10 @@ Where `platform_lower` = "twitter" or "telegram".
   "image_prompt": "Detailed Gemini image prompt here...",
   "image_path": "outputs/content/images/{week_of}-weekly/{week_of}_mon_topic-slug_twitter.png",
   "hashtags": ["#DeFi", "#TradingBot", "#BoBe"],
-  "topic_slug": "topic-slug",
+  "content_ru": "Твит 1\n---\nТвит 2\n---\nТвит 3\n---\nТвит 4\n---\nТвит 5",
+  "image_prompt_ru": "Same structure as image_prompt but with Cyrillic headline text...",
+  "image_path_ru": "outputs/content/images/{week_of}-weekly/{week_of}_mon_topic-slug_twitter_ru.png",
+  "hashtags_ru": ["#DeFi", "#TradingBot", "#BoBe", "#Крипто"],
   "status": "Draft"
 }
 ```
@@ -168,23 +202,29 @@ Repeat for all 42 items. If a save fails, log the error and continue — do not 
 
 ## Phase 5: Image Generation Loop
 
-For each of the 21 topics, generate a branded image using the image-generator skill.
+Generate **42 images total**: 21 EN images via Gemini (`nano_banana.py`) + 21 RU images via WaveSpeed Seedream 4.5 (`wavespeed_img.py`).
 
 **Style mapping:**
 - Pain Point topics → `--style minimal`
 - Education topics → `--style tech`
 - Transparency/Product topics → `--style notification`
 
-**For each topic N:**
+**For each topic N (progress: "Generating images 2/21 [Mon]: Grid trading... (EN: Gemini + RU: Seedream)"):**
 
+EN image (one per topic, shared between Twitter and Telegram):
 ```bash
 source venv/bin/activate && python scripts/nano_banana.py \
-  --prompt "{image_prompt from weekly_content_N.json}" \
+  --prompt "{image_prompt from weekly_content_{2N-1}.json}" \
   --output "outputs/content/images/{week_of}-weekly/{week_of}_{day_lower}_{topic_slug}_{platform_lower}.png" \
   --style {style}
 ```
 
-Show progress: "Generating image 4/42 [Mon]: Grid trading explained..." (one image per Twitter+Telegram pair — 21 images total, shared between platforms)
+RU image (same topic, `_ru` appended before `.png`):
+```bash
+source venv/bin/activate && python scripts/wavespeed_img.py \
+  --prompt "{image_prompt_ru from weekly_content_{2N-1}.json}" \
+  --output "outputs/content/images/{week_of}-weekly/{week_of}_{day_lower}_{topic_slug}_{platform_lower}_ru.png"
+```
 
 If an image fails, log the error and continue to the next — do not halt.
 
@@ -210,8 +250,10 @@ Fri {date}: [topic 13] | [topic 14] | [topic 15]
 Sat {date}: [topic 16] | [topic 17] | [topic 18]
 Sun {date}: [topic 19] | [topic 20] | [topic 21]
 
-Excel: outputs/content/{week_of}-weekly-content.xlsx
-Images: outputs/content/images/{week_of}-weekly/
+Content: 42 bilingual rows (21 EN + 21 RU per platform)
+Images:  42 total (21 EN via Gemini + 21 RU via Seedream 4.5)
+Excel:   outputs/content/{week_of}-weekly-content.xlsx
+Images:  outputs/content/images/{week_of}-weekly/
 
 To review: /view-content week:{week_of}
 ```
@@ -241,10 +283,11 @@ If yes:
 | Error | Recovery |
 |-------|----------|
 | Scraping fails / 0 results | Log warning, use 100% evergreen fallback topics — do not halt |
-| Image generation fails for one topic | Log error, keep pre-computed image_path in workbook (viewer handles missing files gracefully), continue |
+| EN image (Gemini) fails for one topic | Log error, keep pre-computed image_path in workbook, continue |
+| RU image (WaveSpeed) fails for one topic | Log error, keep pre-computed image_path_ru in workbook, continue |
 | Excel save fails for one item | Log error, continue — other items are already saved |
 | Em-dash found in generated content | Regenerate only that item — replace `—`, `–`, `--` with commas or colons |
-| weekly_pipeline.py not found | Check running from project root; verify `scripts/` directory |
+| WAVESPEED_API_KEY missing | Stop and print "WAVESPEED_API_KEY not set in .env" |
 | API key missing | Stop and print the specific missing key name |
 
 ---

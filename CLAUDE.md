@@ -34,8 +34,7 @@ This file is the single source of truth for how Claude should understand and ope
 │   │   ├── prime.md              # /prime — session initialization
 │   │   ├── create-plan.md        # /create-plan — implementation planning
 │   │   ├── implement.md          # /implement — execute plans
-│   │   ├── content-pipeline.md   # /content-pipeline — daily content run
-│   │   ├── weekly-pipeline.md    # /weekly-pipeline — weekly batch run
+│   │   ├── weekly-pipeline.md    # /weekly-pipeline — bilingual weekly batch run
 │   │   ├── view-content.md       # /view-content — launch dashboard
 │   │   ├── deploy.md              # /deploy — build and deploy static dashboard
 │   │   └── setup-content-automation.md  # /setup-content-automation — initial setup
@@ -50,12 +49,10 @@ This file is the single source of truth for how Claude should understand and ope
 ├── plans/                        # Implementation plans (dated markdown files)
 ├── outputs/
 │   └── content/
-│       ├── {date}-content.xlsx          # Daily workbooks
-│       ├── {date}-weekly-content.xlsx   # Weekly workbooks (21 topics, 42 content rows)
+│       ├── {date}-weekly-content.xlsx   # Weekly workbooks (21 topics, 42 bilingual rows, 14 cols)
 │       ├── {date}-approvals.json        # Image approval state (local only)
 │       └── images/
-│           ├── {date}-daily/            # Daily pipeline images
-│           └── {date}-weekly/           # Weekly pipeline images
+│           └── {date}-weekly/           # Weekly pipeline images (EN + RU, 42 total)
 ├── reference/
 │   ├── content-guidelines.md     # BoBe voice, tone, messaging pillars, formatting
 │   ├── bobe-keywords.md          # Keyword lists for topic scraping/filtering
@@ -63,11 +60,12 @@ This file is the single source of truth for how Claude should understand and ope
 │   └── bobe-brand/               # Brand assets (logo, banners, color references)
 ├── scripts/
 │   ├── apify_scraper.py          # Twitter + Reddit scraping via Apify API
-│   ├── excel_manager.py          # Excel workbook creation and row management
-│   ├── nano_banana.py            # Image generation via Google Gemini API
-│   ├── weekly_pipeline.py        # Weekly pipeline orchestrator (workbook + content saving)
-│   ├── web_viewer.py             # Flask dashboard server (localhost:5001)
-│   └── build_static.py           # Static site builder for deployment
+│   ├── excel_manager.py          # Excel styling helpers (library only — no CLI)
+│   ├── nano_banana.py            # EN image generation via Google Gemini API
+│   ├── wavespeed_img.py          # RU image generation via WaveSpeed.ai Seedream 4.5
+│   ├── weekly_pipeline.py        # Weekly pipeline orchestrator (14-col workbook, bilingual)
+│   ├── web_viewer.py             # Flask dashboard server (localhost:5001, EN/RU toggle)
+│   └── build_static.py           # Static site builder for deployment (EN/RU toggle)
 ├── dist/                         # Static site build output (gitignored, deployed via /deploy)
 └── venv/                         # Python virtual environment
 ```
@@ -80,22 +78,16 @@ This file is the single source of truth for how Claude should understand and ope
 Initialize a new session. Reads CLAUDE.md and context files, summarizes understanding, confirms readiness. **Run this at the start of every session.**
 
 ### /weekly-pipeline [week-of]
-Fully automated weekly content pipeline. Scrapes trending topics (falls back to evergreen bank), assigns 21 topics across 7 days (3/day: 2 Twitter threads + 1 Telegram), generates all 42 content items and branded images, saves to weekly Excel workbook. Zero user input after triggering. Sends macOS notification on completion.
+Fully automated bilingual weekly content pipeline. Scrapes trending topics (falls back to evergreen bank), assigns 21 topics across 7 days (3/day: 2 Twitter threads + 1 Telegram), generates all 42 content items in English AND Russian, generates 42 images (21 EN via Gemini + 21 RU via Seedream 4.5), saves to weekly Excel workbook. Zero user input after triggering. Sends macOS notification on completion.
 
-- Output: `outputs/content/{week-of}-weekly-content.xlsx`
-- Images: `outputs/content/images/{week-of}-weekly/`
+- Output: `outputs/content/{week-of}-weekly-content.xlsx` (14-column, bilingual)
+- Images: `outputs/content/images/{week-of}-weekly/` (EN + RU images)
 - Example: `/weekly-pipeline` or `/weekly-pipeline 2026-02-16`
 
-### /content-pipeline [date]
-Daily content pipeline. Scrapes Twitter + Reddit, presents top topics for user selection (2-3 picks), generates content and images for each, saves to daily Excel workbook.
+### /view-content [week-of]
+Launch the Flask content dashboard at **http://localhost:5001**. Shows topic cards with bilingual banner images, Twitter threads, Telegram posts, hashtags. Supports EN/RU language toggle, copy-to-clipboard, image lightbox, date switching. Use `week:YYYY-MM-DD` format.
 
-- Output: `outputs/content/{date}-content.xlsx`
-- Example: `/content-pipeline 2026-02-18`
-
-### /view-content [date]
-Launch the Flask content dashboard at **http://localhost:5001**. Shows topic cards with banner images, Twitter threads, Telegram posts, hashtags. Supports copy-to-clipboard, image lightbox, date switching. For weekly content, use `week:YYYY-MM-DD` format.
-
-- Example: `/view-content 2026-02-18` or `/view-content week:2026-02-16`
+- Example: `/view-content week:2026-02-16`
 
 ### /deploy [date]
 Build and deploy the static content dashboard for client access. Renders the dashboard as static HTML files, copies images, and deploys to Cloudflare Pages (or GitHub Pages). Your client gets a URL to view all generated content. Zero hosting cost.
@@ -123,22 +115,26 @@ One-time setup command. Implements the full content automation infrastructure fr
 | Script | Purpose | Key flags |
 |--------|---------|-----------|
 | `apify_scraper.py` | Scrape Twitter/Reddit via Apify for trending topics | `--platform`, `--keywords`, `--count`, `--days`, `--top`, `--output`, `--mock` |
-| `excel_manager.py` | Create/manage Excel workbooks | `--action` (create, add-topics, add-content), `--date`, `--file` |
-| `nano_banana.py` | Generate branded images via Gemini API | `--prompt`, `--output`, `--style` (minimal, tech, notification), `--mock` |
-| `weekly_pipeline.py` | Weekly pipeline orchestrator | `--action` (create-workbook, save-content, finalize, scrape), `--week-of`, `--mock` |
-| `web_viewer.py` | Flask dashboard server | Runs on localhost:5001, auto-detects daily vs weekly workbooks |
-| `build_static.py` | Static site builder for deployment | `--output`, `--date` (repeatable) |
+| `excel_manager.py` | Excel styling library (no CLI) | Import only: `style_header_cell`, `style_data_cell`, color constants |
+| `nano_banana.py` | Generate EN branded images via Gemini API | `--prompt`, `--output`, `--style` (minimal, tech, notification), `--mock` |
+| `wavespeed_img.py` | Generate RU branded images via WaveSpeed Seedream 4.5 | `--prompt`, `--topic`, `--headline`, `--style`, `--output`, `--mock` |
+| `weekly_pipeline.py` | Weekly pipeline orchestrator (14-col bilingual workbook) | `--action` (create-workbook, save-content, finalize, scrape), `--week-of`, `--mock` |
+| `web_viewer.py` | Flask dashboard server with EN/RU toggle | Runs on localhost:5001, weekly workbooks only |
+| `build_static.py` | Static site builder with EN/RU toggle | `--output`, `--date` (repeatable), copies EN + RU images |
 
 ---
 
 ## Weekly Pipeline Structure
 
 - 21 topics per week (3 per day x 7 days)
-- Each topic gets both Twitter and Telegram versions = **42 content rows** in workbook
+- Each topic gets Twitter + Telegram in English AND Russian = **42 content rows** in workbook
+- Workbook Content sheet: **14 columns** (Date, Day, Topic, Platform, Format, Content, Image Prompt, Image Path, Hashtags, Content_RU, Image_Prompt_RU, Image_Path_RU, Hashtags_RU, Status)
 - JSON temp files: `/tmp/weekly_content_1.json` through `/tmp/weekly_content_42.json`
 - Odd items (1,3,5...) = Twitter; Even items (2,4,6...) = Telegram
 - Per day: topics 1-2 get Twitter thread format (5 tweets); topic 3 gets single tweet format
 - Image styles: Pain Point → minimal, Education → tech, Transparency/Product → notification
+- Images: 42 total — 21 EN via Gemini (`nano_banana.py`) + 21 RU via Seedream 4.5 (`wavespeed_img.py`)
+- RU image naming: append `_ru` before `.png` (e.g., `topic_slug_twitter_ru.png`)
 
 ---
 
@@ -158,7 +154,8 @@ One-time setup command. Implements the full content automation infrastructure fr
 | Service | Environment Variable | Purpose |
 |---------|---------------------|---------|
 | Apify | `APIFY_API_TOKEN` | Twitter + Reddit scraping |
-| Google AI | `GOOGLE_AI_API_KEY` | Gemini image generation |
+| Google AI | `GOOGLE_AI_API_KEY` | Gemini EN image generation |
+| WaveSpeed | `WAVESPEED_API_KEY` | Seedream 4.5 RU image generation ($0.04/image) |
 
 Store in `.env` (never commit). See `reference/api-setup.md` for setup.
 
@@ -186,6 +183,7 @@ The deployed dashboard is a read-only view of generated content. Content generat
 |------|--------|---------|
 | `plans/2026-02-18-bobe-content-automation.md` | Implemented | Core content automation infrastructure |
 | `plans/2026-02-18-vercel-static-deployment.md` | Implemented | Deploy dashboard as static site to Cloudflare Pages/GitHub Pages for client access |
+| Russian language support + remove daily pipeline | Implemented | Bilingual EN/RU content generation, WaveSpeed Seedream 4.5 for RU images, EN/RU dashboard toggle, daily pipeline removed |
 
 ---
 
