@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-BoBe Content Pipeline - Image Generator (WaveSpeed GPT-Image-1.5)
+Content Pipeline - Image Generator (WaveSpeed GPT-Image-1.5)
 Generates branded images using WaveSpeed.ai's GPT-Image-1.5 Edit API.
-Sends BoBe logo + mascot reference images for accurate character/logo fidelity.
+Sends client brand reference images for accurate character/logo fidelity.
+
+Multi-client: reads brand assets and mascot description from client config.
 
 Environment variables (loaded from .env):
   WAVESPEED_API_KEY: Your WaveSpeed.ai API key
@@ -12,6 +14,7 @@ Usage:
   python scripts/nano_banana.py --prompt "Full custom prompt" --output image.png
   python scripts/nano_banana.py --mock --output test.png
   python scripts/nano_banana.py --no-reference --prompt "..." --output image.png  # skip reference images
+  python scripts/nano_banana.py --client newclient --topic "..." --output image.png
 """
 
 import os
@@ -27,30 +30,32 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
+# Make scripts/ importable
+sys.path.insert(0, str(Path(__file__).parent))
+
+import client_config
+
 WAVESPEED_API_KEY = os.environ.get("WAVESPEED_API_KEY")
-OUTPUT_DIR = Path(__file__).parent.parent / "outputs" / "content"
-BRAND_DIR = Path(__file__).parent.parent / "reference" / "bobe-brand"
 
 API_BASE = "https://api.wavespeed.ai/api/v3"
 EDIT_ENDPOINT = f"{API_BASE}/openai/gpt-image-1.5/edit"
 TEXT_ENDPOINT = f"{API_BASE}/openai/gpt-image-1.5/text-to-image"
 POLL_ENDPOINT = f"{API_BASE}/predictions"
 
-# Default reference images sent with every generation
-DEFAULT_REFERENCES = [
-    BRAND_DIR / "logo.png",                     # Exact logo to reproduce
-    BRAND_DIR / "banner example 1.png",         # Mascot reference: minimal/clean
-    BRAND_DIR / "banner example 2.png",         # Mascot reference: with trading setup
-    BRAND_DIR / "banner example 4.png",         # Mascot reference: outdoor/action
-]
 
-STYLE_PRESETS = {
-    "minimal": "minimalist clean design, single focal point, plenty of negative space on dark navy",
-    "tech": "floating holographic trading UI panels and candlestick charts in background, tech fintech aesthetic",
-    "neon": "cyberpunk neon city background with blue and pink neon light trails, atmospheric night scene",
-    "outdoor": "photorealistic urban outdoor setting, city street, natural lighting",
-    "notification": "realistic smartphone mockup showing BoBe app notification on screen",
-}
+def get_default_references(client_id=None):
+    """Get default reference image paths from client config."""
+    return client_config.get_reference_images(client_id)
+
+
+def get_style_presets(client_id=None):
+    """Get style presets from client config, with sensible defaults."""
+    config = client_config.load_config(client_id)
+    return config.get("image", {}).get("style_presets", {
+        "minimal": "minimalist clean design, single focal point, plenty of negative space on dark navy",
+        "tech": "floating holographic trading UI panels and candlestick charts in background, tech fintech aesthetic",
+        "notification": "realistic smartphone mockup showing app notification on screen",
+    })
 
 
 def load_reference_images(paths: list) -> list:
@@ -72,22 +77,41 @@ def build_prompt(
     topic: str,
     headline: str = "",
     style: str = "tech",
-    extra: str = ""
+    extra: str = "",
+    client_id: str = None
 ) -> str:
     """Build the text instruction prompt. Reference images are passed separately."""
-    style_desc = STYLE_PRESETS.get(style, STYLE_PRESETS["tech"])
+    config = client_config.load_config(client_id)
+    brand = config.get("brand", {})
+    display_name = config.get("display_name", "Brand")
+
+    style_presets = get_style_presets(client_id)
+    style_desc = style_presets.get(style, style_presets.get("tech", "tech fintech aesthetic"))
+
+    mascot_desc = brand.get("mascot_description", "brand mascot character")
+    logo_desc = brand.get("logo_description", f"{display_name} logo in the top-left corner")
+    bg_style = brand.get("background_style", "Deep dark navy gradient")
+
     headline_part = f'\n- Include the bold white headline text: "{headline}"' if headline else ""
 
-    prompt = f"""You are given reference images:
-- Image 1: The exact BoBe APP logo — reproduce it exactly in the top-left corner
-- Images 2-4: The BoBe mascot character — a 3D chibi figurine with round thick-framed glasses, short styled hair, white BoBe t-shirt, chubby round face. Replicate this character exactly with the same proportions, features, and style.
+    # Build reference image instructions dynamically
+    ref_images = brand.get("reference_images", [])
+    ref_instructions = []
+    if ref_images:
+        ref_instructions.append(f"- Image 1: The exact {display_name} logo, reproduce it exactly in the top-left corner")
+        if len(ref_images) > 1:
+            ref_instructions.append(f"- Images 2-{len(ref_images)}: The {display_name} mascot/brand character: {mascot_desc}. Replicate this character exactly.")
 
-Generate a new high-quality 16:9 social media banner image with these requirements:
-- MASCOT: Use the exact same mascot character shown in the reference images (same glasses, same face, same proportions, same BoBe t-shirt)
-- LOGO: Place the exact BoBe APP logo in the top-left corner, reproduced faithfully from the reference
+    ref_block = "\n".join(ref_instructions)
+    if ref_block:
+        ref_block = f"You are given reference images:\n{ref_block}\n\n"
+
+    prompt = f"""{ref_block}Generate a new high-quality 16:9 social media banner image with these requirements:
+- MASCOT: Use the exact same character shown in the reference images ({mascot_desc})
+- LOGO: {logo_desc}
 - SCENE: {topic}
 - STYLE: {style_desc}
-- BACKGROUND: Deep dark navy gradient (dark blue-black)
+- BACKGROUND: {bg_style}
 - COMPOSITION: Professional social media banner, mascot prominent on the right side{headline_part}
 - QUALITY: Cinematic 3D render quality, high resolution"""
 
@@ -128,7 +152,7 @@ def generate_image(prompt: str, output_path: str, reference_paths: list = None) 
     }
 
     if reference_paths is None:
-        reference_paths = DEFAULT_REFERENCES
+        reference_paths = get_default_references()
 
     # Load reference images
     print(f"  Loading {len(reference_paths)} reference images...")
@@ -205,16 +229,17 @@ def mock_generate(output_path: str) -> str:
     return placeholder_path
 
 
-def generate_for_content(topic: str, content_text: str, date: str, platform: str, style: str = "tech") -> dict:
+def generate_for_content(topic: str, content_text: str, date: str, platform: str, style: str = "tech", client_id: str = None) -> dict:
     """High-level helper: build prompt metadata for a piece of content."""
     first_sentence = content_text.split(".")[0].split("\n")[0]
     words = first_sentence.split()
     headline = " ".join(words[:6]) + ("..." if len(words) > 6 else "")
 
-    prompt = build_prompt(topic=topic, headline=headline, style=style)
+    prompt = build_prompt(topic=topic, headline=headline, style=style, client_id=client_id)
+    output_dir = client_config.get_output_dir(client_id)
     topic_slug = topic.lower().replace(" ", "_")[:30]
     filename = f"{date}_{topic_slug}_{platform}.png"
-    output_path = OUTPUT_DIR / filename
+    output_path = output_dir / filename
 
     return {
         "prompt": prompt,
@@ -224,27 +249,31 @@ def generate_for_content(topic: str, content_text: str, date: str, platform: str
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate BoBe branded images with WaveSpeed GPT-Image-1.5 + reference images")
+    parser = argparse.ArgumentParser(description="Generate branded images with WaveSpeed GPT-Image-1.5 + reference images")
     parser.add_argument("--prompt", default=None,
                         help="Full custom text instruction (overrides topic/headline builder)")
     parser.add_argument("--topic", default="automated crypto trading",
                         help="Scene/topic for the image")
     parser.add_argument("--headline", default="",
                         help="Short headline text to include on the image")
-    parser.add_argument("--style", choices=list(STYLE_PRESETS.keys()), default="tech",
+    parser.add_argument("--style", default="tech",
                         help="Visual style preset")
     parser.add_argument("--output", default=None,
                         help="Output file path")
     parser.add_argument("--reference", action="append", default=None,
                         help="Additional reference image path (can be used multiple times)")
     parser.add_argument("--no-reference", action="store_true",
-                        help="Disable reference images — text-only prompt")
+                        help="Disable reference images, text-only prompt")
     parser.add_argument("--mock", action="store_true",
-                        help="Mock mode — no API call")
+                        help="Mock mode, no API call")
     parser.add_argument("--show-prompt", action="store_true",
                         help="Print full text prompt and exit without generating")
+    client_config.add_client_arg(parser)
 
     args = parser.parse_args()
+    active_client = client_config.resolve_client(args)
+    config = client_config.load_config(active_client)
+    output_dir = client_config.get_output_dir(active_client)
 
     # Determine reference images to use
     if args.no_reference:
@@ -252,18 +281,18 @@ def main():
     elif args.reference:
         reference_paths = [Path(r) for r in args.reference]
     else:
-        reference_paths = DEFAULT_REFERENCES
+        reference_paths = get_default_references(active_client)
 
     # Build text prompt
     if args.prompt:
         prompt = args.prompt
     else:
-        prompt = build_prompt(topic=args.topic, headline=args.headline, style=args.style)
+        prompt = build_prompt(topic=args.topic, headline=args.headline, style=args.style, client_id=active_client)
 
     if args.show_prompt:
         print("\n--- REFERENCE IMAGES ---")
         for r in reference_paths:
-            exists = "✓" if Path(r).exists() else "✗ missing"
+            exists = "\u2713" if Path(r).exists() else "\u2717 missing"
             print(f"  {exists}  {r}")
         print("\n--- TEXT PROMPT ---")
         print(prompt)
@@ -275,17 +304,19 @@ def main():
     else:
         date_str = datetime.now().strftime("%Y-%m-%d")
         topic_slug = args.topic.lower().replace(" ", "_")[:30]
-        output_path = str(OUTPUT_DIR / f"{date_str}_{topic_slug}.png")
+        output_path = str(output_dir / f"{date_str}_{topic_slug}.png")
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\nGenerating BoBe image via WaveSpeed GPT-Image-1.5...")
+    display_name = config.get("display_name", "Brand")
+    print(f"\nGenerating {display_name} image via WaveSpeed GPT-Image-1.5...")
+    print(f"Client: {active_client}")
     print(f"Style: {args.style}")
     print(f"Output: {output_path}")
     print(f"References: {len(reference_paths)} image(s)")
 
     if args.mock:
-        print("Running in MOCK mode — no API call made.")
+        print("Running in MOCK mode, no API call made.")
         result_path = mock_generate(output_path)
     else:
         result_path = generate_image(prompt, output_path, reference_paths)

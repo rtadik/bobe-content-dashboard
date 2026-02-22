@@ -1,0 +1,53 @@
+{
+  "client_id": "REPLACE_WITH_CLIENT_ID",
+  "display_name": "REPLACE_WITH_CLIENT_NAME",
+  "tagline": "Short tagline describing the client's product",
+  "website": "example.com",
+  "brand": {
+    "primary_color": "#1a1a2e",
+    "accent_color": "#00d4ff",
+    "text_color": "#ffffff",
+    "secondary_accent": "#ff4fda",
+    "surface_color": "#111b32",
+    "background_gradient": "#111b32 to #070a1b",
+    "logo_path": "brand/logo.png",
+    "reference_images": [
+      "brand/logo.png"
+    ],
+    "mascot_description": "Describe the client's mascot or brand character here. Include details about appearance, style, and distinguishing features.",
+    "logo_description": "Describe how the logo should appear in generated images (position, color, size)",
+    "background_style": "Describe the default background style for generated images"
+  },
+  "content": {
+    "tone": "Describe the brand tone and voice (e.g., professional, friendly, educational)",
+    "voice": "Longer description of how the brand communicates",
+    "brand_terms_keep": ["BRAND_NAME"],
+    "cta_url": "example.com",
+    "cta_examples": [
+      "Learn more at example.com",
+      "Try it free: example.com"
+    ],
+    "hashtags": ["#BrandHashtag"],
+    "messaging_pillars": [
+      "Pillar 1: Description",
+      "Pillar 2: Description"
+    ]
+  },
+  "scraping": {
+    "keywords": [
+      "keyword1", "keyword2", "keyword3"
+    ],
+    "negative_keywords": [
+      "scam", "spam"
+    ],
+    "subreddits": ["relevant_subreddit"]
+  },
+  "image": {
+    "style_presets": {
+      "minimal": "clean minimalist banner, solid dark background",
+      "tech": "futuristic data visualization banner with glowing elements",
+      "notification": "realistic smartphone mockup showing app notification"
+    }
+  },
+  "languages": ["en"]
+}

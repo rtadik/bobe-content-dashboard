@@ -10,15 +10,15 @@ This file is the single source of truth for how Claude should understand and ope
 
 **The user** (Rut Adk) is BoBe's Strategic Marketing Lead and Growth Architect, an external partner responsible for acquisition systems, messaging clarity, funnel infrastructure, and ambassador expansion.
 
-**This workspace** automates BoBe's social media content creation: scraping trending crypto/DeFi topics, generating Twitter threads and Telegram posts, creating branded images, and packaging everything into Excel workbooks for scheduling.
+**This workspace** is a multi-client content automation platform. It scrapes trending topics, generates Twitter threads and Telegram posts, creates branded images, and packages everything into Excel workbooks for scheduling. Originally built for BoBe, it now supports multiple clients via config-driven architecture.
 
 ---
 
 ## Content Rules
 
 - **NEVER use em-dashes** (`—` U+2014), en-dashes (`–` U+2013), or double-hyphens (`--`) as punctuation in generated content. Replace with commas, colons, or rephrase. The `---` tweet separator is the only exception (structural, not punctuation).
-- BoBe tone: transparent, educational, no hype, no guaranteed return claims.
-- See `reference/content-guidelines.md` for full voice, messaging pillars, and platform-specific formatting rules.
+- Each client's tone, voice, and messaging rules are in `clients/{client_id}/content-guidelines.md` and `clients/{client_id}/config.json`.
+- Default (BoBe) tone: transparent, educational, no hype, no guaranteed return claims.
 
 ---
 
@@ -28,6 +28,7 @@ This file is the single source of truth for how Claude should understand and ope
 .
 ├── CLAUDE.md                 # This file
 ├── .env                      # API keys (gitignored)
+├── .active-client            # Current active client ID (gitignored, default: bobe)
 ├── .gitignore
 ├── .claude/
 │   ├── commands/
@@ -36,34 +37,48 @@ This file is the single source of truth for how Claude should understand and ope
 │   │   ├── implement.md          # /implement — execute plans
 │   │   ├── weekly-pipeline.md    # /weekly-pipeline — bilingual weekly batch run
 │   │   ├── view-content.md       # /view-content — launch dashboard
-│   │   ├── deploy.md              # /deploy — build and deploy static dashboard
+│   │   ├── deploy.md             # /deploy — build and deploy static dashboard
+│   │   ├── onboard-client.md     # /onboard-client — create new client config
+│   │   ├── switch-client.md      # /switch-client — switch active client
 │   │   └── setup-content-automation.md  # /setup-content-automation — initial setup
 │   └── skills/
-│       ├── content-generator/    # Twitter/Telegram copy generation
-│       ├── image-generator/      # Branded image generation via Gemini
+│       ├── content-generator/    # Twitter/Telegram copy generation (client-aware)
+│       ├── image-generator/      # Branded image generation (client-aware)
 │       ├── skill-creator/        # Create new Claude skills
 │       └── mcp-integration/      # MCP server integration guidance
+├── clients/
+│   ├── _template/                # Template for onboarding new clients
+│   │   ├── config.json           # Placeholder config (copy and fill in)
+│   │   ├── brand/README.md       # Brand asset instructions
+│   │   ├── content-guidelines.md # Voice and messaging template
+│   │   ├── keywords.md           # Keyword list template
+│   │   └── context.md            # Business context template
+│   └── bobe/                     # BoBe client (default)
+│       ├── config.json           # Brand, keywords, tone, mascot, colors, style presets
+│       ├── brand/                # Logo, banner examples, color references
+│       ├── content-guidelines.md # Voice, tone, messaging pillars
+│       ├── keywords.md           # Scraping/filtering keywords
+│       └── context.md            # Business context and ICP
 ├── context/
-│   ├── BoBe Context.md           # Organization overview, products, ICP, positioning
+│   ├── BoBe Context.md           # Organization overview (legacy, mirrored in clients/bobe/)
 │   └── RT BoBe Info.md           # User's role, responsibilities, working style
 ├── plans/                        # Implementation plans (dated markdown files)
+├── reference/
+│   └── api-setup.md              # Apify + Google AI + WaveSpeed setup instructions
 ├── outputs/
 │   └── content/
-│       ├── {date}-weekly-content.xlsx   # Weekly workbooks (21 topics, 42 bilingual rows, 14 cols)
-│       ├── {date}-approvals.json        # Image approval state (local only)
-│       └── images/
-│           └── {date}-weekly/           # Weekly pipeline images (EN + RU, 42 total)
-├── reference/
-│   ├── content-guidelines.md     # BoBe voice, tone, messaging pillars, formatting
-│   ├── bobe-keywords.md          # Keyword lists for topic scraping/filtering
-│   ├── api-setup.md              # Apify + Google AI setup instructions
-│   └── bobe-brand/               # Brand assets (logo, banners, color references)
+│       └── {client_id}/          # Client-scoped output directory
+│           ├── {date}-weekly-content.xlsx   # Weekly workbooks (14-col, bilingual)
+│           ├── {date}-approvals.json        # Image approval state (local only)
+│           └── images/
+│               └── {date}-weekly/           # Weekly images (EN + RU, 42 total)
 ├── scripts/
+│   ├── client_config.py          # Multi-client config loader (central module)
 │   ├── apify_scraper.py          # Twitter + Reddit scraping via Apify API
-│   ├── excel_manager.py          # Excel styling helpers (library only — no CLI)
+│   ├── excel_manager.py          # Excel styling helpers (library only)
 │   ├── nano_banana.py            # EN image generation via WaveSpeed GPT-Image-1.5
-│   ├── wavespeed_img.py          # RU image generation via WaveSpeed.ai Seedream 4.5
-│   ├── weekly_pipeline.py        # Weekly pipeline orchestrator (14-col workbook, bilingual)
+│   ├── wavespeed_img.py          # RU image generation via WaveSpeed Seedream 4.5
+│   ├── weekly_pipeline.py        # Weekly pipeline orchestrator (14-col, bilingual)
 │   ├── web_viewer.py             # Flask dashboard server (localhost:5001, EN/RU toggle)
 │   └── build_static.py           # Static site builder for deployment (EN/RU toggle)
 ├── dist/                         # Static site build output (gitignored, deployed via /deploy)
@@ -78,10 +93,10 @@ This file is the single source of truth for how Claude should understand and ope
 Initialize a new session. Reads CLAUDE.md and context files, summarizes understanding, confirms readiness. **Run this at the start of every session.**
 
 ### /weekly-pipeline [week-of]
-Fully automated bilingual weekly content pipeline. Scrapes trending topics (falls back to evergreen bank), assigns 21 topics across 7 days (3/day: 2 Twitter threads + 1 Telegram), generates all 42 content items in English AND Russian, generates 42 images (21 EN via Gemini + 21 RU via Seedream 4.5), saves to weekly Excel workbook. Zero user input after triggering. Sends macOS notification on completion.
+Fully automated bilingual weekly content pipeline for the active client. Scrapes trending topics (falls back to evergreen), assigns 21 topics across 7 days (3/day: 2 Twitter threads + 1 Telegram), generates all 42 content items in English AND Russian, generates 42 images (21 EN via GPT-Image-1.5 + 21 RU via Seedream 4.5), saves to weekly Excel workbook. Zero user input after triggering.
 
-- Output: `outputs/content/{week-of}-weekly-content.xlsx` (14-column, bilingual)
-- Images: `outputs/content/images/{week-of}-weekly/` (EN + RU images)
+- Output: `outputs/content/{client_id}/{week-of}-weekly-content.xlsx` (14-column, bilingual)
+- Images: `outputs/content/{client_id}/images/{week-of}-weekly/` (EN + RU images)
 - Example: `/weekly-pipeline` or `/weekly-pipeline 2026-02-16`
 
 ### /view-content [week-of]
@@ -105,8 +120,32 @@ Execute a plan created by /create-plan, step by step.
 
 - Example: `/implement plans/2026-02-18-vercel-static-deployment.md`
 
+### /onboard-client [client-name]
+Create a new client configuration from the template. Walks through setup interactively: gathers brand info, keywords, tone, mascot description, and creates the client directory under `clients/`.
+
+- Example: `/onboard-client acmecrypto`
+
+### /switch-client [client-id]
+Switch the active client for all pipeline commands. Shows available clients and current selection.
+
+- Example: `/switch-client bobe`
+
 ### /setup-content-automation
 One-time setup command. Implements the full content automation infrastructure from the initial plan.
+
+---
+
+## Multi-Client Architecture
+
+This workspace supports multiple clients via a config-driven architecture:
+
+- **Client configs** live in `clients/{client_id}/` with `config.json`, `brand/`, `content-guidelines.md`, `keywords.md`, `context.md`
+- **Active client** is stored in `.active-client` (gitignored). Default: `bobe`
+- **All scripts** accept `--client {id}` to override the active client
+- **`scripts/client_config.py`** is the central module that all scripts import for client-specific values
+- **Outputs** are namespaced under `outputs/content/{client_id}/`
+- **Onboarding**: Use `/onboard-client` to create a new client from `clients/_template/`
+- **Switching**: Use `/switch-client` to change the active client
 
 ---
 
@@ -114,13 +153,14 @@ One-time setup command. Implements the full content automation infrastructure fr
 
 | Script | Purpose | Key flags |
 |--------|---------|-----------|
-| `apify_scraper.py` | Scrape Twitter/Reddit via Apify for trending topics | `--platform`, `--keywords`, `--count`, `--days`, `--top`, `--output`, `--mock` |
+| `client_config.py` | Multi-client config loader (central module) | Import only: `load_config()`, `get_output_dir()`, `get_keywords()`, etc. |
+| `apify_scraper.py` | Scrape Twitter/Reddit via Apify for trending topics | `--platform`, `--keywords`, `--count`, `--days`, `--top`, `--output`, `--mock`, `--client` |
 | `excel_manager.py` | Excel styling library (no CLI) | Import only: `style_header_cell`, `style_data_cell`, color constants |
-| `nano_banana.py` | Generate EN branded images via WaveSpeed GPT-Image-1.5 | `--prompt`, `--output`, `--style` (minimal, tech, notification), `--mock`, `--no-reference` |
-| `wavespeed_img.py` | Generate RU branded images via WaveSpeed Seedream 4.5 | `--prompt`, `--topic`, `--headline`, `--style`, `--output`, `--mock` |
-| `weekly_pipeline.py` | Weekly pipeline orchestrator (14-col bilingual workbook) | `--action` (create-workbook, save-content, finalize, scrape), `--week-of`, `--mock` |
-| `web_viewer.py` | Flask dashboard server with EN/RU toggle | Runs on localhost:5001, weekly workbooks only |
-| `build_static.py` | Static site builder with EN/RU toggle | `--output`, `--date` (repeatable), copies EN + RU images |
+| `nano_banana.py` | Generate EN branded images via WaveSpeed GPT-Image-1.5 | `--prompt`, `--output`, `--style`, `--mock`, `--no-reference`, `--client` |
+| `wavespeed_img.py` | Generate RU branded images via WaveSpeed Seedream 4.5 | `--prompt`, `--topic`, `--headline`, `--style`, `--output`, `--mock`, `--client` |
+| `weekly_pipeline.py` | Weekly pipeline orchestrator (14-col bilingual workbook) | `--action`, `--week-of`, `--mock`, `--client` |
+| `web_viewer.py` | Flask dashboard server with EN/RU toggle | Runs on localhost:5001, `--client` |
+| `build_static.py` | Static site builder with EN/RU toggle | `--output`, `--date`, `--client` |
 
 ---
 
@@ -142,8 +182,8 @@ One-time setup command. Implements the full content automation infrastructure fr
 
 | Skill | Purpose |
 |-------|---------|
-| `content-generator` | Generate Twitter/Telegram copy from crypto topics, aligned with BoBe's tone |
-| `image-generator` | Create branded images using Gemini API + BoBe mascot style |
+| `content-generator` | Generate Twitter/Telegram copy from topics, using active client's tone and config |
+| `image-generator` | Create branded images using WaveSpeed APIs + client's mascot/brand config |
 | `skill-creator` | Create new Claude skills |
 | `mcp-integration` | Integrate MCP servers into Claude workflows |
 
@@ -155,7 +195,7 @@ One-time setup command. Implements the full content automation infrastructure fr
 |---------|---------------------|---------|
 | Apify | `APIFY_API_TOKEN` | Twitter + Reddit scraping |
 | Google AI | `GOOGLE_AI_API_KEY` | Gemini text translation (RU content) |
-| WaveSpeed | `WAVESPEED_API_KEY` | Seedream 4.5 RU image generation ($0.04/image) |
+| WaveSpeed | `WAVESPEED_API_KEY` | GPT-Image-1.5 (EN) + Seedream 4.5 (RU) image generation |
 
 Store in `.env` (never commit). See `reference/api-setup.md` for setup.
 
@@ -184,6 +224,7 @@ The deployed dashboard is a read-only view of generated content. Content generat
 | `plans/2026-02-18-bobe-content-automation.md` | Implemented | Core content automation infrastructure |
 | `plans/2026-02-18-vercel-static-deployment.md` | Implemented | Deploy dashboard as static site to Cloudflare Pages/GitHub Pages for client access |
 | Russian language support + remove daily pipeline | Implemented | Bilingual EN/RU content generation, WaveSpeed Seedream 4.5 for RU images, EN/RU dashboard toggle, daily pipeline removed |
+| `plans/2026-02-19-multi-client-platform.md` | Implemented | Multi-client architecture: config-driven client isolation, `/onboard-client`, `/switch-client`, all scripts refactored |
 
 ---
 

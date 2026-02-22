@@ -1,6 +1,6 @@
 # Weekly Pipeline
 
-> Fully automated BoBe weekly content pipeline. Run once to generate 21 bilingual content sets (3/day × 7 days) — Twitter threads, Telegram posts, and branded images in English AND Russian — saved to a weekly Excel workbook. Zero user input required after triggering.
+> Fully automated bilingual weekly content pipeline. Run once to generate 21 bilingual content sets (3/day x 7 days) for the active client. Twitter threads, Telegram posts, and branded images in English AND Russian, saved to a weekly Excel workbook. Zero user input required after triggering.
 
 ## Variables
 
@@ -24,31 +24,40 @@ week_of: $ARGUMENTS (optional — if provided must be YYYY-MM-DD; defaults to Mo
    - Sat = week_of + 5 days
    - Sun = week_of + 6 days
 
-3. **Verify prerequisites**:
+3. **Determine active client**:
+   ```bash
+   cat .active-client 2>/dev/null || echo "bobe"
+   ```
+   Read `clients/{active_client}/config.json` to load brand name, keywords, tone, mascot description, style presets, and all client-specific values. All subsequent steps use these config values instead of hardcoded defaults.
+
+4. **Verify prerequisites**:
    ```bash
    ls scripts/weekly_pipeline.py scripts/nano_banana.py scripts/wavespeed_img.py scripts/apify_scraper.py
+   ls clients/{active_client}/config.json
    ```
    Confirm `.env` has `APIFY_API_TOKEN`, `GOOGLE_AI_API_KEY`, and `WAVESPEED_API_KEY`.
 
-4. **Read now** (required for all content generation):
-   - `reference/content-guidelines.md`
-   - `reference/bobe-keywords.md`
+5. **Read now** (required for all content generation):
+   - `clients/{active_client}/content-guidelines.md`
+   - `clients/{active_client}/keywords.md`
+   - `clients/{active_client}/context.md`
 
 ---
 
 ## Phase 1: Scrape Topics
 
-Run the Twitter scraper for the past 7 days:
+Run the Twitter scraper for the past 7 days. Keywords are loaded automatically from the active client's config:
 
 ```bash
 python scripts/apify_scraper.py \
   --platform twitter \
-  --keywords "trading bot,yield,DCA strategy,automated trading,on-chain yield,crypto automation,AI trading,grid bot,passive crypto,crypto bot,DeFi yield,USDT yield,risk management crypto,emotional trading,crypto strategy" \
   --count 100 \
   --days 7 \
   --top 30 \
   --output /tmp/weekly_scraped.json
 ```
+
+(To override the client, add `--client {client_id}`. To override keywords, add `--keywords "keyword1,keyword2,..."`)
 
 Load `/tmp/weekly_scraped.json`. Note how many unique relevant topics it contains.
 
@@ -64,30 +73,15 @@ You need **21 topics total** (3 per day × 7 days). Build the pool:
 4. Each day should have variety: aim for a mix of Pain Point, Education, and Transparency/Product angles.
 5. Across the week, vary the theme so consecutive days don't repeat the same angle.
 
-### Evergreen Fallback Bank (pick in order; skip if angle already covered 3+ times that day)
+### Evergreen Fallback Bank
 
-| # | Topic | Angle |
-|---|-------|-------|
-| 1 | "Why most traders sabotage their own strategies — and how automation fixes it" | Pain Point |
-| 2 | "DCA vs lump-sum investing: which strategy actually wins in volatile markets" | Education |
-| 3 | "What on-chain transparency means and why it matters for yield platforms" | Education |
-| 4 | "The psychology of holding: why humans sell at the bottom and bots don't" | Pain Point |
-| 5 | "Grid trading explained: how bots profit from sideways markets" | Education |
-| 6 | "USDT yield in 2026: sustainable sources vs APY theater" | Education |
-| 7 | "Spot-only trading: why no-leverage strategies outperform long-term" | Education |
-| 8 | "How audited smart contracts change the trust calculus in DeFi" | Transparency |
-| 9 | "The hidden cost of manual crypto trading: time, stress, and missed entries" | Pain Point |
-| 10 | "From emotional to mechanical: what a systematic trading strategy actually looks like" | Education |
-| 11 | "Why crypto automation is not set-and-forget — what real oversight looks like" | Education |
-| 12 | "Comparing bot platforms: what features actually matter vs. what's marketing" | Education |
-| 13 | "Risk management basics every crypto holder should understand before automating" | Education |
-| 14 | "How DeFi yield differs from CeFi yield — and why it matters for your funds" | Education |
-| 15 | "The 3 biggest mistakes new crypto traders make and how automation addresses each" | Pain Point |
-| 16 | "What consistent small returns beat volatile big wins — the math behind steady yield" | Education |
-| 17 | "How trading bots handle market crashes differently than human traders" | Pain Point |
-| 18 | "Understanding on-chain yield distribution: how USDT payouts actually work" | Product |
-| 19 | "Why retail traders need systematic rules more than better market analysis" | Pain Point |
-| 20 | "The compounding effect: why steady automated yield beats inconsistent manual trading" | Education |
+Generate 20 evergreen topics based on the active client's context, keywords, and messaging pillars from `clients/{active_client}/config.json` and `clients/{active_client}/context.md`. Topics should:
+
+- Cover a mix of Pain Point, Education, and Transparency/Product angles
+- Be relevant to the client's product and target audience
+- Align with the client's tone and voice settings
+- Use the client's keywords as thematic anchors
+- NEVER use em-dashes, en-dashes, or double-hyphens in topic text
 
 **Print the full 21-topic schedule as a table before proceeding to Phase 3:**
 
@@ -107,7 +101,7 @@ You need **21 topics total** (3 per day × 7 days). Build the pool:
 python scripts/weekly_pipeline.py --action create-workbook --week-of {week_of}
 ```
 
-Expected: `Weekly workbook created: outputs/content/{week_of}-weekly-content.xlsx`
+Expected: `Weekly workbook created: outputs/content/{active_client}/{week_of}-weekly-content.xlsx`
 
 ---
 
@@ -143,7 +137,7 @@ Number them sequentially: topic 1 Twitter = item 1, topic 1 Telegram = item 2, t
 
 **For each topic N (show progress: "Generating 4/21..."):**
 
-**Step 4a — Generate English content** using the content-generator skill (BoBe voice: transparent, educational, no hype, no guaranteed return claims):
+**Step 4a — Generate English content** using the content-generator skill (use the active client's tone and voice from config):
 - Twitter thread: 5 tweets separated by `---`, each ≤280 chars, hook + insight + insight + BoBe connection + soft CTA
 - Twitter single: 1 tweet ≤280 chars with 2–3 hashtags
 - Telegram: 400–1200 chars, educational tone, ends with engagement question
@@ -159,12 +153,12 @@ Number them sequentially: topic 1 Twitter = item 1, topic 1 Telegram = item 2, t
 
 EN image path:
 ```
-outputs/content/images/{week_of}-weekly/{week_of}_{day_lowercase}_{topic_slug}_{platform_lower}.png
+outputs/content/{active_client}/images/{week_of}-weekly/{week_of}_{day_lowercase}_{topic_slug}_{platform_lower}.png
 ```
 
 RU image path (append `_ru` before `.png`):
 ```
-outputs/content/images/{week_of}-weekly/{week_of}_{day_lowercase}_{topic_slug}_{platform_lower}_ru.png
+outputs/content/{active_client}/images/{week_of}-weekly/{week_of}_{day_lowercase}_{topic_slug}_{platform_lower}_ru.png
 ```
 
 Where `topic_slug` = first 30 chars of topic, lowercased, spaces→underscores, special chars removed.
@@ -181,11 +175,11 @@ Where `platform_lower` = "twitter" or "telegram".
   "format": "thread",
   "content": "Tweet 1 text\n---\nTweet 2 text\n---\nTweet 3 text\n---\nTweet 4 text\n---\nTweet 5 text",
   "image_prompt": "Detailed Gemini image prompt here...",
-  "image_path": "outputs/content/images/{week_of}-weekly/{week_of}_mon_topic-slug_twitter.png",
+  "image_path": "outputs/content/{active_client}/images/{week_of}-weekly/{week_of}_mon_topic-slug_twitter.png",
   "hashtags": ["#DeFi", "#TradingBot", "#BoBe"],
   "content_ru": "Твит 1\n---\nТвит 2\n---\nТвит 3\n---\nТвит 4\n---\nТвит 5",
   "image_prompt_ru": "Same structure as image_prompt but with Cyrillic headline text...",
-  "image_path_ru": "outputs/content/images/{week_of}-weekly/{week_of}_mon_topic-slug_twitter_ru.png",
+  "image_path_ru": "outputs/content/{active_client}/images/{week_of}-weekly/{week_of}_mon_topic-slug_twitter_ru.png",
   "hashtags_ru": ["#DeFi", "#TradingBot", "#BoBe", "#Крипто"],
   "status": "Draft"
 }
@@ -215,7 +209,7 @@ EN image (one per topic, shared between Twitter and Telegram):
 ```bash
 source venv/bin/activate && python scripts/nano_banana.py \
   --prompt "{image_prompt from weekly_content_{2N-1}.json}" \
-  --output "outputs/content/images/{week_of}-weekly/{week_of}_{day_lower}_{topic_slug}_{platform_lower}.png" \
+  --output "outputs/content/{active_client}/images/{week_of}-weekly/{week_of}_{day_lower}_{topic_slug}_{platform_lower}.png" \
   --style {style}
 ```
 
@@ -223,7 +217,7 @@ RU image (same topic, `_ru` appended before `.png`):
 ```bash
 source venv/bin/activate && python scripts/wavespeed_img.py \
   --prompt "{image_prompt_ru from weekly_content_{2N-1}.json}" \
-  --output "outputs/content/images/{week_of}-weekly/{week_of}_{day_lower}_{topic_slug}_{platform_lower}_ru.png"
+  --output "outputs/content/{active_client}/images/{week_of}-weekly/{week_of}_{day_lower}_{topic_slug}_{platform_lower}_ru.png"
 ```
 
 If an image fails, log the error and continue to the next — do not halt.
@@ -239,7 +233,7 @@ python scripts/weekly_pipeline.py --action finalize --week-of {week_of}
 **Then print the full week summary:**
 
 ```
-BoBe Weekly Pipeline Complete
+{display_name} Weekly Pipeline Complete
 Week of: {week_of}
 
 Mon {date}: [topic 1] | [topic 2] | [topic 3]
@@ -251,9 +245,9 @@ Sat {date}: [topic 16] | [topic 17] | [topic 18]
 Sun {date}: [topic 19] | [topic 20] | [topic 21]
 
 Content: 42 bilingual rows (21 EN + 21 RU per platform)
-Images:  42 total (21 EN via Gemini + 21 RU via Seedream 4.5)
-Excel:   outputs/content/{week_of}-weekly-content.xlsx
-Images:  outputs/content/images/{week_of}-weekly/
+Images:  42 total (21 EN via GPT-Image-1.5 + 21 RU via Seedream 4.5)
+Excel:   outputs/content/{active_client}/{week_of}-weekly-content.xlsx
+Images:  outputs/content/{active_client}/images/{week_of}-weekly/
 
 To review: /view-content week:{week_of}
 ```
@@ -282,11 +276,11 @@ If yes:
 
 | Error | Recovery |
 |-------|----------|
-| Scraping fails / 0 results | Log warning, use 100% evergreen fallback topics — do not halt |
-| EN image (Gemini) fails for one topic | Log error, keep pre-computed image_path in workbook, continue |
+| Scraping fails / 0 results | Log warning, use 100% evergreen fallback topics, do not halt |
+| EN image (GPT-Image-1.5) fails for one topic | Log error, keep pre-computed image_path in workbook, continue |
 | RU image (WaveSpeed) fails for one topic | Log error, keep pre-computed image_path_ru in workbook, continue |
-| Excel save fails for one item | Log error, continue — other items are already saved |
-| Em-dash found in generated content | Regenerate only that item — replace `—`, `–`, `--` with commas or colons |
+| Excel save fails for one item | Log error, continue; other items are already saved |
+| Em-dash found in generated content | Regenerate only that item: replace `—`, `–`, `--` with commas or colons |
 | WAVESPEED_API_KEY missing | Stop and print "WAVESPEED_API_KEY not set in .env" |
 | API key missing | Stop and print the specific missing key name |
 

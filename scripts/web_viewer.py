@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-BoBe Content Dashboard — Flask web viewer
-Reads the most recent (or specified) weekly Excel from outputs/content/
-and serves a bilingual (EN/RU) visual dashboard at http://localhost:5001
+Content Dashboard — Flask web viewer
+Multi-client: reads brand name and output paths from client config.
+Serves a bilingual (EN/RU) visual dashboard at http://localhost:5001
 
 Usage:
   python scripts/web_viewer.py                       # auto-loads latest weekly workbook
   python scripts/web_viewer.py week:2026-02-16       # loads specific week
+  python scripts/web_viewer.py --client newclient     # view a specific client
 """
 
 import sys
@@ -18,8 +19,29 @@ import threading
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
-CONTENT_DIR  = PROJECT_ROOT / "outputs" / "content"
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
+import client_config
+
+# Resolve active client for this session
+_active_client = client_config.get_active_client()
+_client_config = client_config.load_config(_active_client)
+_display_name = _client_config.get("display_name", _active_client)
+
+CONTENT_DIR  = client_config.get_output_dir(_active_client)
 IMAGES_DIR   = CONTENT_DIR / "images"
+
+
+def _reload_active_client(client_id):
+    """Update all module-level globals and persist the active client switch."""
+    global _active_client, _client_config, _display_name, CONTENT_DIR, IMAGES_DIR
+    client_config.set_active_client(client_id)
+    _active_client = client_id
+    _client_config = client_config.load_config(client_id)
+    _display_name = _client_config.get("display_name", client_id)
+    CONTENT_DIR = client_config.get_output_dir(client_id)
+    IMAGES_DIR = CONTENT_DIR / "images"
+
 
 try:
     from flask import Flask, render_template_string, send_from_directory, request, jsonify
@@ -34,9 +56,8 @@ except ImportError:
     sys.exit(1)
 
 # Try to import image generator — graceful degradation if not available
-sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 try:
-    from nano_banana import generate_image as gen_img, build_prompt, DEFAULT_REFERENCES
+    from nano_banana import generate_image as gen_img, build_prompt, get_default_references
     HAS_GENERATOR = True
 except Exception:
     HAS_GENERATOR = False
@@ -238,7 +259,8 @@ HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BoBe Content Dashboard</title>
+<title>{{ brand_name }} Content Dashboard</title>
+<link rel="icon" type="image/jpeg" href="/favicon.jpg">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -330,6 +352,22 @@ HTML = """<!DOCTYPE html>
   }
   .date-select:hover { border-color: var(--blue); }
 
+  /* ── Admin link ── */
+  .admin-link {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: 7px;
+    transition: color 0.15s, background 0.15s;
+    white-space: nowrap;
+  }
+  .admin-link:hover {
+    color: var(--blue);
+    background: var(--blue-dim);
+  }
+
   /* ── Language toggle ── */
   .lang-toggle {
     display: flex;
@@ -355,10 +393,19 @@ HTML = """<!DOCTYPE html>
   }
   .lang-btn:hover:not(.active) { color: var(--text); }
 
-  /* EN/RU visibility */
-  .ru-only { display: none; }
-  body.lang-ru .ru-only { display: block; }
-  body.lang-ru .en-only { display: none; }
+  /* EN/RU visibility — hide RU elements by default, show in RU mode */
+  .ru-only,
+  div.ru-only,
+  .card-img.ru-only,
+  .image-actions.ru-only { display: none !important; }
+  body.lang-ru .ru-only,
+  body.lang-ru div.ru-only { display: block !important; }
+  body.lang-ru .card-img.ru-only { display: block !important; }
+  body.lang-ru .image-actions.ru-only { display: flex !important; }
+  body.lang-ru .en-only,
+  body.lang-ru div.en-only,
+  body.lang-ru .card-img.en-only,
+  body.lang-ru .image-actions.en-only { display: none !important; }
 
   /* ── Grid ── */
   .grid {
@@ -807,7 +854,7 @@ HTML = """<!DOCTYPE html>
 <div id="toast"></div>
 
 <header>
-  <div class="brand">BoBe<span class="brand-dot">.</span></div>
+  <div class="brand">{{ brand_name }}<span class="brand-dot">.</span></div>
   <div class="header-sep"></div>
   <div class="header-date">{{ date }}</div>
   {% if topics %}
@@ -823,6 +870,7 @@ HTML = """<!DOCTYPE html>
     </select>
   </form>
   {% endif %}
+  <a href="/admin" class="admin-link">Admin</a>
   <div class="lang-toggle">
     <button class="lang-btn active" id="btn-en" onclick="setLang('en')">EN</button>
     <button class="lang-btn" id="btn-ru" onclick="setLang('ru')">RU</button>
@@ -884,8 +932,8 @@ HTML = """<!DOCTYPE html>
               {% if not t.image_filename_ru %}disabled{% endif %}>↻ Regenerate</button>
     </div>
 
-    <!-- Image approval actions -->
-    <div class="image-actions">
+    <!-- Image approval actions (EN only) -->
+    <div class="image-actions en-only">
       <span class="img-status" id="status-{{ loop.index }}">Pending review</span>
       <button class="action-btn approve-btn" id="approve-{{ loop.index }}"
               onclick="approveImage({{ loop.index }})">✓ Approve</button>
@@ -1024,10 +1072,10 @@ function setLang(lang) {
   document.body.classList.toggle('lang-ru', lang === 'ru');
   document.getElementById('btn-en').classList.toggle('active', lang === 'en');
   document.getElementById('btn-ru').classList.toggle('active', lang === 'ru');
-  localStorage.setItem('bobe-lang', lang);
+  localStorage.setItem('content-dash-lang', lang);
 }
 // Restore language preference on load
-(function(){ if(localStorage.getItem('bobe-lang')==='ru') setLang('ru'); })();
+(function(){ if(localStorage.getItem('content-dash-lang')==='ru') setLang('ru'); })();
 
 // ── Toast ───────────────────────────────────────────────────────────────────
 let toastTimer;
@@ -1182,7 +1230,7 @@ async function approveImage(idx) {
 // ── Regeneration (async + polling) ───────────────────────────────────────────
 async function regenImage(idx) {
   if (!HAS_GENERATOR) {
-    showToast('Image generator not available — check WAVESPEED_API_KEY', true);
+    showToast('Image generator not available, check WAVESPEED_API_KEY', true);
     return;
   }
 
@@ -1437,6 +1485,907 @@ loadApprovals();
 </html>"""
 
 
+# ── Admin HTML template ────────────────────────────────────────────────────────
+
+ADMIN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Client Admin</title>
+<link rel="icon" type="image/jpeg" href="/favicon.jpg">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0D1526;
+    --surface:   #111B32;
+    --surface2:  #162038;
+    --border:    rgba(21,137,220,0.15);
+    --blue:      #1589DC;
+    --blue-dim:  rgba(21,137,220,0.12);
+    --green:     #5BD69F;
+    --green-dim: rgba(91,214,159,0.12);
+    --yellow:    #E0C145;
+    --yellow-dim:rgba(224,193,69,0.12);
+    --pink:      #FF4FDA;
+    --white:     #FFFFFF;
+    --muted:     #6B82A8;
+    --text:      #C8D8EE;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--white);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+
+  header {
+    background: #080F1E;
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 200;
+  }
+
+  .brand {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--blue);
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+
+  .spacer { flex: 1; }
+
+  .back-link {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: color 0.15s;
+  }
+  .back-link:hover { color: var(--blue); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 24px;
+    padding: 28px 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  @media (max-width: 500px) {
+    .grid { grid-template-columns: 1fr; padding: 14px; gap: 16px; }
+    header { padding: 0 14px; gap: 10px; }
+  }
+
+  .client-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .client-card:hover {
+    border-color: rgba(21,137,220,0.35);
+    box-shadow: 0 4px 32px rgba(21,137,220,0.08);
+  }
+  .client-card.is-active {
+    border-color: rgba(91,214,159,0.4);
+  }
+  .client-card.is-active:hover {
+    border-color: rgba(91,214,159,0.6);
+    box-shadow: 0 4px 32px rgba(91,214,159,0.08);
+  }
+
+  .card-stripe {
+    height: 4px;
+    width: 100%;
+  }
+
+  .card-body {
+    padding: 18px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .client-name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--white);
+  }
+
+  .active-badge {
+    background: var(--green-dim);
+    border: 1px solid rgba(91,214,159,0.3);
+    color: var(--green);
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .client-tagline {
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+
+  .client-website {
+    font-size: 0.78rem;
+    color: var(--blue);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .client-website:hover { color: #1DA0FF; }
+
+  .stats {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 4px;
+  }
+  .stat-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    color: var(--text);
+  }
+  .stat-label {
+    color: var(--muted);
+    min-width: 95px;
+  }
+
+  .color-swatches {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding-top: 2px;
+  }
+  .swatch {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    border: 1px solid rgba(255,255,255,0.1);
+    position: relative;
+  }
+  .swatch-label {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-left: 4px;
+  }
+
+  .switch-btn {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid rgba(21,137,220,0.3);
+    border-radius: 9px;
+    background: var(--blue-dim);
+    color: var(--blue);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-top: 4px;
+  }
+  .switch-btn:hover:not(:disabled) {
+    background: rgba(21,137,220,0.2);
+    border-color: rgba(21,137,220,0.5);
+  }
+  .switch-btn:disabled {
+    background: var(--green-dim);
+    border-color: rgba(91,214,159,0.3);
+    color: var(--green);
+    cursor: default;
+  }
+
+  .new-client-card {
+    border-style: dashed;
+    border-color: rgba(21,137,220,0.25);
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .new-client-card:hover {
+    border-color: rgba(21,137,220,0.5);
+    background: var(--blue-dim);
+  }
+
+  .footer-banner {
+    text-align: center;
+    padding: 18px 24px;
+    font-size: 0.82rem;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    margin-top: 12px;
+  }
+  .footer-banner code {
+    background: var(--surface2);
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 0.82rem;
+    color: var(--blue);
+  }
+
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #1A2540;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 18px;
+    border-radius: 9px;
+    font-size: 0.8rem;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+    z-index: 500;
+    white-space: nowrap;
+  }
+  #toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  #toast.error { border-color: rgba(255,79,218,0.3); color: #FF9EED; }
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<header>
+  <div class="brand">Client Admin</div>
+  <div class="spacer"></div>
+  <a href="/" class="back-link">Back to Dashboard &rarr;</a>
+</header>
+
+<main class="grid">
+  <a href="/admin/new" class="client-card new-client-card" title="Onboard a new client">
+    <div class="card-body" style="align-items:center;justify-content:center;min-height:220px;">
+      <span style="font-size:2.5rem;color:var(--muted);opacity:0.5;">+</span>
+      <span style="font-size:0.9rem;color:var(--muted);font-weight:600;">New Client</span>
+    </div>
+  </a>
+
+  {% for c in clients %}
+  <div class="client-card{% if c.is_active %} is-active{% endif %}" id="card-{{ c.client_id }}">
+    <div class="card-stripe" style="background: {{ c.accent_color }}"></div>
+    <div class="card-body">
+      <div class="card-header">
+        <span class="client-name">{{ c.display_name }}</span>
+        {% if c.is_active %}
+        <span class="active-badge">Active</span>
+        {% endif %}
+      </div>
+
+      {% if c.tagline %}
+      <div class="client-tagline">{{ c.tagline }}</div>
+      {% endif %}
+
+      {% if c.website %}
+      <a href="https://{{ c.website }}" target="_blank" rel="noopener" class="client-website">{{ c.website }}</a>
+      {% endif %}
+
+      <div class="stats">
+        <div class="stat-row">
+          <span class="stat-label">Languages</span>
+          <span>{{ c.languages | join(', ') | upper }} ({{ c.languages | length }})</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Keywords</span>
+          <span>{{ c.keyword_count }}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Content weeks</span>
+          <span>{{ c.content_weeks }}</span>
+        </div>
+      </div>
+
+      <div class="color-swatches">
+        <div class="swatch" style="background: {{ c.primary_color }}" title="Primary: {{ c.primary_color }}"></div>
+        <div class="swatch" style="background: {{ c.accent_color }}" title="Accent: {{ c.accent_color }}"></div>
+        {% if c.secondary_accent %}
+        <div class="swatch" style="background: {{ c.secondary_accent }}" title="Secondary: {{ c.secondary_accent }}"></div>
+        {% endif %}
+        <span class="swatch-label">Brand colors</span>
+      </div>
+
+      <button class="switch-btn"
+              {% if c.is_active %}disabled{% endif %}
+              onclick="switchClient('{{ c.client_id }}')">
+        {% if c.is_active %}Active{% else %}Switch to {{ c.display_name }}{% endif %}
+      </button>
+    </div>
+  </div>
+  {% endfor %}
+</main>
+
+<div class="footer-banner">
+  <a href="/admin/new" style="color:var(--blue);text-decoration:none;">+ Onboard a new client</a> or run <code>/onboard-client &lt;name&gt;</code> from the CLI.
+</div>
+
+<script>
+let toastTimer;
+function showToast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show' + (isError ? ' error' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 3000);
+}
+
+async function switchClient(clientId) {
+  try {
+    const res = await fetch('/api/admin/switch-client', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: clientId }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Switched to ' + data.display_name);
+      setTimeout(() => location.reload(), 800);
+    } else {
+      showToast(data.error || 'Switch failed', true);
+    }
+  } catch (e) {
+    showToast('Switch failed: ' + e.message, true);
+  }
+}
+</script>
+</body>
+</html>"""
+
+
+# ── Onboard HTML template ──────────────────────────────────────────────────────
+
+ONBOARD_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>New Client</title>
+<link rel="icon" type="image/jpeg" href="/favicon.jpg">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0D1526;
+    --surface:   #111B32;
+    --surface2:  #162038;
+    --border:    rgba(21,137,220,0.15);
+    --blue:      #1589DC;
+    --blue-dim:  rgba(21,137,220,0.12);
+    --green:     #5BD69F;
+    --green-dim: rgba(91,214,159,0.12);
+    --yellow:    #E0C145;
+    --pink:      #FF4FDA;
+    --white:     #FFFFFF;
+    --muted:     #6B82A8;
+    --text:      #C8D8EE;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--white);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+
+  header {
+    background: #080F1E;
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 200;
+  }
+
+  .brand {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--blue);
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+
+  .spacer { flex: 1; }
+
+  .back-link {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: color 0.15s;
+  }
+  .back-link:hover { color: var(--blue); }
+
+  .form-container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 28px 24px 60px;
+  }
+
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 22px;
+    margin-bottom: 20px;
+  }
+
+  .section-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  .field {
+    margin-bottom: 14px;
+  }
+  .field:last-child { margin-bottom: 0; }
+
+  label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 5px;
+  }
+
+  label .hint {
+    font-weight: 400;
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+
+  input[type="text"],
+  input[type="url"],
+  textarea {
+    width: 100%;
+    background: #080F1E;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 12px;
+    color: var(--white);
+    font-family: inherit;
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input:focus, textarea:focus {
+    border-color: var(--blue);
+  }
+  textarea {
+    min-height: 80px;
+    resize: vertical;
+    line-height: 1.5;
+  }
+
+  .row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .color-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 12px;
+  }
+
+  .color-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .color-field label {
+    font-size: 0.75rem;
+  }
+
+  .color-input-wrap {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  input[type="color"] {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: none;
+    cursor: pointer;
+    padding: 2px;
+  }
+
+  .color-input-wrap input[type="text"] {
+    width: 90px;
+    font-family: monospace;
+    font-size: 0.78rem;
+    padding: 6px 8px;
+  }
+
+  .check-group {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+  }
+
+  .check-group label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+
+  input[type="checkbox"] {
+    accent-color: var(--blue);
+    width: 16px;
+    height: 16px;
+  }
+
+  input[type="file"] {
+    color: var(--text);
+    font-size: 0.82rem;
+  }
+
+  .slug-preview {
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-family: monospace;
+    margin-top: 3px;
+  }
+
+  .submit-btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--blue);
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    letter-spacing: 0.3px;
+  }
+  .submit-btn:hover { background: #1070BB; }
+  .submit-btn:active { transform: scale(0.98); }
+  .submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #1A2540;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 18px;
+    border-radius: 9px;
+    font-size: 0.8rem;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+    z-index: 500;
+    white-space: nowrap;
+  }
+  #toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  #toast.error { border-color: rgba(255,79,218,0.3); color: #FF9EED; }
+
+  @media (max-width: 500px) {
+    .form-container { padding: 14px; }
+    .row-2 { grid-template-columns: 1fr; }
+    .color-row { grid-template-columns: 1fr 1fr; }
+    header { padding: 0 14px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<header>
+  <div class="brand">New Client</div>
+  <div class="spacer"></div>
+  <a href="/admin" class="back-link">&larr; Back to Admin</a>
+</header>
+
+<div class="form-container">
+<form id="onboard-form" enctype="multipart/form-data">
+
+  <!-- Basic Info -->
+  <div class="section">
+    <div class="section-title">Basic Info</div>
+    <div class="field">
+      <label>Display Name <span class="hint">(required)</span></label>
+      <input type="text" name="display_name" id="display_name" required placeholder="Acme Crypto">
+    </div>
+    <div class="field">
+      <label>Client ID <span class="hint">(auto-generated from name)</span></label>
+      <input type="text" name="client_id" id="client_id" placeholder="acme-crypto" readonly>
+      <div class="slug-preview" id="slug-preview">clients/<span id="slug-text">...</span>/</div>
+    </div>
+    <div class="row-2">
+      <div class="field">
+        <label>Tagline</label>
+        <input type="text" name="tagline" placeholder="Short tagline describing the product">
+      </div>
+      <div class="field">
+        <label>Website</label>
+        <input type="text" name="website" placeholder="example.com">
+      </div>
+    </div>
+  </div>
+
+  <!-- Brand Colors -->
+  <div class="section">
+    <div class="section-title">Brand Colors</div>
+    <div class="color-row">
+      <div class="color-field">
+        <label>Primary</label>
+        <div class="color-input-wrap">
+          <input type="color" name="primary_color_picker" value="#1a1a2e" onchange="syncColor(this, 'primary_color')">
+          <input type="text" name="primary_color" value="#1a1a2e" onchange="syncPicker(this, 'primary_color_picker')">
+        </div>
+      </div>
+      <div class="color-field">
+        <label>Accent</label>
+        <div class="color-input-wrap">
+          <input type="color" name="accent_color_picker" value="#1589DC" onchange="syncColor(this, 'accent_color')">
+          <input type="text" name="accent_color" value="#1589DC" onchange="syncPicker(this, 'accent_color_picker')">
+        </div>
+      </div>
+      <div class="color-field">
+        <label>Text</label>
+        <div class="color-input-wrap">
+          <input type="color" name="text_color_picker" value="#ffffff" onchange="syncColor(this, 'text_color')">
+          <input type="text" name="text_color" value="#ffffff" onchange="syncPicker(this, 'text_color_picker')">
+        </div>
+      </div>
+      <div class="color-field">
+        <label>Secondary</label>
+        <div class="color-input-wrap">
+          <input type="color" name="secondary_accent_picker" value="#FF4FDA" onchange="syncColor(this, 'secondary_accent')">
+          <input type="text" name="secondary_accent" value="#FF4FDA" onchange="syncPicker(this, 'secondary_accent_picker')">
+        </div>
+      </div>
+      <div class="color-field">
+        <label>Surface</label>
+        <div class="color-input-wrap">
+          <input type="color" name="surface_color_picker" value="#111B32" onchange="syncColor(this, 'surface_color')">
+          <input type="text" name="surface_color" value="#111B32" onchange="syncPicker(this, 'surface_color_picker')">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Brand Identity -->
+  <div class="section">
+    <div class="section-title">Brand Identity</div>
+    <div class="field">
+      <label>Mascot Description <span class="hint">(appearance, style, features)</span></label>
+      <textarea name="mascot_description" rows="3" placeholder="A friendly robot mascot with blue eyes and metallic silver body..."></textarea>
+    </div>
+    <div class="field">
+      <label>Logo Description <span class="hint">(how it appears in images)</span></label>
+      <input type="text" name="logo_description" placeholder="Centered white logo on dark background, small bottom-right watermark">
+    </div>
+    <div class="row-2">
+      <div class="field">
+        <label>Background Style</label>
+        <input type="text" name="background_style" placeholder="Dark gradient with subtle particle effects">
+      </div>
+      <div class="field">
+        <label>Background Gradient</label>
+        <input type="text" name="background_gradient" placeholder="#111b32 to #070a1b">
+      </div>
+    </div>
+    <div class="field">
+      <label>Logo File <span class="hint">(optional, PNG preferred)</span></label>
+      <input type="file" name="logo" accept="image/png,image/jpeg,image/webp">
+    </div>
+  </div>
+
+  <!-- Content Voice -->
+  <div class="section">
+    <div class="section-title">Content Voice</div>
+    <div class="field">
+      <label>Tone <span class="hint">(e.g. transparent, educational, no hype)</span></label>
+      <input type="text" name="tone" placeholder="Professional, educational, transparent">
+    </div>
+    <div class="field">
+      <label>Voice <span class="hint">(longer description of brand communication style)</span></label>
+      <textarea name="voice" rows="3" placeholder="We communicate in a straightforward, educational style. We never overpromise returns..."></textarea>
+    </div>
+    <div class="row-2">
+      <div class="field">
+        <label>CTA URL</label>
+        <input type="text" name="cta_url" placeholder="example.com">
+      </div>
+      <div class="field">
+        <label>CTA Examples <span class="hint">(one per line)</span></label>
+        <textarea name="cta_examples" rows="2" placeholder="Learn more at example.com&#10;Try it free: example.com"></textarea>
+      </div>
+    </div>
+    <div class="field">
+      <label>Brand Terms to Keep <span class="hint">(one per line, always capitalized as-is)</span></label>
+      <textarea name="brand_terms_keep" rows="2" placeholder="BrandName&#10;ProductName"></textarea>
+    </div>
+    <div class="field">
+      <label>Hashtags <span class="hint">(one per line)</span></label>
+      <textarea name="hashtags" rows="2" placeholder="#BrandName&#10;#Crypto"></textarea>
+    </div>
+    <div class="field">
+      <label>Messaging Pillars <span class="hint">(one per line, "Name: Description")</span></label>
+      <textarea name="messaging_pillars" rows="3" placeholder="Education: Help users understand DeFi concepts&#10;Trust: Build confidence through transparency"></textarea>
+    </div>
+  </div>
+
+  <!-- Scraping Config -->
+  <div class="section">
+    <div class="section-title">Scraping Config</div>
+    <div class="field">
+      <label>Keywords <span class="hint">(one per line)</span></label>
+      <textarea name="keywords" rows="3" placeholder="crypto yield&#10;DeFi automation&#10;trading bot"></textarea>
+    </div>
+    <div class="field">
+      <label>Negative Keywords <span class="hint">(one per line, filter these out)</span></label>
+      <textarea name="negative_keywords" rows="2" placeholder="scam&#10;spam&#10;rug pull"></textarea>
+    </div>
+    <div class="field">
+      <label>Subreddits <span class="hint">(one per line, without r/)</span></label>
+      <textarea name="subreddits" rows="2" placeholder="cryptocurrency&#10;defi"></textarea>
+    </div>
+  </div>
+
+  <!-- Image Style Presets -->
+  <div class="section">
+    <div class="section-title">Image Style Presets</div>
+    <div class="field">
+      <label>Minimal</label>
+      <textarea name="preset_minimal" rows="2">clean minimalist banner, solid dark background</textarea>
+    </div>
+    <div class="field">
+      <label>Tech</label>
+      <textarea name="preset_tech" rows="2">futuristic data visualization banner with glowing elements</textarea>
+    </div>
+    <div class="field">
+      <label>Notification</label>
+      <textarea name="preset_notification" rows="2">realistic smartphone mockup showing app notification</textarea>
+    </div>
+  </div>
+
+  <!-- Languages -->
+  <div class="section">
+    <div class="section-title">Languages</div>
+    <div class="check-group">
+      <label><input type="checkbox" name="lang_en" checked> English</label>
+      <label><input type="checkbox" name="lang_ru"> Russian</label>
+    </div>
+  </div>
+
+  <button type="submit" class="submit-btn" id="submit-btn">Create Client</button>
+
+</form>
+</div>
+
+<script>
+function slugify(text) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 40);
+}
+
+const nameInput = document.getElementById('display_name');
+const idInput = document.getElementById('client_id');
+const slugText = document.getElementById('slug-text');
+
+nameInput.addEventListener('input', () => {
+  const slug = slugify(nameInput.value);
+  idInput.value = slug;
+  slugText.textContent = slug || '...';
+});
+
+function syncColor(picker, textName) {
+  document.querySelector(`input[name="${textName}"]`).value = picker.value.toUpperCase();
+}
+function syncPicker(text, pickerName) {
+  const picker = document.querySelector(`input[name="${pickerName}"]`);
+  if (/^#[0-9A-Fa-f]{6}$/.test(text.value)) picker.value = text.value;
+}
+
+function linesArray(name) {
+  const el = document.querySelector(`[name="${name}"]`);
+  if (!el) return [];
+  return el.value.split('\\n').map(s => s.trim()).filter(Boolean);
+}
+
+let toastTimer;
+function showToast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show' + (isError ? ' error' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 4000);
+}
+
+document.getElementById('onboard-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+
+  try {
+    const form = e.target;
+    const fd = new FormData(form);
+
+    // Add checkbox values explicitly
+    fd.set('lang_en', form.lang_en.checked ? '1' : '0');
+    fd.set('lang_ru', form.lang_ru.checked ? '1' : '0');
+
+    const res = await fetch('/api/admin/create-client', {
+      method: 'POST',
+      body: fd,
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast('Client created: ' + data.client_id);
+      setTimeout(() => { window.location.href = '/admin'; }, 1200);
+    } else {
+      showToast(data.error || 'Creation failed', true);
+      btn.disabled = false;
+      btn.textContent = 'Create Client';
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message, true);
+    btn.disabled = false;
+    btn.textContent = 'Create Client';
+  }
+});
+</script>
+</body>
+</html>"""
+
+
 # ── Approval API routes ────────────────────────────────────────────────────────
 
 @app.route("/api/approvals")
@@ -1465,7 +2414,7 @@ def api_approve():
 def api_regenerate():
     """Start an async EN image regeneration job (Gemini). Returns a job_id immediately."""
     if not HAS_GENERATOR:
-        return jsonify({"success": False, "error": "Image generator not available. Check WAVESPEED_API_KEY."}), 503
+        return jsonify({"success": False, "error": "Image generator not available. Check WAVESPEED_API_KEY and imports."}), 503
 
     data       = request.get_json(force=True)
     date       = data.get("date", "")
@@ -1492,7 +2441,7 @@ def api_regenerate():
     def _run():
         try:
             prompt = img_prompt if img_prompt else build_prompt(topic=topic, style=style)
-            gen_img(prompt, output_path, DEFAULT_REFERENCES)
+            gen_img(prompt, output_path, get_default_references(_active_client))
             approvals = load_approvals(date)
             approvals[topic] = {"status": "pending", "image": filename}
             save_approvals(date, approvals)
@@ -1749,7 +2698,348 @@ def api_regenerate_ru():
     return jsonify({"success": True, "job_id": job_id})
 
 
+# ── Admin routes ───────────────────────────────────────────────────────────────
+
+@app.route("/admin/new")
+def admin_new_client():
+    return render_template_string(ONBOARD_HTML)
+
+
+@app.route("/api/admin/create-client", methods=["POST"])
+def api_admin_create_client():
+    """Create a new client from the onboarding form (multipart/form-data)."""
+    import shutil
+
+    try:
+        display_name = (request.form.get("display_name") or "").strip()
+        if not display_name:
+            return jsonify({"success": False, "error": "Display name is required"}), 400
+
+        # Slugify client_id
+        raw_id = (request.form.get("client_id") or "").strip()
+        if not raw_id:
+            raw_id = re.sub(r"[^a-z0-9]+", "-", display_name.lower()).strip("-")[:40]
+        client_id = raw_id
+
+        if not client_id:
+            return jsonify({"success": False, "error": "Could not generate a valid client ID"}), 400
+
+        # Check for existing client
+        client_dir = PROJECT_ROOT / "clients" / client_id
+        if client_dir.exists():
+            return jsonify({"success": False, "error": f"Client '{client_id}' already exists"}), 409
+
+        # Gather form fields
+        tagline = (request.form.get("tagline") or "").strip()
+        website = (request.form.get("website") or "").strip()
+        primary_color = (request.form.get("primary_color") or "#1a1a2e").strip()
+        accent_color = (request.form.get("accent_color") or "#1589DC").strip()
+        text_color = (request.form.get("text_color") or "#ffffff").strip()
+        secondary_accent = (request.form.get("secondary_accent") or "#FF4FDA").strip()
+        surface_color = (request.form.get("surface_color") or "#111B32").strip()
+        background_gradient = (request.form.get("background_gradient") or f"{surface_color} to #070a1b").strip()
+        mascot_description = (request.form.get("mascot_description") or "").strip()
+        logo_description = (request.form.get("logo_description") or "").strip()
+        background_style = (request.form.get("background_style") or "").strip()
+        tone = (request.form.get("tone") or "").strip()
+        voice = (request.form.get("voice") or "").strip()
+        cta_url = (request.form.get("cta_url") or website).strip()
+
+        def _lines(field_name):
+            val = (request.form.get(field_name) or "").strip()
+            return [line.strip() for line in val.split("\n") if line.strip()] if val else []
+
+        cta_examples = _lines("cta_examples")
+        brand_terms = _lines("brand_terms_keep")
+        hashtags = _lines("hashtags")
+        pillars = _lines("messaging_pillars")
+        keywords = _lines("keywords")
+        negative_keywords = _lines("negative_keywords")
+        subreddits = _lines("subreddits")
+        preset_minimal = (request.form.get("preset_minimal") or "clean minimalist banner, solid dark background").strip()
+        preset_tech = (request.form.get("preset_tech") or "futuristic data visualization banner with glowing elements").strip()
+        preset_notification = (request.form.get("preset_notification") or "realistic smartphone mockup showing app notification").strip()
+
+        languages = []
+        if request.form.get("lang_en") == "1":
+            languages.append("en")
+        if request.form.get("lang_ru") == "1":
+            languages.append("ru")
+        if not languages:
+            languages = ["en"]
+
+        # Create directory structure
+        brand_dir = client_dir / "brand"
+        brand_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy brand README from template
+        template_brand_readme = PROJECT_ROOT / "clients" / "_template" / "brand" / "README.md"
+        if template_brand_readme.exists():
+            shutil.copy2(str(template_brand_readme), str(brand_dir / "README.md"))
+
+        # Save logo if uploaded
+        logo_file = request.files.get("logo")
+        has_logo = False
+        if logo_file and logo_file.filename:
+            logo_file.save(str(brand_dir / "logo.png"))
+            has_logo = True
+
+        # Build config.json
+        config = {
+            "client_id": client_id,
+            "display_name": display_name,
+            "tagline": tagline,
+            "website": website,
+            "brand": {
+                "primary_color": primary_color,
+                "accent_color": accent_color,
+                "text_color": text_color,
+                "secondary_accent": secondary_accent,
+                "surface_color": surface_color,
+                "background_gradient": background_gradient,
+                "logo_path": "brand/logo.png",
+                "reference_images": ["brand/logo.png"] if has_logo else [],
+                "mascot_description": mascot_description,
+                "logo_description": logo_description,
+                "background_style": background_style,
+            },
+            "content": {
+                "tone": tone,
+                "voice": voice,
+                "brand_terms_keep": brand_terms if brand_terms else [display_name],
+                "cta_url": cta_url,
+                "cta_examples": cta_examples,
+                "hashtags": hashtags,
+                "messaging_pillars": pillars,
+            },
+            "scraping": {
+                "keywords": keywords,
+                "negative_keywords": negative_keywords if negative_keywords else ["scam", "spam"],
+                "subreddits": subreddits,
+            },
+            "image": {
+                "style_presets": {
+                    "minimal": preset_minimal,
+                    "tech": preset_tech,
+                    "notification": preset_notification,
+                }
+            },
+            "languages": languages,
+        }
+
+        (client_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+
+        # Generate content-guidelines.md
+        pillar_sections = ""
+        for i, p in enumerate(pillars, 1):
+            parts = p.split(":", 1)
+            name = parts[0].strip()
+            desc = parts[1].strip() if len(parts) > 1 else ""
+            pillar_sections += f"\n### {i}. {name}\n{desc}\n"
+
+        hashtag_str = ", ".join(hashtags) if hashtags else "[No hashtags configured]"
+        cta_str = "\n".join(f"- {c}" for c in cta_examples) if cta_examples else "- [No CTAs configured]"
+
+        guidelines = f"""# Content Guidelines
+
+Reference for content generation. All generated content must align with these principles.
+
+---
+
+## Brand Voice
+
+**{tone if tone else '[Not configured]'}**
+
+{voice if voice else '[Voice description not provided. Fill in details about how the brand communicates.]'}
+
+---
+
+## Messaging Pillars
+
+Every piece of content should connect to one or more of these:
+{pillar_sections if pillar_sections else '''
+### 1. [Pillar Name]
+[Description]
+'''}
+---
+
+## Twitter / X Guidelines
+
+### Single Post (280 chars max)
+- Concise, value-driven statement
+- Include 2-3 relevant hashtags
+
+### Thread (3-5 tweets)
+- Tweet 1: Hook
+- Tweets 2-3: Value/education
+- Tweet 4: Brand connection
+- Tweet 5: CTA
+
+---
+
+## Telegram Guidelines
+
+- 300-600 characters per post
+- More detailed than Twitter, educational tone
+- End with a clear CTA
+
+---
+
+## What to Always Avoid
+
+| Avoid | Why |
+|-------|-----|
+| Em-dashes | Brand style preference |
+| Guaranteed returns | Regulatory compliance |
+| Hype language | Brand credibility |
+
+---
+
+## CTAs by Platform
+
+**Twitter:**
+{cta_str}
+
+**Telegram:**
+{cta_str}
+
+---
+
+## Hashtag Library
+
+**Always relevant:** {hashtag_str}
+"""
+        (client_dir / "content-guidelines.md").write_text(guidelines)
+
+        # Generate keywords.md
+        primary_kw = "\n".join(f"- {k}" for k in keywords) if keywords else "- [Add keywords]"
+        neg_kw = "\n".join(f"- {k}" for k in negative_keywords) if negative_keywords else "- scam\n- spam"
+        sub_list = "\n".join(f"- r/{s}" for s in subreddits) if subreddits else "- r/[subreddit]"
+
+        keywords_md = f"""# Keyword Reference
+
+Used by the content pipeline to filter and rank scraped posts for relevance.
+
+---
+
+## Primary Keywords (High Relevance)
+
+{primary_kw}
+
+---
+
+## Negative Keywords (Filter Out)
+
+{neg_kw}
+
+---
+
+## Subreddits to Monitor
+
+{sub_list}
+"""
+        (client_dir / "keywords.md").write_text(keywords_md)
+
+        # Generate context.md
+        context_md = f"""# {display_name} — Client Context
+
+## Organization Overview
+
+{tagline if tagline else '[Describe the organization, what it does, and its mission.]'}
+
+Website: {website if website else '[Not provided]'}
+
+---
+
+## Products / Services
+
+* [Add products/services]
+
+---
+
+## Target Audience (ICP)
+
+* [Demographics]
+* [Pain points]
+* [Goals]
+
+---
+
+## Positioning
+
+* [How the brand differentiates]
+* [Key competitive advantages]
+"""
+        (client_dir / "context.md").write_text(context_md)
+
+        # Create output directory
+        output_dir = PROJECT_ROOT / "outputs" / "content" / client_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        return jsonify({"success": True, "client_id": client_id})
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def _gather_client_summaries():
+    """Build a list of summary dicts for all configured clients."""
+    active = client_config.get_active_client()
+    summaries = []
+    for cid in client_config.list_clients():
+        try:
+            cfg = client_config.load_config(cid)
+        except Exception:
+            continue
+        brand = cfg.get("brand", {})
+        # Count content weeks (xlsx files)
+        out_dir = client_config.get_output_dir(cid)
+        content_weeks = len(list(out_dir.glob("*-weekly-content.xlsx"))) if out_dir.exists() else 0
+        summaries.append({
+            "client_id":       cid,
+            "display_name":    cfg.get("display_name", cid),
+            "tagline":         cfg.get("tagline", ""),
+            "website":         cfg.get("website", ""),
+            "languages":       cfg.get("languages", ["en"]),
+            "keyword_count":   len(cfg.get("scraping", {}).get("keywords", [])),
+            "content_weeks":   content_weeks,
+            "primary_color":   brand.get("primary_color", "#1a1a2e"),
+            "accent_color":    brand.get("accent_color", "#1589DC"),
+            "secondary_accent": brand.get("secondary_accent", ""),
+            "is_active":       cid == active,
+        })
+    return summaries
+
+
+@app.route("/admin")
+def admin_page():
+    return render_template_string(ADMIN_HTML, clients=_gather_client_summaries())
+
+
+@app.route("/api/admin/switch-client", methods=["POST"])
+def api_admin_switch():
+    data = request.get_json(force=True)
+    cid = data.get("client_id", "").strip()
+    if not cid:
+        return jsonify({"success": False, "error": "client_id required"}), 400
+    available = client_config.list_clients()
+    if cid not in available:
+        return jsonify({"success": False, "error": f"Unknown client: {cid}"}), 404
+    _reload_active_client(cid)
+    return jsonify({"success": True, "client_id": cid, "display_name": _display_name})
+
+
+@app.route("/api/admin/clients")
+def api_admin_clients():
+    return jsonify(_gather_client_summaries())
+
+
 # ── Flask routes ───────────────────────────────────────────────────────────────
+
+@app.route("/favicon.jpg")
+def serve_favicon():
+    return send_from_directory(str(PROJECT_ROOT / "reference"), "favicon.jpg")
+
 
 @app.route("/images/<path:filename>")
 def serve_image(filename):
@@ -1771,7 +3061,8 @@ def index():
             topics_json="[]", date_json='""',
             has_generator="true" if HAS_GENERATOR else "false",
             has_ru_generator="true" if HAS_RU_GENERATOR else "false",
-            error="No weekly content Excel files found in outputs/content/",
+            brand_name=_display_name,
+            error=f"No weekly content Excel files found for {_display_name}",
         )
 
     selected = date_param if date_param in available_dates else available_dates[0]
@@ -1814,6 +3105,7 @@ def index():
         date_json=json.dumps(selected),
         has_generator="true" if HAS_GENERATOR else "false",
         has_ru_generator="true" if HAS_RU_GENERATOR else "false",
+        brand_name=_display_name,
         error=error,
     )
 
@@ -1821,8 +3113,17 @@ def index():
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    date_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    print(f"\n  BoBe Content Dashboard")
+    # Support --client flag from command line
+    import argparse as _ap
+    _parser = _ap.ArgumentParser(add_help=False)
+    _parser.add_argument("--client", default=None)
+    _parser.add_argument("date", nargs="?", default=None)
+    _args, _ = _parser.parse_known_args()
+    if _args.client:
+        _reload_active_client(_args.client)
+
+    print(f"\n  {_display_name} Content Dashboard")
+    print(f"  Client      : {_active_client}")
     print(f"  Content dir : {CONTENT_DIR}")
     dates = list_available_dates()
     print(f"  Found dates : {', '.join(dates) if dates else 'none'}")

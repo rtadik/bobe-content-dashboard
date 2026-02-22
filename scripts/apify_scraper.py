@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-BoBe Content Pipeline - Apify Scraper
-Scrapes Twitter and Reddit for crypto/DeFi content relevant to BoBe.
+Content Pipeline - Apify Scraper
+Scrapes Twitter and Reddit for content topics relevant to the active client.
+Multi-client: reads keywords and negative keywords from client config.
 
 Environment variables (loaded from .env):
   APIFY_API_TOKEN: Your Apify API token
@@ -10,10 +11,12 @@ Usage:
   python scripts/apify_scraper.py --platform twitter --keywords "defi,yield,trading bot"
   python scripts/apify_scraper.py --platform reddit --subreddits "defi,cryptocurrency" --keywords "yield,automation"
   python scripts/apify_scraper.py --platform all --mock
+  python scripts/apify_scraper.py --client newclient --platform twitter --mock
 """
 
 import os
 import json
+import sys
 import time
 import argparse
 from datetime import datetime, timedelta
@@ -24,6 +27,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Make scripts/ importable
+sys.path.insert(0, str(Path(__file__).parent)) if False else None
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
+
+import client_config
+
 APIFY_API_TOKEN = os.environ.get("APIFY_API_TOKEN")
 APIFY_BASE_URL = "https://api.apify.com/v2"
 
@@ -31,11 +41,10 @@ APIFY_BASE_URL = "https://api.apify.com/v2"
 TWITTER_ACTOR_ID = "2dZb9qNraqcbL8CXP"  # Twitter Tweets Scraper
 REDDIT_ACTOR_ID = "trudax~reddit-scraper"  # Note: may need paid plan; fallback to mock
 
-NEGATIVE_KEYWORDS = [
-    "rug pull", "scam", "pump and dump", "meme coin", "presale",
-    "1000x", "get rich quick", "guaranteed returns", "airdrop",
-    "nft mint", "play to earn", "casino", "gambling"
-]
+
+def _get_negative_keywords(client_id=None):
+    """Load negative keywords from client config."""
+    return client_config.get_negative_keywords(client_id)
 
 
 def run_apify_actor(actor_id: str, run_input: dict, timeout: int = 120) -> List[Dict]:
@@ -81,12 +90,10 @@ def run_apify_actor(actor_id: str, run_input: dict, timeout: int = 120) -> List[
 
 def scrape_twitter(keywords: List[str], count: int = 50, since_date: Optional[str] = None) -> List[Dict]:
     """Scrape Twitter for posts matching keywords using Twitter Tweets Scraper actor."""
-    # Build 3–5 search terms covering key BoBe topics
     search_queries = [
         f"{kw} crypto" if i < 3 else kw
         for i, kw in enumerate(keywords[:5])
     ]
-    # Append date filter to each query when scraping a specific time window
     if since_date:
         search_queries = [f"{q} since:{since_date}" for q in search_queries]
 
@@ -100,7 +107,6 @@ def scrape_twitter(keywords: List[str], count: int = 50, since_date: Optional[st
 
     posts = []
     for item in raw_items:
-        # Skip non-English, no-results markers, or items with no content
         if item.get("noResults") or item.get("lang") != "en":
             continue
         text = item.get("full_text", item.get("text", ""))
@@ -159,11 +165,12 @@ def scrape_reddit(subreddits: List[str], keywords: List[str], count: int = 50) -
     return posts
 
 
-def filter_by_relevance(posts: List[Dict], keywords: List[str]) -> List[Dict]:
-    """Filter posts by relevance to BoBe keywords, excluding negative keywords."""
+def filter_by_relevance(posts: List[Dict], keywords: List[str], client_id: str = None) -> List[Dict]:
+    """Filter posts by relevance to keywords, excluding negative keywords."""
     filtered = []
     kw_lower = [k.lower() for k in keywords]
-    neg_lower = [n.lower() for n in NEGATIVE_KEYWORDS]
+    neg_keywords = _get_negative_keywords(client_id)
+    neg_lower = [n.lower() for n in neg_keywords]
 
     for post in posts:
         text = post.get("text", "").lower()
@@ -227,7 +234,7 @@ def mock_scrape(platform: str) -> List[Dict]:
         {
             "platform": platform,
             "id": "mock_003",
-            "text": "Just reviewed 3 automated trading platforms for passive crypto yield. Thread on what actually matters when evaluating these tools 🧵",
+            "text": "Just reviewed 3 automated trading platforms for passive crypto yield. Thread on what actually matters when evaluating these tools",
             "author": "yield_researcher",
             "url": "https://twitter.com/mock/3",
             "likes": 156,
@@ -268,14 +275,13 @@ def mock_scrape(platform: str) -> List[Dict]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Scrape Twitter/Reddit for BoBe content topics")
+    parser = argparse.ArgumentParser(description="Scrape Twitter/Reddit for content topics")
     parser.add_argument("--platform", choices=["twitter", "reddit", "all"], default="all",
                         help="Platform to scrape")
-    parser.add_argument("--keywords",
-                        default="trading bot,yield,DCA strategy,automated trading,on-chain yield,crypto automation,AI trading,grid bot,passive crypto,crypto bot,DeFi yield,USDT yield,risk management crypto,emotional trading,crypto strategy",
-                        help="Comma-separated keywords")
-    parser.add_argument("--subreddits", default="defi,CryptoCurrency,ethfinance,algotrading",
-                        help="Comma-separated subreddits (Reddit only)")
+    parser.add_argument("--keywords", default=None,
+                        help="Comma-separated keywords (overrides client config)")
+    parser.add_argument("--subreddits", default=None,
+                        help="Comma-separated subreddits (overrides client config)")
     parser.add_argument("--count", type=int, default=50,
                         help="Max posts to scrape per platform")
     parser.add_argument("--days", type=int, default=None,
@@ -286,15 +292,30 @@ def main():
                         help="Use mock data instead of real API calls")
     parser.add_argument("--output", default=None,
                         help="Save results to JSON file")
+    client_config.add_client_arg(parser)
 
     args = parser.parse_args()
-    keywords = [k.strip() for k in args.keywords.split(",")]
-    subreddits = [s.strip() for s in args.subreddits.split(",")]
+    active_client = client_config.resolve_client(args)
+
+    # Load keywords from config if not overridden via CLI
+    if args.keywords:
+        keywords = [k.strip() for k in args.keywords.split(",")]
+    else:
+        keywords = client_config.get_keywords(active_client)
+
+    if args.subreddits:
+        subreddits = [s.strip() for s in args.subreddits.split(",")]
+    else:
+        subreddits = client_config.get_subreddits(active_client)
+
+    config = client_config.load_config(active_client)
+    display_name = config.get("display_name", active_client)
+    print(f"\nScraping for client: {display_name}")
 
     all_posts = []
 
     if args.mock:
-        print("Running in MOCK mode — no API calls made.")
+        print("Running in MOCK mode, no API calls made.")
         all_posts = mock_scrape(args.platform if args.platform != "all" else "twitter")
         all_posts += mock_scrape("reddit")
     else:
@@ -320,13 +341,13 @@ def main():
                 all_posts.extend(reddit_posts)
             except Exception as e:
                 if "403" in str(e):
-                    print(f"  Reddit returned 403 Forbidden — the Reddit actor may require a paid Apify plan. Skipping.")
+                    print(f"  Reddit returned 403 Forbidden, the Reddit actor may require a paid Apify plan. Skipping.")
                 else:
                     print(f"  Reddit scraping failed: {e}")
 
     # Filter and rank
     print(f"\nFiltering {len(all_posts)} posts by relevance...")
-    filtered = filter_by_relevance(all_posts, keywords)
+    filtered = filter_by_relevance(all_posts, keywords, client_id=active_client)
     ranked = rank_by_engagement(filtered)
     top_topics = get_top_topics(ranked, args.top)
 

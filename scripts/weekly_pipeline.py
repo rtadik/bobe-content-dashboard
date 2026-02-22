@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-BoBe Weekly Content Pipeline Orchestrator
+Weekly Content Pipeline Orchestrator
+
+Multi-client: reads keywords, brand terms, and output paths from client config.
 
 Called in stages by .claude/commands/weekly-pipeline.md:
 
@@ -27,11 +29,11 @@ Content JSON format for save-content:
   "format": "thread",
   "content": "English content...",
   "image_prompt": "Detailed prompt for nano_banana.py...",
-  "image_path": "outputs/content/images/2026-02-16-weekly/2026-02-16_mon_topic-slug_twitter.png",
+  "image_path": "outputs/content/bobe/images/2026-02-16-weekly/2026-02-16_mon_topic-slug_twitter.png",
   "hashtags": ["#DeFi", "#TradingBot"],
   "content_ru": "Russian content...",
   "image_prompt_ru": "Russian image prompt with Cyrillic headline...",
-  "image_path_ru": "outputs/content/images/2026-02-16-weekly/2026-02-16_mon_topic-slug_twitter_ru.png",
+  "image_path_ru": "outputs/content/bobe/images/2026-02-16-weekly/2026-02-16_mon_topic-slug_twitter_ru.png",
   "hashtags_ru": ["#DeFi", "#Крипто"],
   "status": "Draft"
 }
@@ -60,17 +62,15 @@ from excel_manager import (
     COLOR_DARK_BG, COLOR_BLUE, COLOR_GREEN, COLOR_WHITE, COLOR_LIGHT_ROW,
 )
 
-OUTPUT_DIR = Path(__file__).parent.parent / "outputs" / "content"
+import client_config
 
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 POSTS_PER_DAY = 3
 
-WEEKLY_KEYWORDS = [
-    "trading bot", "yield", "DCA strategy", "automated trading",
-    "on-chain yield", "crypto automation", "AI trading", "grid bot",
-    "passive crypto", "crypto bot", "DeFi yield", "USDT yield",
-    "risk management crypto", "emotional trading", "crypto strategy",
-]
+
+def _get_output_dir(client_id=None):
+    """Get the client-scoped output directory."""
+    return client_config.get_output_dir(client_id)
 
 
 def get_week_of(date_str=None):
@@ -83,7 +83,7 @@ def get_week_of(date_str=None):
     return monday.strftime("%Y-%m-%d")
 
 
-def scrape_weekly_topics(week_of, count=100, mock=False, output_path=None):
+def scrape_weekly_topics(week_of, count=100, mock=False, output_path=None, client_id=None):
     """
     Scrape Twitter for the past 7 days using apify_scraper.
     Falls back gracefully if scraping fails.
@@ -93,12 +93,14 @@ def scrape_weekly_topics(week_of, count=100, mock=False, output_path=None):
         scrape_twitter, filter_by_relevance, rank_by_engagement, mock_scrape
     )
 
+    keywords = client_config.get_keywords(client_id)
+
     if mock:
-        print("Running in MOCK mode — no API calls.")
+        print("Running in MOCK mode, no API calls.")
         posts = []
         for _ in range(5):
             posts += mock_scrape("twitter")
-        filtered = filter_by_relevance(posts, WEEKLY_KEYWORDS)
+        filtered = filter_by_relevance(posts, keywords, client_id=client_id)
         ranked = rank_by_engagement(filtered)
         if output_path:
             with open(output_path, "w") as f:
@@ -111,13 +113,13 @@ def scrape_weekly_topics(week_of, count=100, mock=False, output_path=None):
 
     all_posts = []
     try:
-        tweets = scrape_twitter(WEEKLY_KEYWORDS, count=count, since_date=since_date)
+        tweets = scrape_twitter(keywords, count=count, since_date=since_date)
         print(f"  Got {len(tweets)} tweets")
         all_posts.extend(tweets)
     except Exception as e:
         print(f"  Twitter scraping failed: {e}")
 
-    filtered = filter_by_relevance(all_posts, WEEKLY_KEYWORDS)
+    filtered = filter_by_relevance(all_posts, keywords, client_id=client_id)
     ranked = rank_by_engagement(filtered)
     print(f"  {len(ranked)} relevant posts after filtering")
 
@@ -129,12 +131,13 @@ def scrape_weekly_topics(week_of, count=100, mock=False, output_path=None):
     return ranked
 
 
-def create_weekly_workbook(week_of):
+def create_weekly_workbook(week_of, client_id=None):
     """
-    Create outputs/content/{week_of}-weekly-content.xlsx with:
+    Create outputs/content/{client_id}/{week_of}-weekly-content.xlsx with:
     - Sheet 1: Topics (same columns as daily, Week Of instead of Date)
     - Sheet 2: Content (adds Day column as column B)
     """
+    output_dir = _get_output_dir(client_id)
     wb = Workbook()
 
     # --- Sheet 1: Topics ---
@@ -173,19 +176,20 @@ def create_weekly_workbook(week_of):
     ws2.row_dimensions[1].height = 35
     ws2.freeze_panes = "A2"
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = OUTPUT_DIR / f"{week_of}-weekly-content.xlsx"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"{week_of}-weekly-content.xlsx"
     wb.save(str(path))
     return str(path)
 
 
-def append_content_row(week_of, content_item):
+def append_content_row(week_of, content_item, client_id=None):
     """
     Append one content row to the weekly workbook's Content sheet.
     content_item must have: date, day, topic, platform, format, content,
                             image_prompt, image_path, hashtags, status
     """
-    path = OUTPUT_DIR / f"{week_of}-weekly-content.xlsx"
+    output_dir = _get_output_dir(client_id)
+    path = output_dir / f"{week_of}-weekly-content.xlsx"
     if not path.exists():
         raise FileNotFoundError(f"Weekly workbook not found: {path}. Run --action create-workbook first.")
 
@@ -225,7 +229,7 @@ def append_content_row(week_of, content_item):
     wb.save(str(path))
 
 
-def translate_text_to_russian(en_content, platform="twitter"):
+def translate_text_to_russian(en_content, platform="twitter", client_id=None):
     """
     Translate English content to Russian using Google Gemini API.
     Preserves --- tweet separators, keeps English hashtags, adds Cyrillic hashtags.
@@ -236,6 +240,10 @@ def translate_text_to_russian(en_content, platform="twitter"):
     api_key = os.getenv("GOOGLE_AI_API_KEY")
     if not api_key:
         raise RuntimeError("GOOGLE_AI_API_KEY not set in .env")
+
+    config = client_config.load_config(client_id)
+    brand_terms = ", ".join(config.get("content", {}).get("brand_terms_keep", []))
+    tone = config.get("content", {}).get("tone", "professional and educational")
 
     client = genai.Client(api_key=api_key)
 
@@ -253,11 +261,11 @@ def translate_text_to_russian(en_content, platform="twitter"):
 
 Rules:
 - Translate naturally, not word-for-word. Use professional Russian crypto/fintech terminology.
-- NEVER use em-dashes (—), en-dashes (–), or double-hyphens (--) as punctuation. Use commas, colons, or rephrase instead.
+- NEVER use em-dashes, en-dashes, or double-hyphens as punctuation. Use commas, colons, or rephrase instead.
 - {platform_note}
-- Keep brand names unchanged: BoBe, USDT, DCA, etc.
+- Keep brand names unchanged: {brand_terms}
 - Keep any hashtags at the end unchanged (English hashtags stay as-is).
-- The tone should be transparent, educational, no hype, no guaranteed return claims.
+- The tone should be {tone}.
 
 Content to translate:
 {en_content}"""
@@ -269,7 +277,7 @@ Content to translate:
     return response.text.strip()
 
 
-def translate_hashtags_to_russian(en_hashtags):
+def translate_hashtags_to_russian(en_hashtags, client_id=None):
     """
     Translate English hashtags to Russian: keep originals, add Cyrillic versions.
     en_hashtags: comma-separated string like "#DeFi, #TradingBot"
@@ -300,13 +308,14 @@ Example output: #DeFi, #TradingBot, #Крипто, #ТорговыйБот"""
     return response.text.strip()
 
 
-def update_ru_columns(week_of, row_index, content_ru, image_prompt_ru, image_path_ru, hashtags_ru):
+def update_ru_columns(week_of, row_index, content_ru, image_prompt_ru, image_path_ru, hashtags_ru, client_id=None):
     """
     Update columns J-M (Content_RU, Image_Prompt_RU, Image_Path_RU, Hashtags_RU)
     for a specific row in the workbook.
     row_index: 1-based index into Content sheet data rows (1 = first data row = Excel row 2).
     """
-    path = OUTPUT_DIR / f"{week_of}-weekly-content.xlsx"
+    output_dir = _get_output_dir(client_id)
+    path = output_dir / f"{week_of}-weekly-content.xlsx"
     if not path.exists():
         raise FileNotFoundError(f"Weekly workbook not found: {path}")
 
@@ -324,9 +333,13 @@ def update_ru_columns(week_of, row_index, content_ru, image_prompt_ru, image_pat
     wb.save(str(path))
 
 
-def finalize(week_of):
+def finalize(week_of, client_id=None):
     """Send macOS notification and print completion summary."""
-    path = OUTPUT_DIR / f"{week_of}-weekly-content.xlsx"
+    output_dir = _get_output_dir(client_id)
+    config = client_config.load_config(client_id)
+    display_name = config.get("display_name", client_id or "Client")
+
+    path = output_dir / f"{week_of}-weekly-content.xlsx"
     row_count = 0
 
     if path.exists():
@@ -336,7 +349,7 @@ def finalize(week_of):
         wb.close()
 
     msg = f"{row_count} content items ready in {week_of}-weekly-content.xlsx"
-    title = "BoBe Weekly Pipeline Complete"
+    title = f"{display_name} Weekly Pipeline Complete"
 
     # macOS notification via osascript
     script = f'display notification "{msg}" with title "{title}"'
@@ -346,13 +359,13 @@ def finalize(week_of):
     print(f"  {title}")
     print(f"  Week of: {week_of}")
     print(f"  {row_count} content rows saved")
-    print(f"  File: outputs/content/{week_of}-weekly-content.xlsx")
+    print(f"  File: {path}")
     print(f"  View: /view-content week:{week_of}")
     print(f"{'='*60}\n")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="BoBe Weekly Pipeline Orchestrator")
+    parser = argparse.ArgumentParser(description="Weekly Pipeline Orchestrator")
     parser.add_argument("--action",
                         choices=["scrape", "create-workbook", "save-content", "finalize"],
                         required=True,
@@ -367,15 +380,17 @@ def main():
                         help="Path to content JSON file (--action save-content only)")
     parser.add_argument("--mock", action="store_true",
                         help="Use mock data instead of real API calls")
+    client_config.add_client_arg(parser)
 
     args = parser.parse_args()
+    active_client = client_config.resolve_client(args)
     week_of = get_week_of(args.week_of) if args.week_of else get_week_of()
 
     if args.action == "scrape":
-        scrape_weekly_topics(week_of, count=args.count, mock=args.mock, output_path=args.output)
+        scrape_weekly_topics(week_of, count=args.count, mock=args.mock, output_path=args.output, client_id=active_client)
 
     elif args.action == "create-workbook":
-        path = create_weekly_workbook(week_of)
+        path = create_weekly_workbook(week_of, client_id=active_client)
         print(f"Weekly workbook created: {path}")
 
     elif args.action == "save-content":
@@ -384,11 +399,11 @@ def main():
             sys.exit(1)
         with open(args.content_file) as f:
             item = json.load(f)
-        append_content_row(week_of, item)
+        append_content_row(week_of, item, client_id=active_client)
         print(f"Saved: [{item.get('day', '?')}] {item.get('topic', '')[:60]} ({item.get('platform', '')})")
 
     elif args.action == "finalize":
-        finalize(week_of)
+        finalize(week_of, client_id=active_client)
 
 
 if __name__ == "__main__":

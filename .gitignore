@@ -3,9 +3,16 @@
 __pycache__/
 *.pyc
 *.pyo
+outputs/content/*/*.xlsx
+outputs/content/*/*.png
+outputs/content/*/*.jpeg
+outputs/content/*/images/
+outputs/content/*/*.json
+# Legacy non-namespaced paths
 outputs/content/*.xlsx
 outputs/content/*.png
 outputs/content/*.jpeg
 outputs/content/images/
 outputs/content/*.json
 dist/
+.active-client

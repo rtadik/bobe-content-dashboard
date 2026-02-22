@@ -1,0 +1,66 @@
+{
+  "client_id": "bobe",
+  "display_name": "BoBe",
+  "tagline": "AI-driven crypto yield automation",
+  "website": "bobe.app",
+  "brand": {
+    "primary_color": "#1a1a2e",
+    "accent_color": "#1589DC",
+    "text_color": "#ffffff",
+    "secondary_accent": "#FF4FDA",
+    "surface_color": "#111B32",
+    "background_gradient": "#111B32 to #070A1B",
+    "logo_path": "brand/logo.png",
+    "reference_images": [
+      "brand/logo.png",
+      "brand/banner example 1.png",
+      "brand/banner example 2.png",
+      "brand/banner example 4.png"
+    ],
+    "mascot_description": "A 3D chibi clay figurine, young Asian man with round thick-framed dark glasses, short dark brown hair styled upward, wearing a white BoBe t-shirt, cute round chubby face, chibi proportions, high-quality 3D render",
+    "logo_description": "BoBe APP logo in bright blue, placed in the top-left corner",
+    "background_style": "Deep dark navy gradient (dark blue-black, #111B32 to #070A1B)"
+  },
+  "content": {
+    "tone": "transparent, educational, no hype, no guaranteed return claims",
+    "voice": "Transparent. Calm. Confident. Educational. Like a knowledgeable friend who actually trades.",
+    "brand_terms_keep": ["BoBe", "USDT", "DCA"],
+    "cta_url": "bobe.app",
+    "cta_examples": [
+      "See how BoBe works \u2192",
+      "Learn more at bobe.app",
+      "Try BoBe free: bobe.app"
+    ],
+    "hashtags": ["#BoBe", "#BoBeApp", "#DeFi", "#CryptoYield"],
+    "messaging_pillars": [
+      "Automation: removes the emotional, time-consuming parts of trading",
+      "Transparency: on-chain visibility, audited smart contracts",
+      "Risk Management: spot only, no leverage, structured strategies",
+      "Accessibility: for retail users who want exposure without needing to be expert traders"
+    ]
+  },
+  "scraping": {
+    "keywords": [
+      "trading bot", "yield", "DCA strategy", "automated trading",
+      "on-chain yield", "crypto automation", "AI trading", "grid bot",
+      "passive crypto", "crypto bot", "DeFi yield", "USDT yield",
+      "risk management crypto", "emotional trading", "crypto strategy"
+    ],
+    "negative_keywords": [
+      "rug pull", "scam", "pump and dump", "meme coin", "presale",
+      "1000x", "get rich quick", "guaranteed returns", "airdrop",
+      "nft mint", "play to earn", "casino", "gambling"
+    ],
+    "subreddits": ["defi", "CryptoCurrency", "ethfinance", "algotrading"]
+  },
+  "image": {
+    "style_presets": {
+      "minimal": "minimalist clean design, single focal point, plenty of negative space on dark navy",
+      "tech": "floating holographic trading UI panels and candlestick charts in background, tech fintech aesthetic",
+      "neon": "cyberpunk neon city background with blue and pink neon light trails, atmospheric night scene",
+      "outdoor": "photorealistic urban outdoor setting, city street, natural lighting",
+      "notification": "realistic smartphone mockup showing BoBe app notification on screen"
+    }
+  },
+  "languages": ["en", "ru"]
+}

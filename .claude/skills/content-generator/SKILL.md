@@ -1,18 +1,24 @@
 ---
 name: content-generator
-description: Generate Telegram and Twitter/X content for BoBe from curated crypto/DeFi topics. Use when creating social media posts, threads, or announcements based on trending topics or news. Produces copy aligned with BoBe's transparent, educational, non-hype messaging style. Always reads reference/content-guidelines.md before generating.
+description: Generate Telegram and Twitter/X content for the active client from curated topics. Use when creating social media posts, threads, or announcements based on trending topics or news. Produces copy aligned with the client's configured tone and messaging style. Reads client config and content guidelines before generating.
 ---
 
-# Content Generator for BoBe
+# Content Generator
 
-Generate platform-specific social media content (Twitter/X or Telegram) from crypto/DeFi topics.
+Generate platform-specific social media content (Twitter/X or Telegram) from curated topics for the active client.
 
 ## Before Generating
 
-Always read:
-- `reference/content-guidelines.md` — tone, voice, what to avoid
-- `reference/bobe-keywords.md` — relevant themes and hashtags
-- `context/BoBe Context.md` — messaging pillars and ICP
+1. Determine the active client:
+   ```bash
+   cat .active-client 2>/dev/null || echo "bobe"
+   ```
+
+2. Always read:
+   - `clients/{active_client}/config.json` — brand name, tone, voice, keywords, CTAs
+   - `clients/{active_client}/content-guidelines.md` — tone, voice, what to avoid
+   - `clients/{active_client}/keywords.md` — relevant themes and hashtags
+   - `clients/{active_client}/context.md` — messaging pillars and ICP
 
 ## Input Requirements
 
@@ -46,15 +52,14 @@ Provide as much of the following as available:
 - End with engagement question or CTA
 - Can mention BoBe more directly than Twitter
 
-## BoBe Voice Reminders
+## Voice Reminders
 
-- Transparent, not hype-driven
-- Educational, not salesy
-- Risk-aware — never guarantee returns
-- Automation-focused — the robot handles what humans struggle with emotionally
+Use the tone and voice from the active client's `config.json` and `content-guidelines.md`. General rules:
 
-**Good:** "Most traders don't fail from bad analysis. They fail from not following the plan."
-**Bad:** "BoBe gives you 200% APY guaranteed! Don't miss out!"
+- Match the client's configured tone (e.g., transparent, educational, professional)
+- Never make guaranteed return claims for any financial product
+- Follow the client's messaging pillars from their context file
+- Use the client's brand name and CTAs from config, not hardcoded values
 
 ## Output Format
 
@@ -73,22 +78,16 @@ Return a JSON object:
 
 ### Image Prompt Guidelines
 
-For the `image_prompt` field, always use the BoBe brand template from `reference/bobe-brand/README.md`:
+For the `image_prompt` field, use the active client's brand assets from `clients/{active_client}/brand/README.md` and config values:
 
 Include:
-1. The BoBe mascot description (3D clay chibi, glasses, BoBe t-shirt)
+1. The client's mascot/character description (from `config.json` → `brand.mascot_description`)
 2. Scenario matching the topic
-3. Background style (dark navy default, or themed)
+3. Background style (from `config.json` → `brand.background_style`)
 4. A short headline matching the content hook
-5. Style preset: minimal | tech | neon | outdoor | notification
+5. Style preset from `config.json` → `content.style_presets`
 
-Example:
-```
-BoBe mascot (3D clay chibi figurine, young Asian man with round dark glasses, white BoBe t-shirt)
-sitting confidently at a trading desk with floating holographic green charts, deep dark navy
-background (#111B32), blue gradient accents, bold white headline "Steady beats emotional."
-top area, BoBe APP logo top-left, cinematic 3D render, social media banner 16:9
-```
+The mascot description, logo description, brand colors, and background style are all loaded from the client config. Do not hardcode any brand-specific values.
 
 ## Example Output
 
