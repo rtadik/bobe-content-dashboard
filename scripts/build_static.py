@@ -140,6 +140,7 @@ STATIC_HTML = """<!DOCTYPE html>
     position: sticky;
     top: 0;
     z-index: 200;
+    position: sticky;
   }
 
   .brand {
@@ -156,12 +157,6 @@ STATIC_HTML = """<!DOCTYPE html>
 
   .header-sep { width: 1px; height: 20px; background: var(--border); }
 
-  .header-date {
-    font-size: 0.85rem;
-    color: var(--muted);
-    white-space: nowrap;
-  }
-
   .header-count {
     font-size: 0.78rem;
     background: var(--blue-dim);
@@ -174,17 +169,34 @@ STATIC_HTML = """<!DOCTYPE html>
 
   .spacer { flex: 1; }
 
-  .date-select {
+  /* Week tabs — centered */
+  .week-tabs {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .week-tab {
     background: var(--surface2);
     border: 1px solid var(--border);
-    color: var(--text);
-    padding: 5px 10px;
-    border-radius: 7px;
-    font-size: 0.82rem;
+    color: var(--muted);
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
     cursor: pointer;
-    outline: none;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: all 0.15s;
   }
-  .date-select:hover { border-color: var(--blue); }
+  .week-tab:hover:not(.active) { border-color: rgba(21,137,220,0.4); color: var(--text); }
+  .week-tab.active {
+    background: var(--blue-dim);
+    border-color: rgba(21,137,220,0.5);
+    color: var(--blue);
+  }
 
   /* Language toggle */
   .lang-toggle {
@@ -533,19 +545,17 @@ STATIC_HTML = """<!DOCTYPE html>
 
 <header>
   <div class="brand">{{ brand_name }}<span class="brand-dot">.</span></div>
-  <div class="header-sep"></div>
-  <div class="header-date">{{ date_label }}</div>
   {% if topics %}
   <span class="header-count">{{ topics|length }} topic{{ 's' if topics|length != 1 else '' }}</span>
   {% endif %}
-  <div class="spacer"></div>
   {% if date_options|length > 1 %}
-  <select class="date-select" onchange="window.location=this.value" title="Switch date">
+  <div class="week-tabs">
     {% for opt in date_options %}
-    <option value="{{ opt.filename }}"{% if opt.date_id == current_date_id %} selected{% endif %}>{{ opt.label }}</option>
+    <a class="week-tab{% if opt.date_id == current_date_id %} active{% endif %}" href="{{ opt.filename }}">{{ opt.label }}</a>
     {% endfor %}
-  </select>
+  </div>
   {% endif %}
+  <div class="spacer"></div>
   <div class="lang-toggle">
     <button class="lang-btn active" id="btn-en" onclick="setLang('en')">EN</button>
     <button class="lang-btn" id="btn-ru" onclick="setLang('ru')">RU</button>
@@ -811,7 +821,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbo
 </html>"""
 
 
-# ── Landing page template (placeholder) ───────────────────────────────────────
+# ── Landing page template ──────────────────────────────────────────────────────
 
 LANDING_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -823,62 +833,107 @@ LANDING_HTML = """<!DOCTYPE html>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #0D1526; --surface: #111B32; --border: rgba(21,137,220,0.15);
-    --blue: #1589DC; --pink: #FF4FDA; --muted: #6B82A8; --text: #C8D8EE;
+    --bg: #0D1526; --surface: #111B32; --surface2: #162038;
+    --border: rgba(21,137,220,0.15); --blue: #1589DC; --pink: #FF4FDA;
+    --muted: #6B82A8; --text: #C8D8EE;
   }
   html, body {
     background: var(--bg); color: #fff;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
     min-height: 100vh; display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
   }
-  .placeholder-badge {
-    position: fixed; top: 14px; right: 16px;
-    background: rgba(224,193,69,0.1); border: 1px solid rgba(224,193,69,0.25);
-    color: #E0C145; font-size: 0.65rem; padding: 3px 10px; border-radius: 20px;
-    letter-spacing: 0.5px; font-weight: 600;
+  /* Navbar */
+  nav {
+    background: #080F1E;
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .nav-brand {
+    font-size: 1.2rem; font-weight: 800; color: var(--blue);
+    letter-spacing: 0.3px; text-decoration: none;
+  }
+  .nav-brand span { color: var(--pink); }
+  .nav-login {
+    background: none; border: 1px solid rgba(21,137,220,0.4);
+    color: var(--blue); padding: 7px 20px; border-radius: 8px;
+    font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    text-decoration: none; transition: background 0.15s, border-color 0.15s;
+  }
+  .nav-login:hover { background: rgba(21,137,220,0.1); border-color: var(--blue); }
+  /* Hero */
+  .hero-wrap {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 60px 24px;
   }
   .hero {
     display: flex; flex-direction: column; align-items: center;
-    gap: 20px; text-align: center; padding: 40px 24px; max-width: 480px;
+    gap: 24px; text-align: center; max-width: 560px;
   }
   .eyebrow {
-    font-size: 0.72rem; font-weight: 700; letter-spacing: 2px;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 2.5px;
     color: var(--muted); text-transform: uppercase;
   }
-  .brand-name {
-    font-size: 3.5rem; font-weight: 800; letter-spacing: -1px; line-height: 1;
-    color: var(--blue);
+  .hero-title {
+    font-size: 3.2rem; font-weight: 800; letter-spacing: -1px; line-height: 1.05;
+    color: #fff;
   }
-  .brand-dot { color: var(--pink); }
-  .tagline {
-    font-size: 1rem; color: var(--text); line-height: 1.6; max-width: 340px;
+  .hero-title .accent { color: var(--blue); }
+  .hero-sub {
+    font-size: 1rem; color: var(--text); line-height: 1.7; max-width: 420px;
   }
-  .login-btn {
-    margin-top: 8px;
+  .hero-actions { display: flex; gap: 12px; margin-top: 4px; }
+  .btn-primary {
     background: var(--blue); color: #fff; border: none;
-    padding: 13px 36px; border-radius: 10px; font-size: 0.95rem;
-    font-weight: 600; cursor: pointer; text-decoration: none;
-    transition: background 0.15s, transform 0.1s;
-    display: inline-block;
+    padding: 14px 40px; border-radius: 10px; font-size: 0.95rem;
+    font-weight: 700; cursor: pointer; text-decoration: none;
+    transition: background 0.15s, transform 0.1s; display: inline-block;
   }
-  .login-btn:hover { background: #1070BB; }
-  .login-btn:active { transform: scale(0.98); }
-  .site-footer {
-    position: fixed; bottom: 18px;
-    font-size: 0.68rem; color: var(--muted); letter-spacing: 0.2px;
+  .btn-primary:hover { background: #1070BB; }
+  .btn-primary:active { transform: scale(0.98); }
+  /* Features */
+  .features {
+    display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+    margin-top: 8px;
+  }
+  .feature-pill {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-size: 0.78rem; padding: 6px 14px;
+    border-radius: 20px; white-space: nowrap;
+  }
+  /* Footer */
+  footer {
+    text-align: center; padding: 20px 24px;
+    font-size: 0.68rem; color: var(--muted);
   }
 </style>
 </head>
 <body>
-<span class="placeholder-badge">Placeholder Design</span>
-<div class="hero">
-  <p class="eyebrow">Content Platform</p>
-  <h1 class="brand-name">{{ brand_name }}<span class="brand-dot">.</span></h1>
-  <p class="tagline">Your weekly content, organized and ready to publish.</p>
-  <a href="login.html" class="login-btn">Log In</a>
+<nav>
+  <a class="nav-brand" href="#">{{ brand_name }}<span>.</span></a>
+  <a href="login.html" class="nav-login">Log In</a>
+</nav>
+<div class="hero-wrap">
+  <div class="hero">
+    <p class="eyebrow">Content Platform</p>
+    <h1 class="hero-title">Your weekly content,<br><span class="accent">ready to publish.</span></h1>
+    <p class="hero-sub">Bilingual Twitter threads, Telegram posts, and branded images — generated, organized, and delivered every week.</p>
+    <div class="hero-actions">
+      <a href="login.html" class="btn-primary">Log In to Dashboard</a>
+    </div>
+    <div class="features">
+      <span class="feature-pill">EN + RU Content</span>
+      <span class="feature-pill">Twitter &amp; Telegram</span>
+      <span class="feature-pill">Branded Images</span>
+      <span class="feature-pill">Weekly Delivery</span>
+    </div>
+  </div>
 </div>
-<footer class="site-footer">{{ brand_name }} Content Platform</footer>
+<footer>{{ brand_name }} Content Platform</footer>
 </body>
 </html>"""
 
