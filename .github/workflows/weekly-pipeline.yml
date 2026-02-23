@@ -1,0 +1,112 @@
+name: Weekly Content Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      client_id:
+        description: 'Client ID (e.g. bobe)'
+        required: true
+        default: 'bobe'
+      week_of:
+        description: 'Week start date YYYY-MM-DD (optional, defaults to current Monday)'
+        required: false
+        default: ''
+      skip_images:
+        description: 'Skip image generation'
+        type: boolean
+        default: false
+      skip_airtable:
+        description: 'Skip Airtable sync'
+        type: boolean
+        default: false
+      mock:
+        description: 'Dry run — no API calls (for testing)'
+        type: boolean
+        default: false
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout working branch
+        uses: actions/checkout@v4
+        with:
+          ref: Fork-#1
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install requests openpyxl google-genai python-dotenv jinja2 flask pillow
+
+      - name: Create .env from secrets
+        run: |
+          echo "APIFY_API_TOKEN=${{ secrets.APIFY_API_TOKEN }}" >> .env
+          echo "GOOGLE_AI_API_KEY=${{ secrets.GOOGLE_AI_API_KEY }}" >> .env
+          echo "WAVESPEED_API_KEY=${{ secrets.WAVESPEED_API_KEY }}" >> .env
+          echo "AIRTABLE_API_KEY=${{ secrets.AIRTABLE_API_KEY }}" >> .env
+
+      - name: Set active client
+        run: echo "${{ github.event.inputs.client_id }}" > .active-client
+
+      - name: Run pipeline
+        run: |
+          ARGS="--client ${{ github.event.inputs.client_id }}"
+          if [ -n "${{ github.event.inputs.week_of }}" ]; then
+            ARGS="$ARGS --week-of ${{ github.event.inputs.week_of }}"
+          fi
+          if [ "${{ github.event.inputs.skip_images }}" = "true" ]; then
+            ARGS="$ARGS --skip-images"
+          fi
+          if [ "${{ github.event.inputs.skip_airtable }}" = "true" ]; then
+            ARGS="$ARGS --skip-airtable"
+          fi
+          if [ "${{ github.event.inputs.mock }}" = "true" ]; then
+            ARGS="$ARGS --mock"
+          fi
+          python scripts/pipeline_runner.py $ARGS --skip-deploy
+
+      - name: Build static site
+        run: |
+          python scripts/build_static.py \
+            --output dist \
+            --include-admin \
+            --client ${{ github.event.inputs.client_id }}
+
+      - name: Copy admin panel to dist
+        run: |
+          mkdir -p dist/admin
+          cp admin/index.html dist/admin/index.html
+          cp admin/admin.css dist/admin/admin.css
+          cp admin/admin.js dist/admin/admin.js
+
+      - name: Deploy to GitHub Pages (gh-pages branch)
+        run: |
+          cd dist
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Deploy content dashboard $(date +%Y-%m-%d)"
+          git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/rtadik/bobe-content-dashboard.git HEAD:gh-pages
+          cd ..
+
+      - name: Upload Excel workbook as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: weekly-content-${{ github.event.inputs.client_id }}-${{ github.run_id }}
+          path: outputs/content/${{ github.event.inputs.client_id }}/*.xlsx
+          retention-days: 30
+          if-no-files-found: warn

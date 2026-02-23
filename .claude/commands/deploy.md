@@ -10,15 +10,15 @@ date: $ARGUMENTS (optional — build only a specific date, defaults to all avail
 
 ## Instructions
 
-### Step 1 — Build the static site
+### Step 1 — Build the static site (with admin panel)
 
 ```bash
-cd "/Users/rt/Claude Code/bobe-image-content-gen" && ./venv/bin/python scripts/build_static.py --output dist
+cd "/Users/rt/Claude Code/bobe-image-content-gen" && ./venv/bin/python scripts/build_static.py --output dist --include-admin
 ```
 
 If a specific date was provided:
 ```bash
-cd "/Users/rt/Claude Code/bobe-image-content-gen" && ./venv/bin/python scripts/build_static.py --output dist --date {date}
+cd "/Users/rt/Claude Code/bobe-image-content-gen" && ./venv/bin/python scripts/build_static.py --output dist --include-admin --date {date}
 ```
 
 ### Step 2 — Verify the build

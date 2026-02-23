@@ -865,6 +865,8 @@ def main():
                         help="Output directory for the static site (default: dist)")
     parser.add_argument("--date", action="append", dest="dates",
                         help="Specific date(s) to build (can be repeated). Omit for all.")
+    parser.add_argument("--include-admin", action="store_true", default=False,
+                        help="Copy admin/ panel to dist/admin/ after building")
     client_config.add_client_arg(parser)
     args = parser.parse_args()
 
@@ -886,6 +888,16 @@ def main():
     print("=" * 40)
 
     build_site(args.output, args.dates)
+
+    # Copy admin panel if requested
+    if args.include_admin:
+        admin_src = Path(__file__).parent.parent / "admin"
+        admin_dst = Path(args.output) / "admin"
+        if admin_src.exists():
+            shutil.copytree(str(admin_src), str(admin_dst), dirs_exist_ok=True)
+            print(f"  Admin panel copied to {admin_dst}")
+        else:
+            print("  Warning: admin/ directory not found, skipping --include-admin")
 
 
 if __name__ == "__main__":

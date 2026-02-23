@@ -114,6 +114,25 @@ For a complete step-by-step setup guide (including token creation, scopes, and t
 
 ---
 
+## GitHub Actions (Remote Pipeline Execution)
+
+**Used by:** `.github/workflows/weekly-pipeline.yml`, `.github/workflows/onboard-client.yml`, `admin/index.html`
+
+GitHub Actions runs the full pipeline on GitHub's servers, triggered via the admin panel or GitHub UI. No local machine required.
+
+For complete setup instructions including Secrets, Pages settings, workflow permissions, and PAT creation, see:
+
+**`reference/github-actions-setup.md`**
+
+### Quick Setup Summary
+
+1. Add all four API keys as GitHub Secrets in the repo settings
+2. Enable GitHub Pages on the `gh-pages` branch
+3. Set workflow permissions to "Read and write"
+4. Create a GitHub PAT with `actions:write` scope for the admin panel
+
+---
+
 ## Python Dependencies
 
 Install before running any scripts:

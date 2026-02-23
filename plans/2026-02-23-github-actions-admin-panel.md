@@ -1,7 +1,7 @@
 # Plan: GitHub Actions Admin Panel for Remote Pipeline Control
 
 **Created:** 2026-02-23
-**Status:** Draft
+**Status:** Implemented
 **Request:** Web-based admin panel on GitHub Pages with GitHub Actions backend — trigger weekly pipeline runs and onboard new clients from the live URL, with API keys stored as GitHub Secrets
 
 ---
@@ -623,3 +623,33 @@ The implementation is complete when:
 **`GITHUB_TOKEN` permissions**: The `gh-pages` push in `weekly-pipeline.yml` uses `secrets.GITHUB_TOKEN` with `x-access-token`. This requires the repo's Actions settings to grant "Read and write permissions" to `GITHUB_TOKEN`. Set at: `https://github.com/rtadik/bobe-content-dashboard/settings/actions` → Workflow permissions → "Read and write permissions".
 
 **Estimated effort**: Steps 1 (pipeline_runner.py) and 4 (admin panel) are the most involved. Steps 2–3 (workflows) and 5–8 (config/docs) are straightforward. Total: a solid session of implementation.
+
+---
+
+## Implementation Notes
+
+**Implemented:** 2026-02-23
+
+### Summary
+
+- Created `scripts/pipeline_runner.py`: end-to-end standalone pipeline using Gemini API for content generation. Uses `sys.executable` (quoted) for all subprocess calls so it works in paths containing spaces and on both macOS and Linux.
+- Created `.github/workflows/weekly-pipeline.yml`: workflow_dispatch trigger with client_id, week_of, skip_images, skip_airtable, mock inputs. Runs pipeline_runner.py with --skip-deploy, then builds site separately with --include-admin, deploys to gh-pages, uploads Excel as artifact.
+- Created `.github/workflows/onboard-client.yml`: workflow_dispatch trigger to create client directory from template, fill config.json with provided values, commit to Fork-#1.
+- Created `admin/index.html`, `admin/admin.css`, `admin/admin.js`: dark-themed admin panel with GitHub PAT auth (sessionStorage only), pipeline trigger form, onboard form, run status polling with auto-refresh.
+- Modified `scripts/build_static.py`: added `--include-admin` flag that copies `admin/` to `dist/admin/` after build.
+- Updated `.claude/commands/deploy.md`: deploy command now uses `--include-admin` flag.
+- Created `reference/github-actions-setup.md`: full setup guide for Secrets, Pages, permissions, and PAT creation.
+- Updated `CLAUDE.md`: added `.github/`, `admin/`, `pipeline_runner.py`, `github-actions-setup.md` to workspace structure; updated Scripts table and Deployment section.
+- Updated `reference/api-setup.md`: added GitHub Actions section with link to setup guide.
+
+### Deviations from Plan
+
+- Added `--mock` input to `weekly-pipeline.yml` (plan didn't include it but it's essential for safe testing from the admin panel).
+- `pipeline_runner.py` uses `sys.executable` (quoted) instead of a plain `python` command, to handle macOS paths with spaces and ensure the correct venv Python is used.
+- Added `if-no-files-found: warn` to the artifact upload step (graceful handling if workbook wasn't created).
+- Added `permissions: contents: write` to both workflow jobs (required for gh-pages push and repo commits).
+
+### Issues Encountered
+
+- `python` command not found on macOS (only `python3` is in PATH). Fixed by using `sys.executable` to reference the exact interpreter running the script.
+- Path with spaces (`/Users/rt/Claude Code/...`) caused shell tokenization error. Fixed by quoting `sys.executable` as `f'"{sys.executable}"'`.

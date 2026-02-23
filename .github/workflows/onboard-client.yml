@@ -1,0 +1,146 @@
+name: Onboard New Client
+
+on:
+  workflow_dispatch:
+    inputs:
+      client_id:
+        description: 'Client ID (lowercase, no spaces, e.g. acmecorp)'
+        required: true
+      display_name:
+        description: 'Brand display name (e.g. Acme Corp)'
+        required: true
+      tagline:
+        description: 'One-line brand tagline'
+        required: true
+      website:
+        description: 'Website URL (e.g. acmecorp.com)'
+        required: true
+      primary_color:
+        description: 'Primary brand color hex (e.g. #1a1a2e)'
+        required: false
+        default: '#1a1a2e'
+      accent_color:
+        description: 'Accent color hex (e.g. #00aaff)'
+        required: false
+        default: '#00aaff'
+      industry:
+        description: 'Industry / niche (e.g. DeFi, SaaS, ecommerce)'
+        required: true
+      platforms:
+        description: 'Platforms comma-separated (e.g. twitter,telegram)'
+        required: false
+        default: 'twitter,telegram'
+      airtable_base_id:
+        description: 'Airtable Base ID (optional, e.g. appXXXXXXXXXX)'
+        required: false
+        default: ''
+
+jobs:
+  onboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout working branch
+        uses: actions/checkout@v4
+        with:
+          ref: Fork-#1
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate client ID
+        run: |
+          CLIENT_ID="${{ github.event.inputs.client_id }}"
+          if [[ ! "$CLIENT_ID" =~ ^[a-z0-9_-]+$ ]]; then
+            echo "ERROR: Client ID '$CLIENT_ID' must be lowercase letters, numbers, hyphens, or underscores only."
+            exit 1
+          fi
+          if [ -d "clients/$CLIENT_ID" ]; then
+            echo "ERROR: Client '$CLIENT_ID' already exists."
+            exit 1
+          fi
+
+      - name: Create client directory from template
+        run: |
+          CLIENT_ID="${{ github.event.inputs.client_id }}"
+          cp -r clients/_template "clients/${CLIENT_ID}"
+          echo "Copied template to clients/${CLIENT_ID}"
+
+      - name: Write config.json
+        env:
+          CLIENT_ID: ${{ github.event.inputs.client_id }}
+          DISPLAY_NAME: ${{ github.event.inputs.display_name }}
+          TAGLINE: ${{ github.event.inputs.tagline }}
+          WEBSITE: ${{ github.event.inputs.website }}
+          PRIMARY_COLOR: ${{ github.event.inputs.primary_color }}
+          ACCENT_COLOR: ${{ github.event.inputs.accent_color }}
+          INDUSTRY: ${{ github.event.inputs.industry }}
+          PLATFORMS: ${{ github.event.inputs.platforms }}
+          AIRTABLE_BASE_ID: ${{ github.event.inputs.airtable_base_id }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os
+
+          client_id    = os.environ["CLIENT_ID"]
+          display_name = os.environ["DISPLAY_NAME"]
+          tagline      = os.environ["TAGLINE"]
+          website      = os.environ["WEBSITE"]
+          primary_color= os.environ["PRIMARY_COLOR"]
+          accent_color = os.environ["ACCENT_COLOR"]
+          industry     = os.environ["INDUSTRY"]
+          platforms    = [p.strip() for p in os.environ["PLATFORMS"].split(",") if p.strip()]
+          airtable_base_id = os.environ.get("AIRTABLE_BASE_ID", "").strip()
+
+          config_path = f"clients/{client_id}/config.json"
+          with open(config_path) as f:
+              config = json.load(f)
+
+          config["client_id"]               = client_id
+          config["display_name"]            = display_name
+          config["tagline"]                 = tagline
+          config["website"]                 = website
+          config["brand"]["primary_color"]  = primary_color
+          config["brand"]["accent_color"]   = accent_color
+          config["content"]["platforms"]    = platforms
+
+          # Add industry to context placeholder
+          config["industry"] = industry
+
+          if airtable_base_id:
+              config["airtable"]["enabled"] = True
+              config["airtable"]["base_id"] = airtable_base_id
+
+          with open(config_path, "w") as f:
+              json.dump(config, f, indent=2)
+
+          print(f"Config written for client: {client_id}")
+          print(f"  Display name: {display_name}")
+          print(f"  Platforms: {platforms}")
+          print(f"  Airtable: {'enabled (' + airtable_base_id + ')' if airtable_base_id else 'disabled'}")
+          PYEOF
+
+      - name: Commit new client directory
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "clients/${{ github.event.inputs.client_id }}/"
+          git commit -m "Onboard client: ${{ github.event.inputs.client_id }} (${{ github.event.inputs.display_name }})"
+          git push origin Fork-#1
+
+      - name: Next steps
+        run: |
+          echo ""
+          echo "Client '${{ github.event.inputs.client_id }}' created successfully."
+          echo ""
+          echo "Next steps:"
+          echo "  1. Run /onboard-client ${{ github.event.inputs.client_id }} in Claude Code"
+          echo "     to AI-draft content-guidelines.md, keywords.md, and context.md"
+          echo "  2. Add brand assets to clients/${{ github.event.inputs.client_id }}/brand/"
+          echo "  3. Run /weekly-pipeline --client ${{ github.event.inputs.client_id }}"

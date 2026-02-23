@@ -30,6 +30,10 @@ This file is the single source of truth for how Claude should understand and ope
 ├── .env                      # API keys (gitignored)
 ├── .active-client            # Current active client ID (gitignored, default: bobe)
 ├── .gitignore
+├── .github/
+│   └── workflows/
+│       ├── weekly-pipeline.yml   # GH Actions: workflow_dispatch → pipeline_runner.py → deploy
+│       └── onboard-client.yml    # GH Actions: workflow_dispatch → create client dir → commit
 ├── .claude/
 │   ├── commands/
 │   │   ├── prime.md              # /prime — session initialization
@@ -37,7 +41,7 @@ This file is the single source of truth for how Claude should understand and ope
 │   │   ├── implement.md          # /implement — execute plans
 │   │   ├── weekly-pipeline.md    # /weekly-pipeline — bilingual weekly batch run
 │   │   ├── view-content.md       # /view-content — launch dashboard
-│   │   ├── deploy.md             # /deploy — build and deploy static dashboard
+│   │   ├── deploy.md             # /deploy — build and deploy static dashboard (includes admin panel)
 │   │   ├── onboard-client.md     # /onboard-client — create new client config
 │   │   ├── switch-client.md      # /switch-client — switch active client
 │   │   └── setup-content-automation.md  # /setup-content-automation — initial setup
@@ -46,6 +50,10 @@ This file is the single source of truth for how Claude should understand and ope
 │       ├── image-generator/      # Branded image generation (client-aware)
 │       ├── skill-creator/        # Create new Claude skills
 │       └── mcp-integration/      # MCP server integration guidance
+├── admin/
+│   ├── index.html                # Password-protected admin panel UI
+│   ├── admin.css                 # Dark theme styles
+│   └── admin.js                  # GitHub API calls, auth, status polling
 ├── clients/
 │   ├── _template/                # Template for onboarding new clients
 │   │   ├── config.json           # Placeholder config (copy and fill in)
@@ -65,7 +73,8 @@ This file is the single source of truth for how Claude should understand and ope
 ├── plans/                        # Implementation plans (dated markdown files)
 ├── reference/
 │   ├── api-setup.md              # All API setup instructions (Apify, Google AI, WaveSpeed, Airtable)
-│   └── airtable-client-setup.md  # Step-by-step Airtable setup guide for clients (token, base, config)
+│   ├── airtable-client-setup.md  # Step-by-step Airtable setup guide for clients (token, base, config)
+│   └── github-actions-setup.md   # GitHub Secrets, Pages, workflow permissions, PAT creation
 ├── outputs/
 │   └── content/
 │       └── {client_id}/          # Client-scoped output directory
@@ -163,9 +172,10 @@ This workspace supports multiple clients via a config-driven architecture:
 | `nano_banana.py` | Generate EN branded images via WaveSpeed GPT-Image-1.5 | `--prompt`, `--output`, `--style`, `--mock`, `--no-reference`, `--client` |
 | `wavespeed_img.py` | Generate RU branded images via WaveSpeed Seedream 4.5 | `--prompt`, `--topic`, `--headline`, `--style`, `--output`, `--mock`, `--client` |
 | `weekly_pipeline.py` | Weekly pipeline orchestrator (14-col bilingual workbook) | `--action` (scrape, create-workbook, save-content, finalize, sync-airtable), `--week-of`, `--mock`, `--client` |
+| `pipeline_runner.py` | Standalone end-to-end pipeline (Gemini-powered, no Claude required) | `--client`, `--week-of`, `--mock`, `--skip-images`, `--skip-airtable`, `--skip-deploy` |
 | `airtable_sync.py` | Push weekly content to client's Airtable base | `--week-of`, `--mock`, `--client` |
 | `web_viewer.py` | Flask dashboard server with EN/RU toggle | Runs on localhost:5001, `--client` |
-| `build_static.py` | Static site builder with EN/RU toggle | `--output`, `--date`, `--client` |
+| `build_static.py` | Static site builder with EN/RU toggle + admin panel | `--output`, `--date`, `--include-admin`, `--client` |
 
 ---
 
@@ -214,13 +224,23 @@ Store in `.env` (never commit). See `reference/api-setup.md` for setup.
 The content dashboard can be deployed as a static site for client access:
 
 - **Local viewing**: `/view-content` runs Flask on localhost:5001
-- **Client access**: `/deploy` builds static HTML and deploys to GitHub Pages (`gh-pages` branch of `rtadik/bobe-content-dashboard`)
+- **Client access**: `/deploy` builds static HTML + admin panel and deploys to GitHub Pages (`gh-pages` branch of `rtadik/bobe-content-dashboard`)
+- **Remote pipeline**: `pipeline_runner.py` runs the full pipeline autonomously via GitHub Actions (Gemini-powered)
 
-The deployed dashboard is a read-only view of generated content. Content generation, image regeneration, and approval workflows remain local-only.
+The deployed dashboard is a read-only view of generated content. The admin panel (`/admin/`) is write-capable via GitHub API.
 
 **Hosting**: GitHub Pages (free, 100 GB/month bandwidth, no credit card required)
-**URL**: https://rtadik.github.io/bobe-content-dashboard
+**Dashboard URL**: https://rtadik.github.io/bobe-content-dashboard
+**Admin panel URL**: https://rtadik.github.io/bobe-content-dashboard/admin/
 **Cost**: $0/month
+
+### GitHub Actions
+
+Two workflows in `.github/workflows/`:
+- **`weekly-pipeline.yml`**: Triggered via `workflow_dispatch` (admin panel or GitHub UI). Runs `pipeline_runner.py`, builds static site with admin panel, deploys to `gh-pages`, uploads Excel as artifact.
+- **`onboard-client.yml`**: Creates a new client directory from template inputs and commits it to the repo.
+
+Setup: See `reference/github-actions-setup.md` for GitHub Secrets, permissions, and PAT creation.
 
 ---
 
@@ -233,6 +253,7 @@ The deployed dashboard is a read-only view of generated content. Content generat
 | Russian language support + remove daily pipeline | Implemented | Bilingual EN/RU content generation, WaveSpeed Seedream 4.5 for RU images, EN/RU dashboard toggle, daily pipeline removed |
 | `plans/2026-02-19-multi-client-platform.md` | Implemented | Multi-client architecture: config-driven client isolation, `/onboard-client`, `/switch-client`, all scripts refactored |
 | `plans/2026-02-23-multi-client-scalability.md` | Implemented | Airtable content delivery, auto-drafted onboarding Q&A, config-driven platforms and image style mapping |
+| `plans/2026-02-23-github-actions-admin-panel.md` | Implemented | Standalone `pipeline_runner.py`, GitHub Actions workflows, admin panel at `/admin/` |
 
 ---
 
