@@ -1,0 +1,94 @@
+{
+  "client_id": "rejiglabs",
+  "display_name": "Rejig Labs",
+  "tagline": "Marketing for Web3",
+  "website": "rejiglabs.com",
+  "brand": {
+    "primary_color": "#1a1a2e",
+    "accent_color": "#00aaff",
+    "text_color": "#ffffff",
+    "secondary_accent": "#ff4fda",
+    "surface_color": "#111b32",
+    "background_gradient": "#111b32 to #070a1b",
+    "logo_path": "brand/logo.png",
+    "reference_images": [
+      "brand/logo.png"
+    ],
+    "mascot_description": "Describe the client's mascot or brand character here. Include details about appearance, style, and distinguishing features.",
+    "logo_description": "Describe how the logo should appear in generated images (position, color, size)",
+    "background_style": "Describe the default background style for generated images"
+  },
+  "content": {
+    "tone": "Describe the brand tone and voice (e.g., professional, friendly, educational)",
+    "voice": "Longer description of how the brand communicates",
+    "brand_terms_keep": [
+      "BRAND_NAME"
+    ],
+    "cta_url": "example.com",
+    "cta_examples": [
+      "Learn more at example.com",
+      "Try it free: example.com"
+    ],
+    "hashtags": [
+      "#BrandHashtag"
+    ],
+    "messaging_pillars": [
+      "Pillar 1: Description",
+      "Pillar 2: Description"
+    ],
+    "platforms": [
+      "twitter",
+      "telegram"
+    ],
+    "platform_formats": {
+      "twitter": {
+        "thread_tweets": 5,
+        "single_max_chars": 280,
+        "thread_topics_per_day": 2,
+        "single_topics_per_day": 1
+      },
+      "telegram": {
+        "min_chars": 400,
+        "max_chars": 1200,
+        "end_with_question": true
+      }
+    }
+  },
+  "scraping": {
+    "keywords": [
+      "keyword1",
+      "keyword2",
+      "keyword3"
+    ],
+    "negative_keywords": [
+      "scam",
+      "spam"
+    ],
+    "subreddits": [
+      "relevant_subreddit"
+    ]
+  },
+  "image": {
+    "style_presets": {
+      "minimal": "clean minimalist banner, solid dark background",
+      "tech": "futuristic data visualization banner with glowing elements",
+      "notification": "realistic smartphone mockup showing app notification"
+    },
+    "angle_style_map": {
+      "Pain Point": "minimal",
+      "Education": "tech",
+      "Transparency": "notification",
+      "Product": "notification"
+    }
+  },
+  "languages": [
+    "en"
+  ],
+  "airtable": {
+    "enabled": false,
+    "base_id": "",
+    "api_key_env": "AIRTABLE_API_KEY",
+    "images_base_url": ""
+  },
+  "industry": "Marketing, Web3"
+}
