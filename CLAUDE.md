@@ -64,7 +64,8 @@ This file is the single source of truth for how Claude should understand and ope
 │   └── RT BoBe Info.md           # User's role, responsibilities, working style
 ├── plans/                        # Implementation plans (dated markdown files)
 ├── reference/
-│   └── api-setup.md              # Apify + Google AI + WaveSpeed setup instructions
+│   ├── api-setup.md              # All API setup instructions (Apify, Google AI, WaveSpeed, Airtable)
+│   └── airtable-client-setup.md  # Step-by-step Airtable setup guide for clients (token, base, config)
 ├── outputs/
 │   └── content/
 │       └── {client_id}/          # Client-scoped output directory
@@ -79,6 +80,7 @@ This file is the single source of truth for how Claude should understand and ope
 │   ├── nano_banana.py            # EN image generation via WaveSpeed GPT-Image-1.5
 │   ├── wavespeed_img.py          # RU image generation via WaveSpeed Seedream 4.5
 │   ├── weekly_pipeline.py        # Weekly pipeline orchestrator (14-col, bilingual)
+│   ├── airtable_sync.py          # Push weekly content to client's Airtable base (opt-in)
 │   ├── web_viewer.py             # Flask dashboard server (localhost:5001, EN/RU toggle)
 │   └── build_static.py           # Static site builder for deployment (EN/RU toggle)
 ├── dist/                         # Static site build output (gitignored, deployed via /deploy)
@@ -105,9 +107,10 @@ Launch the Flask content dashboard at **http://localhost:5001**. Shows topic car
 - Example: `/view-content week:2026-02-16`
 
 ### /deploy [date]
-Build and deploy the static content dashboard for client access. Renders the dashboard as static HTML files, copies images, and deploys to Cloudflare Pages (or GitHub Pages). Your client gets a URL to view all generated content. Zero hosting cost.
+Build and deploy the static content dashboard to GitHub Pages. Renders the dashboard as static HTML files, copies images, and pushes to the `gh-pages` branch of `rtadik/bobe-content-dashboard`. Your client gets a URL to view all generated content. Zero hosting cost.
 
-- Requires one-time setup: Cloudflare account or GitHub Pages enabled. The `/deploy` command walks through first-time setup.
+- Live URL: https://rtadik.github.io/bobe-content-dashboard
+- Requires one-time setup: enable GitHub Pages on the repo (Settings → Pages → branch: gh-pages). The `/deploy` command walks through this.
 - Example: `/deploy` or `/deploy 2026-02-18`
 
 ### /create-plan [request]
@@ -121,7 +124,7 @@ Execute a plan created by /create-plan, step by step.
 - Example: `/implement plans/2026-02-18-vercel-static-deployment.md`
 
 ### /onboard-client [client-name]
-Create a new client configuration from the template. Walks through setup interactively: gathers brand info, keywords, tone, mascot description, and creates the client directory under `clients/`.
+Create a new client configuration from the template. Conducts a full 18-question Q&A, then auto-drafts all four client files (`config.json`, `content-guidelines.md`, `context.md`, `keywords.md`) in one pass — no manual file editing required. Includes Airtable delivery setup as an optional final step.
 
 - Example: `/onboard-client acmecrypto`
 
@@ -144,8 +147,9 @@ This workspace supports multiple clients via a config-driven architecture:
 - **All scripts** accept `--client {id}` to override the active client
 - **`scripts/client_config.py`** is the central module that all scripts import for client-specific values
 - **Outputs** are namespaced under `outputs/content/{client_id}/`
-- **Onboarding**: Use `/onboard-client` to create a new client from `clients/_template/`
+- **Onboarding**: Use `/onboard-client` to create a new client from `clients/_template/` (full Q&A + auto-draft)
 - **Switching**: Use `/switch-client` to change the active client
+- **Airtable delivery**: Opt-in per client — set `airtable.enabled: true` and `airtable.base_id` in `config.json`, add `AIRTABLE_API_KEY` to `.env`. See `reference/airtable-client-setup.md` for full setup guide.
 
 ---
 
@@ -153,12 +157,13 @@ This workspace supports multiple clients via a config-driven architecture:
 
 | Script | Purpose | Key flags |
 |--------|---------|-----------|
-| `client_config.py` | Multi-client config loader (central module) | Import only: `load_config()`, `get_output_dir()`, `get_keywords()`, etc. |
+| `client_config.py` | Multi-client config loader (central module) | Import only: `load_config()`, `get_output_dir()`, `get_keywords()`, `get_airtable_config()`, `is_airtable_enabled()` |
 | `apify_scraper.py` | Scrape Twitter/Reddit via Apify for trending topics | `--platform`, `--keywords`, `--count`, `--days`, `--top`, `--output`, `--mock`, `--client` |
 | `excel_manager.py` | Excel styling library (no CLI) | Import only: `style_header_cell`, `style_data_cell`, color constants |
 | `nano_banana.py` | Generate EN branded images via WaveSpeed GPT-Image-1.5 | `--prompt`, `--output`, `--style`, `--mock`, `--no-reference`, `--client` |
 | `wavespeed_img.py` | Generate RU branded images via WaveSpeed Seedream 4.5 | `--prompt`, `--topic`, `--headline`, `--style`, `--output`, `--mock`, `--client` |
-| `weekly_pipeline.py` | Weekly pipeline orchestrator (14-col bilingual workbook) | `--action`, `--week-of`, `--mock`, `--client` |
+| `weekly_pipeline.py` | Weekly pipeline orchestrator (14-col bilingual workbook) | `--action` (scrape, create-workbook, save-content, finalize, sync-airtable), `--week-of`, `--mock`, `--client` |
+| `airtable_sync.py` | Push weekly content to client's Airtable base | `--week-of`, `--mock`, `--client` |
 | `web_viewer.py` | Flask dashboard server with EN/RU toggle | Runs on localhost:5001, `--client` |
 | `build_static.py` | Static site builder with EN/RU toggle | `--output`, `--date`, `--client` |
 
@@ -196,6 +201,7 @@ This workspace supports multiple clients via a config-driven architecture:
 | Apify | `APIFY_API_TOKEN` | Twitter + Reddit scraping |
 | Google AI | `GOOGLE_AI_API_KEY` | Gemini text translation (RU content) |
 | WaveSpeed | `WAVESPEED_API_KEY` | GPT-Image-1.5 (EN) + Seedream 4.5 (RU) image generation |
+| Airtable | `AIRTABLE_API_KEY` | Content delivery to client Airtable bases (optional, per client) |
 
 Store in `.env` (never commit). See `reference/api-setup.md` for setup.
 
@@ -208,11 +214,12 @@ Store in `.env` (never commit). See `reference/api-setup.md` for setup.
 The content dashboard can be deployed as a static site for client access:
 
 - **Local viewing**: `/view-content` runs Flask on localhost:5001
-- **Client access**: `/deploy` builds static HTML and deploys to Cloudflare Pages
+- **Client access**: `/deploy` builds static HTML and deploys to GitHub Pages (`gh-pages` branch of `rtadik/bobe-content-dashboard`)
 
 The deployed dashboard is a read-only view of generated content. Content generation, image regeneration, and approval workflows remain local-only.
 
-**Hosting**: Cloudflare Pages (free, unlimited bandwidth, no credit card required)
+**Hosting**: GitHub Pages (free, 100 GB/month bandwidth, no credit card required)
+**URL**: https://rtadik.github.io/bobe-content-dashboard
 **Cost**: $0/month
 
 ---
@@ -225,6 +232,7 @@ The deployed dashboard is a read-only view of generated content. Content generat
 | `plans/2026-02-18-vercel-static-deployment.md` | Implemented | Deploy dashboard as static site to Cloudflare Pages/GitHub Pages for client access |
 | Russian language support + remove daily pipeline | Implemented | Bilingual EN/RU content generation, WaveSpeed Seedream 4.5 for RU images, EN/RU dashboard toggle, daily pipeline removed |
 | `plans/2026-02-19-multi-client-platform.md` | Implemented | Multi-client architecture: config-driven client isolation, `/onboard-client`, `/switch-client`, all scripts refactored |
+| `plans/2026-02-23-multi-client-scalability.md` | Implemented | Airtable content delivery, auto-drafted onboarding Q&A, config-driven platforms and image style mapping |
 
 ---
 

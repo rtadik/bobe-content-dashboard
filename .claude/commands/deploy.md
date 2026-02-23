@@ -1,6 +1,6 @@
 # Deploy
 
-> Build and deploy the BoBe content dashboard to the web
+> Build and deploy the content dashboard to GitHub Pages
 
 ## Variables
 
@@ -29,53 +29,54 @@ Check the build output:
 - Confirm `dist/images/` contains the expected images
 - Report total file count and size
 
-### Step 3 — Deploy
+### Step 3 — Deploy to GitHub Pages
 
-**Option A: Cloudflare Pages (recommended)**
+Push the `dist/` folder contents to the `gh-pages` branch of the content dashboard repo:
+
 ```bash
-npx wrangler pages deploy dist --project-name bobe-content
+cd "/Users/rt/Claude Code/bobe-image-content-gen" && git subtree push --prefix dist origin gh-pages
 ```
 
-**Option B: GitHub Pages**
-Ensure the repo has GitHub Pages enabled on the `gh-pages` branch, then:
+If that fails (e.g. due to history conflicts), use the force push method:
 ```bash
-cd "/Users/rt/Claude Code/bobe-image-content-gen/dist" && git init && git add -A && git commit -m "Deploy content dashboard" && git push -f git@github.com:USER/REPO.git main:gh-pages
+cd "/Users/rt/Claude Code/bobe-image-content-gen/dist" && git init && git add -A && git commit -m "Deploy content dashboard $(date +%Y-%m-%d)" && git push -f https://github.com/rtadik/bobe-content-dashboard.git HEAD:gh-pages && cd .. && rm -rf dist/.git
 ```
-
-**Option C: Manual upload**
-Tell the user to:
-1. Go to https://dash.cloudflare.com → Pages → Create a project → Upload assets
-2. Drag the `dist/` folder
-3. Deploy
 
 ### Step 4 — Report
 
 Tell the user:
 - Build successful: X pages, Y images, Z total size
-- Deployed to: [URL]
+- Deployed to: https://rtadik.github.io/bobe-content-dashboard
 - Share this URL with your client
 
 ---
 
 ## First-Time Setup
 
-### Cloudflare Pages (recommended, $0/month, unlimited bandwidth)
+### GitHub Pages
 
-1. Create a free Cloudflare account at https://dash.cloudflare.com
-2. Go to Workers & Pages → Create → Pages → Upload assets
-3. Upload the `dist/` folder
-4. Choose a project name (e.g., `bobe-content`)
-5. Get the URL: `https://bobe-content.pages.dev`
-6. For subsequent deploys, either re-upload or use Wrangler CLI:
-   ```bash
-   npm install -g wrangler
-   wrangler login
-   npx wrangler pages deploy dist --project-name bobe-content
-   ```
+The repo `rtadik/bobe-content-dashboard` must have GitHub Pages enabled:
 
-### GitHub Pages (alternative, $0/month, 100 GB/month bandwidth)
+1. Go to https://github.com/rtadik/bobe-content-dashboard/settings/pages
+2. Under **Source**, select **Deploy from a branch**
+3. Branch: `gh-pages` / folder: `/ (root)`
+4. Click **Save**
 
-1. Create a public repo (or use the existing one)
-2. Go to Settings → Pages → Source: Deploy from branch `gh-pages`
-3. Push the `dist/` contents to `gh-pages` branch
-4. Get the URL: `https://username.github.io/repo-name`
+The site will be live at: **https://rtadik.github.io/bobe-content-dashboard**
+
+GitHub Pages is free, no credit card required, 100 GB/month bandwidth.
+
+---
+
+## After First Deploy
+
+Once the site is live, set the URL in the client config so Airtable sync can attach images:
+
+```json
+// clients/bobe/config.json
+"airtable": {
+  "images_base_url": "https://rtadik.github.io/bobe-content-dashboard"
+}
+```
+
+This is already set for BoBe. No action needed.

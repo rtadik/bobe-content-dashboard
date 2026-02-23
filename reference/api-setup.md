@@ -11,6 +11,8 @@ All API keys are stored in `.env` at the project root. This file is gitignored a
 ```bash
 APIFY_API_TOKEN=your_token_here
 GOOGLE_AI_API_KEY=your_key_here
+WAVESPEED_API_KEY=your_key_here
+AIRTABLE_API_KEY=your_pat_token_here   # Optional — only needed if airtable.enabled in client config
 ```
 
 To load them in your shell session:
@@ -79,6 +81,36 @@ Image generation models have **free tier quota = 0** — billing must be enabled
 ### Rate Limits
 - Free tier: 15 requests/minute, 1,500/day
 - Images may take 10–30 seconds to generate
+
+---
+
+---
+
+## Airtable (Content Delivery — Optional)
+
+**Used by:** `scripts/airtable_sync.py`
+
+Airtable is opt-in per client. When enabled, all 42 weekly content rows are automatically pushed to the client's Airtable base after the pipeline finishes.
+
+For a complete step-by-step setup guide (including token creation, scopes, and troubleshooting), see:
+
+**`reference/airtable-client-setup.md`**
+
+### Quick Setup Summary
+
+1. Create a free Airtable account at [airtable.com](https://airtable.com)
+2. Create a new Base for the client
+3. Copy the Base ID from the URL (`appXXXXXXXXXX`)
+4. Create a Personal Access Token at [airtable.com/create/tokens](https://airtable.com/create/tokens)
+   - Required scopes: `data.records:write` + `schema.bases:write`
+5. Add to `.env`: `AIRTABLE_API_KEY=pat...your_token`
+6. Update client config: `"airtable": {"enabled": true, "base_id": "appXXXX..."}`
+
+### Usage & Costs
+
+- **Free tier:** 1,000 records/base (~23 weeks at 42 records/week), unlimited bases
+- **Team plan:** $20/user/month for 50,000 records/base
+- **API calls:** Free tier includes 1,000 API calls/month — enough for ~23 weekly syncs
 
 ---
 

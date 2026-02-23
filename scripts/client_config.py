@@ -137,6 +137,18 @@ def set_active_client(client_id: str) -> None:
     ACTIVE_CLIENT_FILE.write_text(client_id + "\n")
 
 
+def get_airtable_config(client_id: str = None) -> dict:
+    """Return Airtable config for the specified (or active) client. Returns {} if not configured."""
+    config = load_config(client_id)
+    return config.get("airtable", {})
+
+
+def is_airtable_enabled(client_id: str = None) -> bool:
+    """Return True if Airtable is configured and enabled for the client."""
+    at_config = get_airtable_config(client_id)
+    return bool(at_config.get("enabled") and at_config.get("base_id"))
+
+
 def add_client_arg(parser):
     """Add --client argument to an argparse parser."""
     parser.add_argument(

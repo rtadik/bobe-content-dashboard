@@ -20,6 +20,9 @@ Called in stages by .claude/commands/weekly-pipeline.md:
   Stage 4 — finalize (macOS notification + summary):
     python scripts/weekly_pipeline.py --action finalize --week-of 2026-02-16
 
+  Stage 5 — sync to Airtable (optional, if airtable.enabled in client config):
+    python scripts/weekly_pipeline.py --action sync-airtable --week-of 2026-02-16
+
 Content JSON format for save-content:
 {
   "date": "2026-02-16",
@@ -367,7 +370,7 @@ def finalize(week_of, client_id=None):
 def main():
     parser = argparse.ArgumentParser(description="Weekly Pipeline Orchestrator")
     parser.add_argument("--action",
-                        choices=["scrape", "create-workbook", "save-content", "finalize"],
+                        choices=["scrape", "create-workbook", "save-content", "finalize", "sync-airtable"],
                         required=True,
                         help="Pipeline stage to execute")
     parser.add_argument("--week-of", default=None,
@@ -404,6 +407,16 @@ def main():
 
     elif args.action == "finalize":
         finalize(week_of, client_id=active_client)
+
+    elif args.action == "sync-airtable":
+        cmd = [sys.executable, str(Path(__file__).parent / "airtable_sync.py"),
+               "--week-of", week_of]
+        if active_client:
+            cmd += ["--client", active_client]
+        if args.mock:
+            cmd.append("--mock")
+        result = subprocess.run(cmd, capture_output=False)
+        sys.exit(result.returncode)
 
 
 if __name__ == "__main__":

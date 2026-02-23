@@ -31,7 +31,21 @@
     "messaging_pillars": [
       "Pillar 1: Description",
       "Pillar 2: Description"
-    ]
+    ],
+    "platforms": ["twitter", "telegram"],
+    "platform_formats": {
+      "twitter": {
+        "thread_tweets": 5,
+        "single_max_chars": 280,
+        "thread_topics_per_day": 2,
+        "single_topics_per_day": 1
+      },
+      "telegram": {
+        "min_chars": 400,
+        "max_chars": 1200,
+        "end_with_question": true
+      }
+    }
   },
   "scraping": {
     "keywords": [
@@ -47,7 +61,19 @@
       "minimal": "clean minimalist banner, solid dark background",
       "tech": "futuristic data visualization banner with glowing elements",
       "notification": "realistic smartphone mockup showing app notification"
+    },
+    "angle_style_map": {
+      "Pain Point": "minimal",
+      "Education": "tech",
+      "Transparency": "notification",
+      "Product": "notification"
     }
   },
-  "languages": ["en"]
+  "languages": ["en"],
+  "airtable": {
+    "enabled": false,
+    "base_id": "",
+    "api_key_env": "AIRTABLE_API_KEY",
+    "images_base_url": ""
+  }
 }

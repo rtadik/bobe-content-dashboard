@@ -30,6 +30,12 @@ week_of: $ARGUMENTS (optional — if provided must be YYYY-MM-DD; defaults to Mo
    ```
    Read `clients/{active_client}/config.json` to load brand name, keywords, tone, mascot description, style presets, and all client-specific values. All subsequent steps use these config values instead of hardcoded defaults.
 
+   **Also read from config:**
+   - `content.platforms` — which platforms to generate content for (e.g., `["twitter", "telegram"]`)
+   - `content.platform_formats` — format rules per platform (thread length, char limits, etc.)
+   - `image.angle_style_map` — maps topic angle to image style preset (e.g., `"Pain Point" → "minimal"`)
+   - `airtable.enabled` — whether to sync to Airtable after saving Excel
+
 4. **Verify prerequisites**:
    ```bash
    ls scripts/weekly_pipeline.py scripts/nano_banana.py scripts/wavespeed_img.py scripts/apify_scraper.py
@@ -138,9 +144,12 @@ Number them sequentially: topic 1 Twitter = item 1, topic 1 Telegram = item 2, t
 **For each topic N (show progress: "Generating 4/21..."):**
 
 **Step 4a — Generate English content** using the content-generator skill (use the active client's tone and voice from config):
-- Twitter thread: 5 tweets separated by `---`, each ≤280 chars, hook + insight + insight + BoBe connection + soft CTA
-- Twitter single: 1 tweet ≤280 chars with 2–3 hashtags
-- Telegram: 400–1200 chars, educational tone, ends with engagement question
+
+Read `content.platforms` from config to determine which platforms to generate for. For each platform, use `content.platform_formats` for the format rules:
+
+- **Twitter** (if in platforms): thread format uses `platform_formats.twitter.thread_tweets` tweets (default 5), separated by `---`, each ≤`platform_formats.twitter.single_max_chars` chars (default 280). Hook + insights + brand connection + soft CTA. Single post: 1 tweet ≤280 chars with 2-3 hashtags.
+- **Telegram** (if in platforms): `platform_formats.telegram.min_chars` to `platform_formats.telegram.max_chars` chars (default 400-1200), educational tone, ends with engagement question if `platform_formats.telegram.end_with_question` is true.
+- **Other platforms**: use sensible format defaults aligned with the client's voice and the platform's norms.
 
 **Step 4b — Translate to Russian** (immediately after English, while context is warm):
 - Produce a full Russian translation of the Twitter content for this topic
@@ -199,9 +208,16 @@ Repeat for all 42 items. If a save fails, log the error and continue — do not 
 Generate **42 images total**: 21 EN images via Gemini (`nano_banana.py`) + 21 RU images via WaveSpeed Seedream 4.5 (`wavespeed_img.py`).
 
 **Style mapping:**
-- Pain Point topics → `--style minimal`
-- Education topics → `--style tech`
-- Transparency/Product topics → `--style notification`
+
+Read `image.angle_style_map` from the active client's config. Map each topic's angle to its style preset using that config value.
+
+Example (BoBe default):
+- Pain Point → `--style minimal`
+- Education → `--style tech`
+- Transparency → `--style notification`
+- Product → `--style notification`
+
+If a topic angle is not found in `angle_style_map`, default to `--style minimal`.
 
 **For each topic N (progress: "Generating images 2/21 [Mon]: Grid trading... (EN: Gemini + RU: Seedream)"):**
 
@@ -254,6 +270,38 @@ To review: /view-content week:{week_of}
 
 ---
 
+## Phase 6.5: Airtable Sync (if enabled)
+
+Check if Airtable is enabled for the active client:
+
+```bash
+python -c "
+import sys; sys.path.insert(0, 'scripts')
+from client_config import is_airtable_enabled
+print('enabled' if is_airtable_enabled() else 'disabled')
+"
+```
+
+**If enabled:**
+```bash
+source venv/bin/activate && python scripts/airtable_sync.py --week-of {week_of}
+```
+
+Expected output:
+```
+Records pushed: 42/42
+Images attached from: https://your-site.pages.dev   ← only if images_base_url is set
+Base:  app...
+Table: Week-{week_of}
+View:  https://airtable.com/{base_id}
+```
+
+**Image attachments note:** Images appear inline in Airtable only if `airtable.images_base_url` is set in config.json. This requires running `/deploy` first to publish images to Cloudflare Pages, then setting the deployed URL in config. Without it, image paths are stored as plain text (content is still fully readable).
+
+**If disabled:** skip silently and proceed to Phase 7.
+
+---
+
 ## Phase 7: Build Static Dashboard (Optional)
 
 Ask the user:
@@ -283,6 +331,8 @@ If yes:
 | Em-dash found in generated content | Regenerate only that item: replace `—`, `–`, `--` with commas or colons |
 | WAVESPEED_API_KEY missing | Stop and print "WAVESPEED_API_KEY not set in .env" |
 | API key missing | Stop and print the specific missing key name |
+| Airtable push fails for one record | Log row number and continue — Excel is source of truth |
+| AIRTABLE_API_KEY missing when airtable.enabled is true | Stop and print "AIRTABLE_API_KEY not set in .env — see reference/airtable-client-setup.md" |
 
 ---
 

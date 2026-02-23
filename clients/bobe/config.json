@@ -37,7 +37,21 @@
       "Transparency: on-chain visibility, audited smart contracts",
       "Risk Management: spot only, no leverage, structured strategies",
       "Accessibility: for retail users who want exposure without needing to be expert traders"
-    ]
+    ],
+    "platforms": ["twitter", "telegram"],
+    "platform_formats": {
+      "twitter": {
+        "thread_tweets": 5,
+        "single_max_chars": 280,
+        "thread_topics_per_day": 2,
+        "single_topics_per_day": 1
+      },
+      "telegram": {
+        "min_chars": 400,
+        "max_chars": 1200,
+        "end_with_question": true
+      }
+    }
   },
   "scraping": {
     "keywords": [
@@ -60,7 +74,19 @@
       "neon": "cyberpunk neon city background with blue and pink neon light trails, atmospheric night scene",
       "outdoor": "photorealistic urban outdoor setting, city street, natural lighting",
       "notification": "realistic smartphone mockup showing BoBe app notification on screen"
+    },
+    "angle_style_map": {
+      "Pain Point": "minimal",
+      "Education": "tech",
+      "Transparency": "notification",
+      "Product": "notification"
     }
   },
-  "languages": ["en", "ru"]
+  "languages": ["en", "ru"],
+  "airtable": {
+    "enabled": true,
+    "base_id": "appikOGb5GyhPqoCd",
+    "api_key_env": "AIRTABLE_API_KEY",
+    "images_base_url": "https://rtadik.github.io/bobe-content-dashboard"
+  }
 }
