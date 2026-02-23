@@ -227,12 +227,16 @@ The content dashboard can be deployed as a static site for client access:
 - **Client access**: `/deploy` builds static HTML + admin panel and deploys to GitHub Pages (`gh-pages` branch of `rtadik/bobe-content-dashboard`)
 - **Remote pipeline**: `pipeline_runner.py` runs the full pipeline autonomously via GitHub Actions (Gemini-powered)
 
-The deployed dashboard is a read-only view of generated content. The admin panel (`/admin/`) is write-capable via GitHub API.
+The deployed dashboard has a landing page, login form, and per-client auth. Clients log in with their credentials and see only their own content. The admin panel (`/admin/`) is write-capable via GitHub API.
 
 **Hosting**: GitHub Pages (free, 100 GB/month bandwidth, no credit card required)
-**Dashboard URL**: https://rtadik.github.io/bobe-content-dashboard
+**Landing page**: https://rtadik.github.io/bobe-content-dashboard/
+**Login page**: https://rtadik.github.io/bobe-content-dashboard/login.html
+**BoBe dashboard**: https://rtadik.github.io/bobe-content-dashboard/dashboard/bobe/
 **Admin panel URL**: https://rtadik.github.io/bobe-content-dashboard/admin/
 **Cost**: $0/month
+
+**Credentials**: Auto-generated from client IDs — no manual config or secrets required. Username: `admin`, password: `{client_id}123` (e.g. `bobe123`). New clients get credentials automatically on next deploy.
 
 ### GitHub Actions
 
@@ -254,6 +258,7 @@ Setup: See `reference/github-actions-setup.md` for GitHub Secrets, permissions, 
 | `plans/2026-02-19-multi-client-platform.md` | Implemented | Multi-client architecture: config-driven client isolation, `/onboard-client`, `/switch-client`, all scripts refactored |
 | `plans/2026-02-23-multi-client-scalability.md` | Implemented | Airtable content delivery, auto-drafted onboarding Q&A, config-driven platforms and image style mapping |
 | `plans/2026-02-23-github-actions-admin-panel.md` | Implemented | Standalone `pipeline_runner.py`, GitHub Actions workflows, admin panel at `/admin/` |
+| `plans/2026-02-23-landing-login-client-dashboard.md` | Implemented | Landing page (placeholder), login form with SHA-256 auth, per-client dashboard routing under `/dashboard/{client_id}/` |
 
 ---
 

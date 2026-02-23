@@ -1,7 +1,7 @@
 # Plan: Landing Page + Client Login + Per-Client Dashboard Routing
 
 **Created:** 2026-02-23
-**Status:** Draft
+**Status:** Implemented
 **Request:** Add a landing page (placeholder), a login page with per-client credentials, and route each client to their own scoped dashboard after authentication.
 
 ---
@@ -778,3 +778,27 @@ The implementation is complete when:
 - **Multi-client expand**: When a second client is onboarded, their dashboard will be built at `dist/dashboard/{new_client_id}/`. The login system already supports multiple entries in `credentials.json`. No structural changes needed.
 - **Password rotation**: To change a password, update `credentials.json` (or the `DASHBOARD_CREDENTIALS` GitHub Secret) and redeploy. Sessions are in `sessionStorage` and expire on browser close.
 - **Security posture**: This is soft client authentication suitable for content visibility. It is not appropriate for protecting payment data or PII. The threat model is: preventing casual URL-sharing between clients, not defending against targeted attacks.
+
+---
+
+## Implementation Notes
+
+**Implemented:** 2026-02-23
+
+### Summary
+
+- Updated `.gitignore` to exclude `credentials.json`
+- Created `credentials.json.example` (committed template) and `credentials.json` (gitignored, test credentials)
+- Rewrote `scripts/build_static.py` with: `load_credentials()` function, `LANDING_HTML` template, `LOGIN_HTML` template, updated `STATIC_HTML` (auth guard + logout button + `../../favicon.jpg`), restructured `build_site()` to output `dist/dashboard/{client_id}/`, updated `main()` to wire credentials
+- Updated `.github/workflows/weekly-pipeline.yml` with `DASHBOARD_CREDENTIALS` env var
+- Updated `reference/github-actions-setup.md` with `DASHBOARD_CREDENTIALS` secret documentation
+- Updated `CLAUDE.md` with new URL structure and credentials note
+
+### Deviations from Plan
+
+- `AUTH_GUARD_JS` was not implemented as a separate template string constant. Instead, the auth guard script is embedded directly in `STATIC_HTML` using a Jinja2 `{% autoescape false %}...{% endautoescape %}` block with `{{ expected_client_id }}` as a template variable. This is simpler and avoids a two-pass rendering approach.
+- Two separate Jinja2 environments are used: `autoescape=True` for `STATIC_HTML` (preserves existing content escaping behavior) and `autoescape=False` for `LANDING_HTML` and `LOGIN_HTML` (no user-generated content, raw JS injection needed).
+
+### Issues Encountered
+
+None. Build ran cleanly on first attempt: 2 dashboard pages, 42 images, landing page, login page (2 credentials baked in), admin panel copied.
