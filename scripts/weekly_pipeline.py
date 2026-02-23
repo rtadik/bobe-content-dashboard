@@ -367,6 +367,158 @@ def finalize(week_of, client_id=None):
     print(f"{'='*60}\n")
 
 
+
+
+def regenerate_topic_content(xlsx_path, topic_index, client_id=None, mock=False):
+    """
+    Regenerate EN Twitter + Telegram content for a specific topic using Gemini.
+
+    Finds the two rows (Twitter + Telegram) for topic_index in the Content sheet,
+    regenerates content via Gemini using the client's content guidelines,
+    writes the new content back to column F (Content), and saves the workbook.
+
+    Returns: {"twitter": "...", "telegram": "..."}
+    """
+    from google import genai
+
+    api_key = os.getenv("GOOGLE_AI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GOOGLE_AI_API_KEY not set in .env")
+
+    xlsx = Path(xlsx_path)
+    if not xlsx.exists():
+        raise FileNotFoundError(f"Workbook not found: {xlsx_path}")
+
+    # Load config and guidelines
+    config = client_config.load_config(client_id)
+    display_name = config.get("display_name", client_id or "Brand")
+    tone = config.get("content", {}).get("tone", "transparent, educational")
+    voice = config.get("content", {}).get("voice", "")
+    pillars = "; ".join(config.get("content", {}).get("messaging_pillars", []))
+    ctas = "; ".join(config.get("content", {}).get("cta_examples", []))
+    hashtags = ", ".join(config.get("content", {}).get("hashtags", []))
+
+    guidelines_path = client_config.get_content_guidelines_path(client_id)
+    guidelines_snippet = ""
+    if guidelines_path.exists():
+        guidelines_snippet = guidelines_path.read_text(encoding="utf-8")[:1500]
+
+    # Read workbook to find topic rows in order
+    wb_read = load_workbook(str(xlsx), read_only=True, data_only=True)
+    ws_read = wb_read["Content"]
+
+    topic_order = []
+    topic_rows = {}  # topic_name -> list of {excel_row, platform, format, date, day}
+    for row_idx, row in enumerate(ws_read.iter_rows(min_row=2, values_only=True), start=2):
+        if not row or not row[2]:
+            continue
+        tname = row[2]
+        if tname not in topic_rows:
+            topic_order.append(tname)
+            topic_rows[tname] = []
+        topic_rows[tname].append({
+            "excel_row": row_idx,
+            "platform": (row[3] or "").lower(),
+            "format": row[4] or "thread",
+            "date": str(row[0]) if row[0] else "",
+            "day": row[1] or "",
+        })
+    wb_read.close()
+
+    if topic_index >= len(topic_order):
+        raise ValueError(f"topic_index {topic_index} out of range (max {len(topic_order)-1})")
+
+    topic_name = topic_order[topic_index]
+    rows_for_topic = topic_rows[topic_name]
+
+    if not rows_for_topic:
+        raise RuntimeError(f"No rows found for topic: {topic_name}")
+
+    first_row = rows_for_topic[0]
+    day = first_row["day"]
+    date = first_row["date"]
+
+    if mock:
+        new_twitter = f"[Mock regenerated Twitter] {topic_name[:60]}"
+        new_telegram = f"[Mock regenerated Telegram] {topic_name[:60]}"
+    else:
+        gc = genai.Client(api_key=api_key)
+
+        def _gen(platform_name, fmt_hint):
+            if platform_name == "twitter":
+                if fmt_hint in ("thread", ""):
+                    platform_rules = (
+                        "Write a 5-tweet thread. Separate tweets with exactly ---. "
+                        "Tweet 1: hook or bold claim. Tweets 2-3: education or insight. "
+                        f"Tweet 4: how {display_name} connects. "
+                        "Tweet 5: soft CTA. Each tweet must be 280 chars or fewer."
+                    )
+                    format_desc = "Twitter thread (5 tweets separated by ---)"
+                else:
+                    platform_rules = "Write a single tweet, 280 chars or fewer. Hook + insight + 2-3 hashtags."
+                    format_desc = "Single tweet"
+            else:
+                platform_rules = (
+                    "Write a Telegram post between 400 and 1200 characters. "
+                    "Educational tone, explain the why. Use line breaks generously. "
+                    "End with an engagement question to the reader."
+                )
+                format_desc = "Telegram post"
+
+            prompt = f"""You are a content writer for {display_name}.
+
+Brand voice: {tone}
+Voice: {voice}
+Messaging pillars: {pillars}
+CTAs: {ctas}
+Hashtags: {hashtags}
+
+CRITICAL RULES:
+- NEVER use em-dash, en-dash, or double-hyphen as punctuation
+- Replace with commas, colons, or rephrase entirely
+- The --- tweet separator is the ONLY exception
+- No guaranteed return claims, no hype
+
+Content guidelines:
+{guidelines_snippet[:800]}
+
+Topic: "{topic_name}"
+Day: {day}, Date: {date}
+Platform: {platform_name.capitalize()}
+Format: {format_desc}
+
+{platform_rules}
+
+Return ONLY the content text, no JSON, no extra explanation."""
+
+            resp = gc.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+            return resp.text.strip()
+
+        # Determine twitter format from existing rows
+        twitter_fmt = "thread"
+        for r in rows_for_topic:
+            if "twitter" in r["platform"]:
+                twitter_fmt = r["format"] or "thread"
+                break
+
+        new_twitter = _gen("twitter", twitter_fmt)
+        new_telegram = _gen("telegram", "long-form")
+
+    # Write back to workbook
+    wb_write = load_workbook(str(xlsx))
+    ws_write = wb_write["Content"]
+
+    for row_info in rows_for_topic:
+        excel_row = row_info["excel_row"]
+        platform = row_info["platform"]
+        if "twitter" in platform:
+            ws_write.cell(row=excel_row, column=6, value=new_twitter)
+        elif "telegram" in platform:
+            ws_write.cell(row=excel_row, column=6, value=new_telegram)
+
+    wb_write.save(str(xlsx))
+    return {"twitter": new_twitter, "telegram": new_telegram}
+
 def main():
     parser = argparse.ArgumentParser(description="Weekly Pipeline Orchestrator")
     parser.add_argument("--action",

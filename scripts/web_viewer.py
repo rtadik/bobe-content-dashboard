@@ -340,17 +340,34 @@ HTML = """<!DOCTYPE html>
 
   .spacer { flex: 1; }
 
-  .date-select {
+  /* ── Week tabs (centered) ── */
+  .week-tabs {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .week-tab {
     background: var(--surface2);
     border: 1px solid var(--border);
-    color: var(--text);
-    padding: 5px 10px;
-    border-radius: 7px;
-    font-size: 0.82rem;
+    color: var(--muted);
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
     cursor: pointer;
-    outline: none;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: all 0.15s;
   }
-  .date-select:hover { border-color: var(--blue); }
+  .week-tab:hover:not(.active) { border-color: rgba(21,137,220,0.4); color: var(--text); }
+  .week-tab.active {
+    background: var(--blue-dim);
+    border-color: rgba(21,137,220,0.5);
+    color: var(--blue);
+  }
 
   /* ── Admin link ── */
   .admin-link {
@@ -572,6 +589,25 @@ HTML = """<!DOCTYPE html>
   .regen-btn:hover:not(:disabled) {
     background: rgba(255,79,218,0.14);
     border-color: rgba(255,79,218,0.35);
+  }
+
+  /* ── Topic header (day badge + title) ── */
+  .topic-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .day-badge {
+    background: var(--blue-dim);
+    border: 1px solid rgba(21,137,220,0.25);
+    color: var(--blue);
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   /* ── Card body ── */
@@ -831,6 +867,53 @@ HTML = """<!DOCTYPE html>
     color: var(--green);
   }
 
+  /* ── Content regen bar ── */
+  .content-regen-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    background: rgba(224,193,69,0.04);
+    border: 1px dashed rgba(224,193,69,0.15);
+    border-radius: 9px;
+    margin-bottom: 8px;
+  }
+  .content-regen-bar .regen-label {
+    flex: 1;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .content-regen-btn {
+    background: var(--yellow-dim);
+    border: 1px solid rgba(224,193,69,0.25);
+    color: var(--yellow);
+    padding: 5px 12px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 0.77rem;
+    font-weight: 500;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .content-regen-btn:hover:not(:disabled) {
+    background: rgba(224,193,69,0.15);
+    border-color: rgba(224,193,69,0.4);
+  }
+  .content-regen-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .content-regen-btn.regenerating {
+    background: rgba(21,137,220,0.1);
+    border-color: rgba(21,137,220,0.3);
+    color: var(--blue);
+  }
+  .content-regen-btn.done {
+    background: var(--green-dim);
+    border-color: rgba(91,214,159,0.3);
+    color: var(--green);
+  }
+
   /* ── Error banner ── */
   .error-banner {
     background: rgba(255,79,218,0.1);
@@ -855,21 +938,19 @@ HTML = """<!DOCTYPE html>
 
 <header>
   <div class="brand">{{ brand_name }}<span class="brand-dot">.</span></div>
-  <div class="header-sep"></div>
-  <div class="header-date">{{ date }}</div>
   {% if topics %}
   <span class="header-count">{{ topics|length }} topic{{ 's' if topics|length != 1 else '' }}</span>
   {% endif %}
-  <div class="spacer"></div>
+
   {% if available_dates|length > 1 %}
-  <form method="get" action="/" style="margin:0">
-    <select class="date-select" name="date" onchange="this.form.submit()" title="Switch date">
-      {% for d in available_dates %}
-      <option value="{{ d }}"{% if d == date %} selected{% endif %}>{{ d }}</option>
-      {% endfor %}
-    </select>
-  </form>
+  <div class="week-tabs">
+    {% for d in available_dates %}
+    <a class="week-tab{% if d == date %} active{% endif %}" href="/?date={{ d }}">{{ d }}</a>
+    {% endfor %}
+  </div>
   {% endif %}
+
+  <div class="spacer"></div>
   <a href="/admin" class="admin-link">Admin</a>
   <div class="lang-toggle">
     <button class="lang-btn active" id="btn-en" onclick="setLang('en')">EN</button>
@@ -929,7 +1010,7 @@ HTML = """<!DOCTYPE html>
       </span>
       <button class="action-btn regen-btn" id="regen-ru-{{ loop.index }}"
               onclick="regenRuImage({{ loop.index }})"
-              {% if not t.image_filename_ru %}disabled{% endif %}>↻ Regenerate</button>
+              disabled>🔒 Regenerate</button>
     </div>
 
     <!-- Image approval actions (EN only) -->
@@ -942,7 +1023,27 @@ HTML = """<!DOCTYPE html>
     </div>
 
     <div class="card-body">
-      <h2 class="topic-title">{{ t.topic }}</h2>
+      <div class="topic-header">
+        {% if t.day %}
+        <span class="day-badge">{{ t.day[:3] }}</span>
+        {% endif %}
+        <h2 class="topic-title">{{ t.topic }}</h2>
+      </div>
+
+      <!-- EN content regeneration bar -->
+      <div class="content-regen-bar en-only">
+        <span class="regen-label" id="content-regen-label-{{ loop.index }}">Regenerate EN content via AI</span>
+        <button class="content-regen-btn" id="content-regen-{{ loop.index }}"
+                onclick="regenContent({{ loop.index }})">↻ Regen Content</button>
+      </div>
+
+      <!-- RU content regeneration bar -->
+      <div class="content-regen-bar ru-only">
+        <span class="regen-label" id="ru-content-regen-label-{{ loop.index }}">Approve EN first to unlock</span>
+        <button class="content-regen-btn" id="ru-content-regen-{{ loop.index }}"
+                onclick="regenRuContent({{ loop.index }})"
+                disabled>🔒 Regen RU Content</button>
+      </div>
 
       <!-- Platform tabs -->
       <div class="tab-bar">
@@ -1168,6 +1269,25 @@ lbClose.addEventListener('click', closeLightbox);
 lightbox.addEventListener('click', e => { if (e.target === lightbox) closeLightbox(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
 
+// ── RU regen lock/unlock ──────────────────────────────────────────────────────
+function updateRuRegenState(idx, isApproved) {
+  const ruImgBtn = document.getElementById(`regen-ru-${idx}`);
+  const ruContentBtn = document.getElementById(`ru-content-regen-${idx}`);
+  const ruContentLabel = document.getElementById(`ru-content-regen-label-${idx}`);
+
+  if (ruImgBtn) {
+    ruImgBtn.disabled = !isApproved;
+    ruImgBtn.textContent = isApproved ? '↻ Regenerate' : '🔒 Regenerate';
+  }
+  if (ruContentBtn) {
+    ruContentBtn.disabled = !isApproved;
+    ruContentBtn.textContent = isApproved ? '↻ Regen RU Content' : '🔒 Regen RU Content';
+  }
+  if (ruContentLabel) {
+    ruContentLabel.textContent = isApproved ? 'Regenerate RU content via AI' : 'Approve EN first to unlock';
+  }
+}
+
 // ── Approval state ───────────────────────────────────────────────────────────
 function setApprovalUI(idx, status) {
   const statusEl  = document.getElementById(`status-${idx}`);
@@ -1196,11 +1316,13 @@ async function loadApprovals() {
     const data = await res.json();
     TOPICS.forEach((t, i) => {
       const entry = data[t.topic];
+      const isApproved = entry && entry.status === 'approved';
       if (entry) {
         setApprovalUI(i + 1, entry.status);
         if (entry.ru_status) t.ru_status = entry.ru_status;
       }
       updateRuGenButton(i + 1);
+      updateRuRegenState(i + 1, isApproved);
     });
   } catch (e) {
     console.warn('Could not load approvals:', e);
@@ -1221,7 +1343,13 @@ async function approveImage(idx) {
     });
     setApprovalUI(idx, newStatus);
     updateRuGenButton(idx);
-    showToast(newStatus === 'approved' ? 'Image approved ✓' : 'Approval removed');
+    updateRuRegenState(idx, newStatus === 'approved');
+    if (newStatus === 'approved') {
+      setLang('ru');
+      showToast('Image approved ✓ — switched to Russian');
+    } else {
+      showToast('Approval removed');
+    }
   } catch (e) {
     showToast('Could not save approval', true);
   }
@@ -1475,6 +1603,119 @@ async function regenRuImage(idx) {
   } finally {
     if (overlay) overlay.classList.remove('active');
     if (regenBtn) regenBtn.disabled = false;
+  }
+}
+
+// ── Content regeneration ──────────────────────────────────────────────────────
+async function regenContent(idx) {
+  const btn   = document.getElementById(`content-regen-${idx}`);
+  const label = document.getElementById(`content-regen-label-${idx}`);
+  const orig  = btn.textContent;
+
+  btn.textContent = 'Regenerating...';
+  btn.disabled = true;
+  btn.classList.add('regenerating');
+  if (label) label.textContent = 'Calling AI to rewrite content...';
+
+  try {
+    const startRes = await fetch('/api/regenerate-content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: CURRENT_DATE, topic_index: idx - 1 }),
+    });
+    const startData = await startRes.json();
+    if (!startData.success) {
+      showToast('Could not start regen: ' + (startData.error || 'Unknown'), true);
+      btn.textContent = orig;
+      btn.disabled = false;
+      btn.classList.remove('regenerating');
+      if (label) label.textContent = 'Regenerate EN content via AI';
+      return;
+    }
+
+    const jobId = startData.job_id;
+    const deadline = Date.now() + 300000;
+    let result = { status: 'error', error: 'Timed out' };
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 3000));
+      const res  = await fetch(`/api/content-regen-status/${jobId}`);
+      const data = await res.json();
+      if (data.status === 'done' || data.status === 'error') { result = data; break; }
+    }
+
+    if (result.status === 'done') {
+      btn.classList.remove('regenerating');
+      btn.classList.add('done');
+      btn.textContent = '✓ Regenerated';
+      if (label) label.textContent = 'Content updated — reloading...';
+      showToast('Content regenerated. Reloading...');
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      btn.textContent = orig;
+      btn.disabled = false;
+      btn.classList.remove('regenerating');
+      if (label) label.textContent = 'Failed — try again';
+      showToast('Content regen failed: ' + (result.error || 'Unknown'), true);
+    }
+  } catch (e) {
+    btn.textContent = orig;
+    btn.disabled = false;
+    btn.classList.remove('regenerating');
+    if (label) label.textContent = 'Error — try again';
+    showToast('Content regen failed: ' + e.message, true);
+  }
+}
+
+async function regenRuContent(idx) {
+  const btn   = document.getElementById(`ru-content-regen-${idx}`);
+  const label = document.getElementById(`ru-content-regen-label-${idx}`);
+  if (btn && btn.disabled) {
+    showToast('Approve EN content first to regenerate Russian', true);
+    return;
+  }
+  const orig = btn ? btn.textContent : '↻ Regen RU Content';
+
+  if (btn) { btn.textContent = 'Regenerating...'; btn.disabled = true; btn.classList.add('regenerating'); }
+  if (label) label.textContent = 'Retranslating to Russian...';
+
+  try {
+    const startRes = await fetch('/api/regenerate-ru-content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: CURRENT_DATE, topic_index: idx - 1 }),
+    });
+    const startData = await startRes.json();
+    if (!startData.success) {
+      showToast('Could not start RU regen: ' + (startData.error || 'Unknown'), true);
+      if (btn) { btn.textContent = orig; btn.disabled = false; btn.classList.remove('regenerating'); }
+      if (label) label.textContent = 'Regenerate RU content via AI';
+      return;
+    }
+
+    const jobId = startData.job_id;
+    const deadline = Date.now() + 300000;
+    let result = { status: 'error', error: 'Timed out' };
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 3000));
+      const res  = await fetch(`/api/content-regen-status/${jobId}`);
+      const data = await res.json();
+      if (data.status === 'done' || data.status === 'error') { result = data; break; }
+    }
+
+    if (result.status === 'done') {
+      if (btn) { btn.classList.remove('regenerating'); btn.classList.add('done'); btn.textContent = '✓ Regenerated'; }
+      if (label) label.textContent = 'RU content updated — reloading...';
+      showToast('RU content regenerated. Reloading...');
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      if (btn) { btn.textContent = orig; btn.disabled = false; btn.classList.remove('regenerating'); }
+      if (label) label.textContent = 'Failed — try again';
+      showToast('RU content regen failed: ' + (result.error || 'Unknown'), true);
+    }
+  } catch (e) {
+    if (btn) { btn.textContent = orig; btn.disabled = false; btn.classList.remove('regenerating'); }
+    if (label) label.textContent = 'Error — try again';
+    showToast('RU content regen failed: ' + e.message, true);
   }
 }
 
@@ -2695,6 +2936,132 @@ def api_regenerate_ru():
                 _jobs[job_id] = {"status": "error", "phase": "error", "error": str(e)}
 
     threading.Thread(target=_run_ru_regen, daemon=True).start()
+    return jsonify({"success": True, "job_id": job_id})
+
+
+
+# ── EN content regeneration API ────────────────────────────────────────────────
+
+@app.route("/api/regenerate-content", methods=["POST"])
+def api_regenerate_content():
+    """Regenerate EN Twitter + Telegram content for a topic using Gemini."""
+    if not HAS_RU_GENERATOR:
+        return jsonify({"success": False, "error": "Gemini not available. Check GOOGLE_AI_API_KEY."}), 503
+
+    data = request.get_json(force=True)
+    topic_index = data.get("topic_index")
+    date = data.get("date", "")
+
+    if topic_index is None:
+        return jsonify({"success": False, "error": "topic_index required"}), 400
+
+    xlsx = find_excel(date)
+    if not xlsx:
+        return jsonify({"success": False, "error": f"No workbook for date '{date}'"}), 404
+
+    topics = load_content(xlsx)
+    if topic_index < 0 or topic_index >= len(topics):
+        return jsonify({"success": False, "error": "topic_index out of range"}), 400
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {"status": "running", "error": None, "content": None}
+
+    def _do_regen():
+        try:
+            from weekly_pipeline import regenerate_topic_content
+            result = regenerate_topic_content(
+                xlsx_path=str(xlsx),
+                topic_index=topic_index,
+                client_id=_active_client,
+            )
+            with _jobs_lock:
+                _jobs[job_id] = {"status": "done", "content": result, "error": None}
+        except Exception as exc:
+            with _jobs_lock:
+                _jobs[job_id] = {"status": "error", "error": str(exc), "content": None}
+
+    threading.Thread(target=_do_regen, daemon=True).start()
+    return jsonify({"success": True, "job_id": job_id})
+
+
+@app.route("/api/content-regen-status/<job_id>")
+def api_content_regen_status(job_id):
+    """Poll for EN content regeneration job completion."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        return jsonify({"status": "unknown"}), 404
+    return jsonify(job)
+
+
+# ── RU text regeneration API ───────────────────────────────────────────────────
+
+@app.route("/api/regenerate-ru-content", methods=["POST"])
+def api_regenerate_ru_content():
+    """Re-translate EN content to Russian for a topic using Gemini."""
+    if not HAS_RU_GENERATOR:
+        return jsonify({"success": False, "error": "Gemini not available. Check GOOGLE_AI_API_KEY."}), 503
+
+    data = request.get_json(force=True)
+    topic_index = data.get("topic_index")
+    date = data.get("date", "")
+
+    if topic_index is None:
+        return jsonify({"success": False, "error": "topic_index required"}), 400
+
+    xlsx = find_excel(date)
+    if not xlsx:
+        return jsonify({"success": False, "error": f"No workbook for date '{date}'"}), 404
+
+    topics = load_content(xlsx)
+    if topic_index < 0 or topic_index >= len(topics):
+        return jsonify({"success": False, "error": "topic_index out of range"}), 400
+
+    topic_data = topics[topic_index]
+    topic_name = topic_data["topic"]
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {"status": "running", "phase": "translating_text", "error": None}
+
+    def _do_ru_content():
+        try:
+            # Find row indices for this topic
+            wb_r = openpyxl.load_workbook(str(xlsx), read_only=True, data_only=True)
+            ws_r = wb_r["Content"]
+            topic_rows_info = []
+            for idx, row in enumerate(ws_r.iter_rows(min_row=2, values_only=True), start=1):
+                if row and row[2] == topic_name:
+                    platform = (row[3] or "").lower()
+                    topic_rows_info.append((idx, platform))
+            wb_r.close()
+
+            for row_idx, platform in topic_rows_info:
+                plat_key = "twitter" if "twitter" in platform else "telegram"
+                en_content = topic_data.get(plat_key) or ""
+                if not en_content:
+                    continue
+                content_ru = translate_text_to_russian(en_content, platform=plat_key, client_id=_active_client)
+                en_hashtags = topic_data.get("hashtags", "")
+                hashtags_ru = translate_hashtags_to_russian(str(en_hashtags)) if en_hashtags else ""
+                update_ru_columns(
+                    date.replace("week:", ""), row_idx,
+                    content_ru=content_ru,
+                    image_prompt_ru="",
+                    image_path_ru="",
+                    hashtags_ru=hashtags_ru,
+                    client_id=_active_client,
+                )
+
+            with _jobs_lock:
+                _jobs[job_id] = {"status": "done", "phase": "done", "error": None}
+
+        except Exception as exc:
+            with _jobs_lock:
+                _jobs[job_id] = {"status": "error", "phase": "error", "error": str(exc)}
+
+    threading.Thread(target=_do_ru_content, daemon=True).start()
     return jsonify({"success": True, "job_id": job_id})
 
 

@@ -511,6 +511,159 @@ STATIC_HTML = """<!DOCTYPE html>
     color: var(--muted);
     letter-spacing: 0.2px;
   }
+
+  /* Image loading overlay */
+  .img-loading-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(8,15,30,0.82);
+    z-index: 10;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    border-radius: 12px 12px 0 0;
+  }
+  .img-loading-overlay.active { display: flex; }
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid rgba(21,137,220,0.2);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner-label { font-size: 0.75rem; color: var(--muted); }
+
+  /* Image action bars */
+  .image-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: rgba(255,255,255,0.02);
+    border-bottom: 1px solid var(--border);
+  }
+  .img-status {
+    flex: 1;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+  .img-status.approved { color: var(--green); }
+  .action-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 11px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 500;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .action-btn:hover:not(:disabled) { border-color: rgba(21,137,220,0.4); color: var(--blue); }
+  .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .approve-btn.approved { background: var(--green-dim); border-color: rgba(91,214,159,0.3); color: var(--green); }
+  .card.is-approved { border-color: rgba(91,214,159,0.25); }
+  .regen-btn { color: var(--yellow); border-color: rgba(224,193,69,0.2); }
+  .regen-btn:hover:not(:disabled) { border-color: rgba(224,193,69,0.5); color: var(--yellow); background: var(--yellow-dim); }
+
+  /* Content regen bar */
+  .content-regen-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    background: rgba(224,193,69,0.04);
+    border: 1px dashed rgba(224,193,69,0.15);
+    border-radius: 9px;
+    margin-bottom: 4px;
+  }
+  .content-regen-bar .regen-label {
+    flex: 1;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .content-regen-btn {
+    background: var(--yellow-dim);
+    border: 1px solid rgba(224,193,69,0.25);
+    color: var(--yellow);
+    padding: 5px 12px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 0.77rem;
+    font-weight: 500;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .content-regen-btn:hover:not(:disabled) { background: rgba(224,193,69,0.15); border-color: rgba(224,193,69,0.4); }
+  .content-regen-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .content-regen-btn.triggering { background: rgba(21,137,220,0.1); border-color: rgba(21,137,220,0.3); color: var(--blue); }
+
+  /* GitHub token modal */
+  #gh-token-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(8,15,30,0.88);
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  #gh-token-modal.open { display: flex; }
+  .modal-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px 28px 24px;
+    max-width: 440px;
+    width: 100%;
+  }
+  .modal-box h3 { font-size: 1rem; font-weight: 600; margin-bottom: 8px; }
+  .modal-box p { font-size: 0.8rem; color: var(--muted); margin-bottom: 16px; line-height: 1.55; }
+  .modal-box input[type=password] {
+    width: 100%;
+    background: #080F1E;
+    border: 1px solid var(--border);
+    color: var(--white);
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    margin-bottom: 14px;
+    outline: none;
+  }
+  .modal-box input[type=password]:focus { border-color: var(--blue); }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .btn-primary { background: var(--blue); color: #fff; border: none; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-size: 0.83rem; font-weight: 500; }
+  .btn-secondary { background: none; border: 1px solid var(--border); color: var(--muted); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 0.83rem; }
+
+  /* Regen status bar */
+  #regen-status-bar {
+    display: none;
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1A2540;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 0.8rem;
+    z-index: 600;
+    display: none;
+    align-items: center;
+    gap: 10px;
+    max-width: 440px;
+    width: 90%;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+  #regen-status-bar.show { display: flex; }
+  #regen-status-bar .status-msg { flex: 1; }
+  #regen-status-bar .dismiss-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1rem; padding: 2px 6px; }
 </style>
 </head>
 <body>
@@ -542,6 +695,25 @@ STATIC_HTML = """<!DOCTYPE html>
 
 <!-- Toast -->
 <div id="toast"></div>
+
+<!-- GitHub Token Modal -->
+<div id="gh-token-modal">
+  <div class="modal-box">
+    <h3>GitHub Token Required</h3>
+    <p>To regenerate content or images, enter a GitHub Personal Access Token with <strong>Actions: write</strong> scope. It is stored in your browser session only.</p>
+    <input type="password" id="gh-token-input" placeholder="ghp_..." autocomplete="off">
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="cancelGhModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveGhToken()">Save & Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- Regen status bar -->
+<div id="regen-status-bar">
+  <span class="status-msg" id="regen-status-msg">Workflow triggered...</span>
+  <button class="dismiss-btn" onclick="dismissRegenStatus()" title="Dismiss">&#10005;</button>
+</div>
 
 <header>
   <div class="brand">{{ brand_name }}<span class="brand-dot">.</span></div>
@@ -580,6 +752,19 @@ STATIC_HTML = """<!DOCTYPE html>
         <span>No image generated</span>
       </div>
       {% endif %}
+      <div class="img-loading-overlay" id="overlay-{{ loop.index }}">
+        <div class="spinner"></div>
+        <span class="spinner-label">Triggering workflow...</span>
+      </div>
+    </div>
+
+    <!-- EN image action bar -->
+    <div class="image-actions en-only">
+      <span class="img-status" id="status-{{ loop.index }}">Pending review</span>
+      <button class="action-btn approve-btn" id="approve-{{ loop.index }}"
+              onclick="approveImage({{ loop.index }})">&#10003; Approve</button>
+      <button class="action-btn regen-btn" id="regen-{{ loop.index }}"
+              onclick="triggerRegen({{ loop.index }}, 'image_en')">&#8635; Regen Image</button>
     </div>
 
     <!-- RU Image -->
@@ -594,6 +779,20 @@ STATIC_HTML = """<!DOCTYPE html>
         <span>No Russian image</span>
       </div>
       {% endif %}
+      <div class="img-loading-overlay" id="overlay-ru-{{ loop.index }}">
+        <div class="spinner"></div>
+        <span class="spinner-label">Triggering workflow...</span>
+      </div>
+    </div>
+
+    <!-- RU image action bar (locked until EN approved) -->
+    <div class="image-actions ru-only">
+      <span class="img-status" style="font-size:0.72rem;color:var(--muted)">
+        {% if t.image_filename_ru %}RU image{% else %}No RU image{% endif %}
+      </span>
+      <button class="action-btn regen-btn" id="regen-ru-{{ loop.index }}"
+              onclick="triggerRegen({{ loop.index }}, 'image_ru')"
+              disabled>&#128274; Regen Image</button>
     </div>
 
     <div class="card-body">
@@ -602,6 +801,21 @@ STATIC_HTML = """<!DOCTYPE html>
         <span class="day-badge">{{ t.day }}</span>
         {% endif %}
         <h2 class="topic-title">{{ t.topic }}</h2>
+      </div>
+
+      <!-- EN content regen bar -->
+      <div class="content-regen-bar en-only">
+        <span class="regen-label" id="content-regen-label-{{ loop.index }}">Regenerate EN content via AI</span>
+        <button class="content-regen-btn" id="content-regen-{{ loop.index }}"
+                onclick="triggerRegen({{ loop.index }}, 'content')">&#8635; Regen Content</button>
+      </div>
+
+      <!-- RU content regen bar (locked until EN approved) -->
+      <div class="content-regen-bar ru-only">
+        <span class="regen-label" id="ru-content-regen-label-{{ loop.index }}">Approve EN first to unlock</span>
+        <button class="content-regen-btn" id="ru-content-regen-{{ loop.index }}"
+                onclick="triggerRegen({{ loop.index }}, 'content_ru')"
+                disabled>&#128274; Regen RU Content</button>
       </div>
 
       <!-- Platform tabs -->
@@ -713,13 +927,20 @@ STATIC_HTML = """<!DOCTYPE html>
 <footer class="site-footer">Generated by {{ brand_name }} Content Pipeline</footer>
 
 <script>
-// Logout
+// ── Constants (injected at build time) ────────────────────────────────────────
+const GH_REPO      = '{{ gh_repo }}';
+const GH_WORKFLOW  = 'regenerate-item.yml';
+const WEEK_OF      = '{{ week_of }}';
+const CLIENT_ID    = '{{ client_id }}';
+const TOPIC_COUNT  = {{ topics|length }};
+
+// ── Logout ────────────────────────────────────────────────────────────────────
 function logout() {
   sessionStorage.removeItem('dash_auth');
   window.location.href = '../../login.html';
 }
 
-// Language toggle
+// ── Language toggle ───────────────────────────────────────────────────────────
 function setLang(lang) {
   document.body.classList.toggle('lang-ru', lang === 'ru');
   document.getElementById('btn-en').classList.toggle('active', lang === 'en');
@@ -728,7 +949,7 @@ function setLang(lang) {
 }
 (function(){ if(localStorage.getItem('content-dash-lang')==='ru') setLang('ru'); })();
 
-// Toast
+// ── Toast ─────────────────────────────────────────────────────────────────────
 let toastTimer;
 function showToast(msg) {
   const el = document.getElementById('toast');
@@ -738,7 +959,7 @@ function showToast(msg) {
   toastTimer = setTimeout(() => { el.className = ''; }, 3000);
 }
 
-// Tab switching
+// ── Tab switching ─────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab-bar').forEach(bar => {
   bar.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -752,7 +973,7 @@ document.querySelectorAll('.tab-bar').forEach(bar => {
   });
 });
 
-// Copy helpers
+// ── Copy helpers ──────────────────────────────────────────────────────────────
 function copyText(text) {
   if (navigator.clipboard) return navigator.clipboard.writeText(text);
   const ta = document.createElement('textarea');
@@ -774,7 +995,6 @@ function flashCopy(el, label) {
   setTimeout(() => { el.textContent = orig; el.classList.remove('copied'); }, 2000);
 }
 
-// Copy buttons
 document.querySelectorAll('.copy-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const text = btn.dataset.raw || '';
@@ -782,7 +1002,6 @@ document.querySelectorAll('.copy-btn').forEach(btn => {
   });
 });
 
-// Hashtag copy
 document.querySelectorAll('.tag').forEach(tag => {
   tag.addEventListener('click', () => {
     copyText(tag.dataset.tag).then(() => {
@@ -794,13 +1013,14 @@ document.querySelectorAll('.tag').forEach(tag => {
   });
 });
 
-// Lightbox
+// ── Lightbox ──────────────────────────────────────────────────────────────────
 const lightbox = document.getElementById('lightbox');
 const lightImg = document.getElementById('lightbox-img');
 const lbClose  = document.getElementById('lightbox-close');
 
 document.querySelectorAll('.card-img[data-src]').forEach(el => {
-  el.addEventListener('click', () => {
+  el.addEventListener('click', e => {
+    if (e.target.closest('.img-loading-overlay')) return;
     lightImg.src = el.dataset.src;
     lightbox.classList.add('open');
     document.body.style.overflow = 'hidden';
@@ -816,6 +1036,232 @@ function closeLightbox() {
 lbClose.addEventListener('click', closeLightbox);
 lightbox.addEventListener('click', e => { if (e.target === lightbox) closeLightbox(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+// ── Approval state (sessionStorage) ──────────────────────────────────────────
+const APPROVAL_KEY = `approvals_${CLIENT_ID}_${WEEK_OF}`;
+
+function loadApprovals() {
+  try {
+    return JSON.parse(sessionStorage.getItem(APPROVAL_KEY) || '{}');
+  } catch(e) { return {}; }
+}
+
+function saveApprovals(data) {
+  sessionStorage.setItem(APPROVAL_KEY, JSON.stringify(data));
+}
+
+function setApprovalUI(idx, status) {
+  const statusEl   = document.getElementById(`status-${idx}`);
+  const approveBtn = document.getElementById(`approve-${idx}`);
+  const card       = document.getElementById(`card-${idx}`);
+  if (!statusEl || !approveBtn) return;
+  if (status === 'approved') {
+    statusEl.textContent = 'Approved ✓';
+    statusEl.className   = 'img-status approved';
+    approveBtn.textContent = '✓ Approved';
+    approveBtn.classList.add('approved');
+    card && card.classList.add('is-approved');
+  } else {
+    statusEl.textContent = 'Pending review';
+    statusEl.className   = 'img-status';
+    approveBtn.textContent = '✓ Approve';
+    approveBtn.classList.remove('approved');
+    card && card.classList.remove('is-approved');
+  }
+}
+
+// ── RU lock/unlock ────────────────────────────────────────────────────────────
+function updateRuRegenState(idx, isApproved) {
+  const ruImgBtn = document.getElementById(`regen-ru-${idx}`);
+  const ruContentBtn = document.getElementById(`ru-content-regen-${idx}`);
+  const ruContentLabel = document.getElementById(`ru-content-regen-label-${idx}`);
+  if (ruImgBtn) {
+    ruImgBtn.disabled = !isApproved;
+    ruImgBtn.textContent = isApproved ? '\u21BB Regen Image' : '\\u{1F512} Regen Image';
+  }
+  if (ruContentBtn) {
+    ruContentBtn.disabled = !isApproved;
+    ruContentBtn.textContent = isApproved ? '\u21BB Regen RU Content' : '\\u{1F512} Regen RU Content';
+  }
+  if (ruContentLabel) {
+    ruContentLabel.textContent = isApproved ? 'Regenerate RU content via AI' : 'Approve EN first to unlock';
+  }
+}
+
+function approveImage(idx) {
+  const approveBtn = document.getElementById(`approve-${idx}`);
+  const isApproved = approveBtn.classList.contains('approved');
+  const newStatus  = isApproved ? 'pending' : 'approved';
+
+  const approvals = loadApprovals();
+  approvals[idx] = newStatus;
+  saveApprovals(approvals);
+
+  setApprovalUI(idx, newStatus);
+  updateRuRegenState(idx, newStatus === 'approved');
+  if (newStatus === 'approved') {
+    setLang('ru');
+    showToast('Image approved ✓ — switched to Russian');
+  } else {
+    showToast('Approval removed');
+  }
+}
+
+// Restore approval state on page load
+(function() {
+  const approvals = loadApprovals();
+  for (let i = 1; i <= TOPIC_COUNT; i++) {
+    const status = approvals[i] || 'pending';
+    setApprovalUI(i, status);
+    updateRuRegenState(i, status === 'approved');
+  }
+})();
+
+// ── GitHub token modal ────────────────────────────────────────────────────────
+let _pendingRegenCb = null;
+
+function getGhToken(callback) {
+  const existing = sessionStorage.getItem('gh_pat');
+  if (existing) { callback(existing); return; }
+  _pendingRegenCb = callback;
+  document.getElementById('gh-token-modal').classList.add('open');
+  setTimeout(() => document.getElementById('gh-token-input').focus(), 100);
+}
+
+function cancelGhModal() {
+  document.getElementById('gh-token-modal').classList.remove('open');
+  document.getElementById('gh-token-input').value = '';
+  _pendingRegenCb = null;
+}
+
+function saveGhToken() {
+  const token = document.getElementById('gh-token-input').value.trim();
+  if (!token) { showToast('Please enter a token'); return; }
+  sessionStorage.setItem('gh_pat', token);
+  document.getElementById('gh-token-modal').classList.remove('open');
+  document.getElementById('gh-token-input').value = '';
+  if (_pendingRegenCb) { const cb = _pendingRegenCb; _pendingRegenCb = null; cb(token); }
+}
+
+document.getElementById('gh-token-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveGhToken();
+  if (e.key === 'Escape') cancelGhModal();
+});
+
+// ── Regen status bar ──────────────────────────────────────────────────────────
+function showRegenStatus(msg) {
+  const bar = document.getElementById('regen-status-bar');
+  document.getElementById('regen-status-msg').textContent = msg;
+  bar.classList.add('show');
+}
+
+function dismissRegenStatus() {
+  document.getElementById('regen-status-bar').classList.remove('show');
+}
+
+// ── Trigger regeneration via GitHub Actions API ───────────────────────────────
+function triggerRegen(idx, regenType) {
+  // Guard: RU types require EN to be approved
+  if (regenType === 'image_ru' || regenType === 'content_ru') {
+    const approvals = loadApprovals();
+    if (approvals[idx] !== 'approved') {
+      showToast('Approve the EN image first to unlock RU regeneration');
+      return;
+    }
+  }
+
+  if (!GH_REPO || GH_REPO === '') {
+    showToast('GitHub repo not configured — contact admin');
+    return;
+  }
+
+  getGhToken(async function(token) {
+    const btn = document.getElementById(
+      regenType === 'image_en' ? `regen-${idx}` :
+      regenType === 'image_ru' ? `regen-ru-${idx}` :
+      regenType === 'content'  ? `content-regen-${idx}` :
+                                 `ru-content-regen-${idx}`
+    );
+    const origText = btn ? btn.textContent : '';
+    if (btn) { btn.textContent = 'Triggering...'; btn.disabled = true; btn.classList.add('triggering'); }
+
+    showRegenStatus(`Triggering ${regenType} regeneration for topic ${idx}...`);
+
+    try {
+      const resp = await fetch(
+        `https://api.github.com/repos/${GH_REPO}/actions/workflows/${GH_WORKFLOW}/dispatches`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ref: 'main',
+            inputs: {
+              client_id:   CLIENT_ID,
+              week_of:     WEEK_OF,
+              topic_index: String(idx - 1),
+              regen_type:  regenType,
+            },
+          }),
+        }
+      );
+
+      if (resp.status === 204) {
+        showRegenStatus('Workflow started! This takes 2-5 min. Refresh the page when done.');
+        if (btn) { btn.textContent = 'Queued ✓'; btn.classList.remove('triggering'); }
+        pollRegenCompletion(token);
+      } else if (resp.status === 401 || resp.status === 403) {
+        sessionStorage.removeItem('gh_pat');
+        showToast('Token invalid or expired. Please try again.', true);
+        if (btn) { btn.textContent = origText; btn.disabled = false; btn.classList.remove('triggering'); }
+        dismissRegenStatus();
+      } else {
+        const err = await resp.text();
+        showToast('GitHub API error: ' + resp.status);
+        if (btn) { btn.textContent = origText; btn.disabled = false; btn.classList.remove('triggering'); }
+        dismissRegenStatus();
+        console.error('GH API error', resp.status, err);
+      }
+    } catch(e) {
+      showToast('Network error: ' + e.message);
+      if (btn) { btn.textContent = origText; btn.disabled = false; btn.classList.remove('triggering'); }
+      dismissRegenStatus();
+    }
+  });
+}
+
+async function pollRegenCompletion(token) {
+  const deadline = Date.now() + 10 * 60 * 1000; // 10 min
+  await new Promise(r => setTimeout(r, 20000)); // wait 20s before first poll
+
+  while (Date.now() < deadline) {
+    try {
+      const resp = await fetch(
+        `https://api.github.com/repos/${GH_REPO}/actions/workflows/${GH_WORKFLOW}/runs?per_page=5`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' } }
+      );
+      const data = await resp.json();
+      const run  = data.workflow_runs && data.workflow_runs[0];
+      if (run && run.status === 'completed') {
+        if (run.conclusion === 'success') {
+          showRegenStatus('Regeneration complete! Reloading page...');
+          setTimeout(() => location.reload(), 2500);
+        } else {
+          showRegenStatus('Workflow finished with status: ' + run.conclusion + '. Check GitHub Actions for details.');
+        }
+        return;
+      }
+      if (run) {
+        showRegenStatus('Workflow running... (' + (run.status || 'in_progress') + ')');
+      }
+    } catch(e) { /* continue polling */ }
+    await new Promise(r => setTimeout(r, 15000));
+  }
+  showRegenStatus('Workflow is taking longer than expected. Refresh manually when done.');
+}
 </script>
 </body>
 </html>"""
@@ -1182,6 +1628,27 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe"):
                     shutil.copy2(str(src), str(dst))
                     images_copied.add(str(dst))
 
+        # Derive week_of from date_id (e.g. 'week:2026-02-16' -> '2026-02-16')
+        week_of_str = date_id.split(":")[-1] if ":" in date_id else date_id
+
+        # Detect GitHub repo from env or git remote
+        gh_repo = os.environ.get("GH_REPO", "")
+        if not gh_repo:
+            try:
+                import subprocess as _sp
+                remote = _sp.check_output(
+                    ["git", "remote", "get-url", "origin"],
+                    stderr=_sp.DEVNULL, text=True, cwd=str(Path(__file__).parent.parent)
+                ).strip()
+                # Parse 'https://github.com/owner/repo.git' or 'git@github.com:owner/repo.git'
+                if "github.com" in remote:
+                    if remote.startswith("https://"):
+                        gh_repo = remote.replace("https://github.com/", "").removesuffix(".git")
+                    else:
+                        gh_repo = remote.split("github.com:")[-1].removesuffix(".git")
+            except Exception:
+                pass
+
         # Render the dashboard page (with auth guard)
         html = dashboard_template.render(
             topics=topics,
@@ -1190,6 +1657,9 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe"):
             date_options=date_options,
             brand_name=_display_name,
             expected_client_id=active_client,
+            week_of=week_of_str,
+            client_id=active_client,
+            gh_repo=gh_repo,
         )
 
         page_path = client_dash_dir / f"{safe_name}.html"

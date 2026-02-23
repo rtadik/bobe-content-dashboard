@@ -187,7 +187,7 @@ This workspace supports multiple clients via a config-driven architecture:
 | `nano_banana.py` | Generate EN branded images via WaveSpeed GPT-Image-1.5 | `--prompt`, `--output`, `--style`, `--mock`, `--no-reference`, `--client` |
 | `wavespeed_img.py` | Generate RU branded images via WaveSpeed Seedream 4.5 | `--prompt`, `--topic`, `--headline`, `--style`, `--output`, `--mock`, `--client` |
 | `weekly_pipeline.py` | Weekly pipeline orchestrator (14-col bilingual workbook) | `--action` (scrape, create-workbook, save-content, finalize, sync-airtable), `--week-of`, `--mock`, `--client` |
-| `pipeline_runner.py` | Standalone end-to-end pipeline (Gemini-powered, no Claude required) | `--client`, `--week-of`, `--mock`, `--skip-images`, `--skip-airtable`, `--skip-deploy` |
+| `pipeline_runner.py` | Standalone end-to-end pipeline (Gemini-powered, no Claude required) | `--client`, `--week-of`, `--mock`, `--skip-images`, `--skip-airtable`, `--skip-deploy`, `--regen-topic INT`, `--regen-type {image_en,image_ru,content,content_ru}` |
 | `airtable_sync.py` | Push weekly content to client's Airtable base | `--week-of`, `--mock`, `--client` |
 | `web_viewer.py` | Flask dashboard server with EN/RU toggle | Runs on localhost:5001, `--client` |
 | `build_static.py` | Static site builder with EN/RU toggle + admin panel | `--output`, `--date`, `--include-admin`, `--client` |
@@ -256,9 +256,12 @@ The deployed dashboard has a landing page, login form, and per-client auth. Clie
 
 ### GitHub Actions
 
-Two workflows in `.github/workflows/`:
+Three workflows in `.github/workflows/`:
 - **`weekly-pipeline.yml`**: Triggered via `workflow_dispatch` (admin panel or GitHub UI). Runs `pipeline_runner.py`, builds static site with admin panel, deploys to `gh-pages`, uploads Excel as artifact.
+- **`regenerate-item.yml`**: Triggered by the live dashboard's Regen buttons (via GitHub API from the client's browser, using a PAT). Regenerates a single topic item (image_en, image_ru, content, or content_ru), rebuilds and redeploys the static site. Inputs: `client_id`, `week_of`, `topic_index` (0-based), `regen_type`.
 - **`onboard-client.yml`**: Creates a new client directory from template inputs and commits it to the repo.
+
+**Live dashboard regeneration**: Clients on the deployed dashboard can regenerate images and content directly. On first use, they enter a GitHub PAT with `Actions: write` scope (stored in `sessionStorage` for the session). Approving an EN image auto-switches the view to Russian and unlocks the RU regen buttons. After triggering, the workflow runs (~2-5 min) and the page auto-reloads when complete.
 
 Setup: See `reference/github-actions-setup.md` for GitHub Secrets, permissions, and PAT creation.
 
@@ -276,6 +279,7 @@ Setup: See `reference/github-actions-setup.md` for GitHub Secrets, permissions, 
 | `plans/2026-02-23-github-actions-admin-panel.md` | Implemented | Standalone `pipeline_runner.py`, GitHub Actions workflows, admin panel at `/admin/` |
 | `plans/2026-02-23-landing-login-client-dashboard.md` | Implemented | Landing page (placeholder), login form with SHA-256 auth, per-client dashboard routing under `/dashboard/{client_id}/` |
 | `plans/2026-02-23-client-intake-form.md` | Implemented | Self-serve client intake form at `/intake/`, EmailJS credential delivery, `/onboard-from-intake` command, `credentials.json` auto-write |
+| `plans/2026-02-24-regenerate-buttons-live-dashboard.md` | Implemented | Regen buttons (content + images) on local Flask dashboard and live static site; EN approval auto-switches to RU and unlocks RU regen; GitHub Actions `regenerate-item.yml` as backend for live regen |
 
 ---
 

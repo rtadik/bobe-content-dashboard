@@ -650,6 +650,194 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
     return len(errors) == 0
 
 
+REGEN_TRANSLATE_PROMPT = """\
+You are a professional translator for {display_name}, a Web3 fintech platform.
+
+Translate the following English social media content to Russian.
+Preserve formatting exactly: tweet separators (---), line breaks, and emoji.
+Keep hashtags as-is (do not translate #hashtag text).
+Keep the same tone: {tone}
+
+CRITICAL RULES:
+- NEVER use em-dashes, en-dashes, or double-hyphens as punctuation
+- Preserve tweet --- separators unchanged
+- Translate only the text, not the structure
+
+English content:
+{content}
+
+Return ONLY the Russian translation, nothing else."""
+
+
+def run_regen_item(client_id, week_of, topic_index, regen_type, mock=False):
+    """Regenerate a single topic item (image or content) and update the workbook."""
+    from openpyxl import load_workbook as opxl_load
+
+    config = client_config.load_config(client_id)
+    display_name = config.get("display_name", client_id.capitalize())
+    tone = config.get("tone", "educational and transparent")
+
+    xlsx_path = (
+        PROJECT_ROOT / f"outputs/content/{client_id}/{week_of}-weekly-content.xlsx"
+    )
+    if not xlsx_path.exists():
+        print(f"  Error: workbook not found: {xlsx_path}")
+        return False
+
+    print(f"  Regen type: {regen_type}, topic index: {topic_index}, workbook: {xlsx_path.name}")
+
+    # ── Read workbook to find rows for this topic ─────────────────────────────
+    wb = opxl_load(xlsx_path)
+    ws = wb.active
+    header_row = None
+    data_rows = []
+    for row in ws.iter_rows(values_only=True):
+        if row[0] == "Date" or row[0] == "date":
+            header_row = row
+            continue
+        if any(row):
+            data_rows.append(row)
+
+    # Build ordered list of unique topics (by first appearance)
+    topic_order = []
+    seen = set()
+    for row in data_rows:
+        t = row[2]  # Column C = Topic
+        if t and t not in seen:
+            seen.add(t)
+            topic_order.append(t)
+
+    if topic_index >= len(topic_order):
+        print(f"  Error: topic_index {topic_index} out of range (found {len(topic_order)} topics)")
+        return False
+
+    target_topic = topic_order[topic_index]
+    topic_rows = [r for r in data_rows if r[2] == target_topic]
+    twitter_row = next((r for r in topic_rows if str(r[3]).lower() == "twitter"), topic_rows[0])
+
+    print(f"  Topic: {target_topic}")
+
+    # ── content: regenerate EN content via weekly_pipeline ────────────────────
+    if regen_type == "content":
+        sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+        from weekly_pipeline import regenerate_topic_content
+        try:
+            result = regenerate_topic_content(
+                str(xlsx_path), topic_index, client_id=client_id, mock=mock
+            )
+            print(f"  Content regenerated: twitter={result.get('twitter','')[:60]}...")
+            return True
+        except Exception as e:
+            print(f"  Error regenerating content: {e}")
+            return False
+
+    # ── content_ru: re-translate EN content to Russian ────────────────────────
+    elif regen_type == "content_ru":
+        # Col F (index 5) = Content EN, Col J (index 9) = Content_RU
+        en_content = twitter_row[5] if len(twitter_row) > 5 else ""
+        if not en_content:
+            print("  No EN content found to translate")
+            return False
+
+        if mock:
+            print("  [mock] Skipping Gemini translation")
+            return True
+
+        prompt = REGEN_TRANSLATE_PROMPT.format(
+            display_name=display_name, tone=tone, content=en_content
+        )
+        try:
+            ru_text = call_gemini(prompt).strip()
+        except Exception as e:
+            print(f"  Error calling Gemini for translation: {e}")
+            return False
+
+        # Write new RU content to all rows for this topic (col J, index 10 in 1-based)
+        wb2 = opxl_load(xlsx_path)
+        ws2 = wb2.active
+        rows_updated = 0
+        in_data = False
+        for row in ws2.iter_rows():
+            vals = [c.value for c in row]
+            if vals[0] == "Date" or vals[0] == "date":
+                in_data = True
+                continue
+            if in_data and vals[2] == target_topic:
+                row[9].value = ru_text  # Column J
+                rows_updated += 1
+        wb2.save(xlsx_path)
+        print(f"  RU content updated in {rows_updated} rows")
+        return rows_updated > 0
+
+    # ── image_en: regenerate EN image via nano_banana.py ─────────────────────
+    elif regen_type == "image_en":
+        # Col G (index 6) = Image Prompt, Col H (index 7) = Image Path
+        img_prompt = twitter_row[6] if len(twitter_row) > 6 else ""
+        img_path = twitter_row[7] if len(twitter_row) > 7 else ""
+        if not img_prompt or not img_path:
+            print("  No EN image prompt/path found in workbook")
+            return False
+
+        img_dir = (PROJECT_ROOT / img_path).parent
+        img_dir.mkdir(parents=True, exist_ok=True)
+
+        style_key = "tech"  # default; could be derived from angle if needed
+        safe_prompt = img_prompt.replace('"', "'")
+
+        if mock:
+            print(f"  [mock] Would generate EN image: {img_path}")
+            return True
+
+        try:
+            run_cmd(
+                f'{PY} scripts/nano_banana.py '
+                f'--prompt "{safe_prompt}" '
+                f'--output "{img_path}" '
+                f'--style {style_key} '
+                f'--client {client_id}'
+            )
+            print(f"  EN image regenerated: {Path(img_path).name}")
+            return True
+        except Exception as e:
+            print(f"  Error generating EN image: {e}")
+            return False
+
+    # ── image_ru: regenerate RU image via wavespeed_img.py ───────────────────
+    elif regen_type == "image_ru":
+        # Col K (index 10) = Image_Prompt_RU, Col L (index 11) = Image_Path_RU
+        ru_prompt = twitter_row[10] if len(twitter_row) > 10 else ""
+        ru_path = twitter_row[11] if len(twitter_row) > 11 else ""
+        if not ru_prompt or not ru_path:
+            print("  No RU image prompt/path found in workbook")
+            return False
+
+        img_dir = (PROJECT_ROOT / ru_path).parent
+        img_dir.mkdir(parents=True, exist_ok=True)
+
+        safe_prompt = ru_prompt.replace('"', "'")
+
+        if mock:
+            print(f"  [mock] Would generate RU image: {ru_path}")
+            return True
+
+        try:
+            run_cmd(
+                f'{PY} scripts/wavespeed_img.py '
+                f'--prompt "{safe_prompt}" '
+                f'--output "{ru_path}" '
+                f'--client {client_id}'
+            )
+            print(f"  RU image regenerated: {Path(ru_path).name}")
+            return True
+        except Exception as e:
+            print(f"  Error generating RU image: {e}")
+            return False
+
+    else:
+        print(f"  Unknown regen_type: {regen_type}")
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Standalone end-to-end pipeline runner (Gemini-powered)"
@@ -678,10 +866,30 @@ def main():
         "--skip-deploy", action="store_true",
         help="Skip static site build (GH Actions handles deploy as a separate step)",
     )
+    parser.add_argument(
+        "--regen-topic", type=int, default=None,
+        help="Regenerate a single topic item (0-based index). Skips full pipeline.",
+    )
+    parser.add_argument(
+        "--regen-type",
+        choices=["image_en", "image_ru", "content", "content_ru"],
+        default="image_en",
+        help="What to regenerate: image_en, image_ru, content, content_ru",
+    )
     args = parser.parse_args()
 
     client_id = args.client or client_config.get_active_client()
     week_of = get_monday(getattr(args, "week_of", None))
+
+    if args.regen_topic is not None:
+        success = run_regen_item(
+            client_id=client_id,
+            week_of=week_of,
+            topic_index=args.regen_topic,
+            regen_type=args.regen_type,
+            mock=args.mock,
+        )
+        sys.exit(0 if success else 1)
 
     success = run_pipeline(
         client_id=client_id,
