@@ -58,7 +58,7 @@ async function triggerWorkflow(workflow, inputs) {
   await ghFetch(`/repos/${REPO}/actions/workflows/${workflow}/dispatches`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ref: "Fork-#1", inputs }),
+    body: JSON.stringify({ ref: "main", inputs }),
   });
 }
 
@@ -162,7 +162,10 @@ async function runPipeline() {
     // Refresh status after a short delay to catch the new run
     setTimeout(() => { refreshStatus(); startPolling(); }, 5000);
   } catch (err) {
-    showMsg("pipeline-error", `Failed to trigger pipeline: ${err.message}`);
+    const msg = err.message === "Not Found"
+      ? "Failed to trigger pipeline: workflow not found. Make sure the repo's default branch is set to 'main' (not 'gh-pages') so GitHub Actions can index the workflow files."
+      : `Failed to trigger pipeline: ${err.message}`;
+    showMsg("pipeline-error", msg);
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<span class="btn-icon">&#9654;</span> Run Pipeline';
@@ -233,7 +236,10 @@ async function runOnboard() {
     document.getElementById("onboard-next").style.display = "block";
     setTimeout(() => { refreshStatus(); startPolling(); }, 5000);
   } catch (err) {
-    showMsg("onboard-error", `Failed to trigger onboarding: ${err.message}`);
+    const msg = err.message === "Not Found"
+      ? "Failed to trigger onboarding: workflow not found. Make sure the repo's default branch is set to 'main' (not 'gh-pages') so GitHub Actions can index the workflow files."
+      : `Failed to trigger onboarding: ${err.message}`;
+    showMsg("onboard-error", msg);
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<span class="btn-icon">&#10133;</span> Create Client';
@@ -261,8 +267,9 @@ async function refreshStatus() {
       stopPolling();
     }
   } catch (err) {
-    document.getElementById("pipeline-runs").innerHTML =
-      `<div class="runs-empty" style="color:var(--red)">Error: ${err.message}</div>`;
+    const errHtml = `<div class="runs-empty" style="color:var(--red)">Error: ${err.message}</div>`;
+    document.getElementById("pipeline-runs").innerHTML = errHtml;
+    document.getElementById("onboard-runs").innerHTML = errHtml;
   } finally {
     document.getElementById("refresh-btn").disabled = false;
   }
@@ -406,16 +413,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Onboard
   document.getElementById("onboard-run-btn").addEventListener("click", runOnboard);
-
-  // Color pickers sync
-  ["primary", "accent"].forEach(key => {
-    const picker = document.getElementById(`onboard-${key}-picker`);
-    const input  = document.getElementById(`onboard-${key}`);
-    picker.addEventListener("input", () => { input.value = picker.value; });
-    input.addEventListener("input", () => {
-      if (/^#[0-9a-fA-F]{6}$/.test(input.value)) picker.value = input.value;
-    });
-  });
 
   // Status refresh
   document.getElementById("refresh-btn").addEventListener("click", refreshStatus);

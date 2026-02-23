@@ -135,33 +135,20 @@
         <label for="onboard-website">Website <span class="label-required">*</span></label>
         <input type="text" id="onboard-website" class="input" placeholder="acmecorp.com">
       </div>
-      <div class="form-group">
+      <div class="form-group form-group-full">
         <label for="onboard-industry">Industry <span class="label-required">*</span></label>
         <input type="text" id="onboard-industry" class="input" placeholder="DeFi, SaaS, ecommerce...">
-      </div>
-      <div class="form-group">
-        <label for="onboard-platforms">Platforms</label>
-        <input type="text" id="onboard-platforms" class="input" value="twitter,telegram" placeholder="twitter,telegram">
-      </div>
-      <div class="form-group">
-        <label for="onboard-primary">Primary Color</label>
-        <div class="color-row">
-          <input type="color" id="onboard-primary-picker" value="#1a1a2e" class="color-picker">
-          <input type="text" id="onboard-primary" class="input" value="#1a1a2e" placeholder="#1a1a2e">
-        </div>
-      </div>
-      <div class="form-group">
-        <label for="onboard-accent">Accent Color</label>
-        <div class="color-row">
-          <input type="color" id="onboard-accent-picker" value="#00aaff" class="color-picker">
-          <input type="text" id="onboard-accent" class="input" value="#00aaff" placeholder="#00aaff">
-        </div>
       </div>
       <div class="form-group form-group-full">
         <label for="onboard-airtable">Airtable Base ID <span class="label-hint">(optional)</span></label>
         <input type="text" id="onboard-airtable" class="input" placeholder="appXXXXXXXXXX (leave blank to skip)">
       </div>
     </div>
+
+    <!-- Hidden fields with defaults -->
+    <input type="hidden" id="onboard-platforms" value="twitter,telegram">
+    <input type="hidden" id="onboard-primary" value="#1a1a2e">
+    <input type="hidden" id="onboard-accent" value="#00aaff">
 
     <div class="form-actions">
       <button id="onboard-run-btn" class="btn btn-primary">
