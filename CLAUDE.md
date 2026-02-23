@@ -36,14 +36,15 @@ This file is the single source of truth for how Claude should understand and ope
 │       └── onboard-client.yml    # GH Actions: workflow_dispatch → create client dir → commit
 ├── .claude/
 │   ├── commands/
-│   │   ├── prime.md              # /prime — session initialization
-│   │   ├── create-plan.md        # /create-plan — implementation planning
-│   │   ├── implement.md          # /implement — execute plans
-│   │   ├── weekly-pipeline.md    # /weekly-pipeline — bilingual weekly batch run
-│   │   ├── view-content.md       # /view-content — launch dashboard
-│   │   ├── deploy.md             # /deploy — build and deploy static dashboard (includes admin panel)
-│   │   ├── onboard-client.md     # /onboard-client — create new client config
-│   │   ├── switch-client.md      # /switch-client — switch active client
+│   │   ├── prime.md                   # /prime — session initialization
+│   │   ├── create-plan.md             # /create-plan — implementation planning
+│   │   ├── implement.md               # /implement — execute plans
+│   │   ├── weekly-pipeline.md         # /weekly-pipeline — bilingual weekly batch run
+│   │   ├── view-content.md            # /view-content — launch dashboard
+│   │   ├── deploy.md                  # /deploy — build and deploy static dashboard (includes admin panel)
+│   │   ├── onboard-client.md          # /onboard-client — create new client config via Q&A
+│   │   ├── onboard-from-intake.md     # /onboard-from-intake — generate config from intake JSON
+│   │   ├── switch-client.md           # /switch-client — switch active client
 │   │   └── setup-content-automation.md  # /setup-content-automation — initial setup
 │   └── skills/
 │       ├── content-generator/    # Twitter/Telegram copy generation (client-aware)
@@ -54,7 +55,15 @@ This file is the single source of truth for how Claude should understand and ope
 │   ├── index.html                # Password-protected admin panel UI
 │   ├── admin.css                 # Dark theme styles
 │   └── admin.js                  # GitHub API calls, auth, status polling
+├── intake/
+│   ├── index.html                # Client self-serve intake form (9 sections, contextual tips)
+│   ├── intake.css                # Dark theme styles + tip box + progress bar
+│   ├── intake.js                 # Form logic: tips, validation, EmailJS send, JSON download
+│   ├── intake-config.example.js  # Template for EmailJS config (committed, safe to share)
+│   └── intake-config.js          # EmailJS API keys + dashboard URL (gitignored — Rut fills once)
 ├── clients/
+│   ├── intake/                   # Received intake JSONs (gitignored — may contain PII)
+│   │   └── .gitkeep
 │   ├── _template/                # Template for onboarding new clients
 │   │   ├── config.json           # Placeholder config (copy and fill in)
 │   │   ├── brand/README.md       # Brand asset instructions
@@ -74,6 +83,7 @@ This file is the single source of truth for how Claude should understand and ope
 ├── reference/
 │   ├── api-setup.md              # All API setup instructions (Apify, Google AI, WaveSpeed, Airtable)
 │   ├── airtable-client-setup.md  # Step-by-step Airtable setup guide for clients (token, base, config)
+│   ├── emailjs-setup.md          # EmailJS one-time setup for intake form credential emails
 │   └── github-actions-setup.md   # GitHub Secrets, Pages, workflow permissions, PAT creation
 ├── outputs/
 │   └── content/
@@ -136,6 +146,11 @@ Execute a plan created by /create-plan, step by step.
 Create a new client configuration from the template. Conducts a full 18-question Q&A, then auto-drafts all four client files (`config.json`, `content-guidelines.md`, `context.md`, `keywords.md`) in one pass — no manual file editing required. Includes Airtable delivery setup as an optional final step.
 
 - Example: `/onboard-client acmecrypto`
+
+### /onboard-from-intake [path]
+Read a completed client intake JSON (downloaded from the intake form) and generate all four config files + write credentials in one pass. No Q&A required. After running, execute `/deploy` to publish updated credentials.
+
+- Example: `/onboard-from-intake clients/intake/acmecrypto-intake.json`
 
 ### /switch-client [client-id]
 Switch the active client for all pipeline commands. Shows available clients and current selection.
@@ -212,6 +227,7 @@ This workspace supports multiple clients via a config-driven architecture:
 | Google AI | `GOOGLE_AI_API_KEY` | Gemini text translation (RU content) |
 | WaveSpeed | `WAVESPEED_API_KEY` | GPT-Image-1.5 (EN) + Seedream 4.5 (RU) image generation |
 | Airtable | `AIRTABLE_API_KEY` | Content delivery to client Airtable bases (optional, per client) |
+| EmailJS | `intake/intake-config.js` | Credential email delivery from intake form (not an env var — stored in gitignored JS file) |
 
 Store in `.env` (never commit). See `reference/api-setup.md` for setup.
 
@@ -259,6 +275,7 @@ Setup: See `reference/github-actions-setup.md` for GitHub Secrets, permissions, 
 | `plans/2026-02-23-multi-client-scalability.md` | Implemented | Airtable content delivery, auto-drafted onboarding Q&A, config-driven platforms and image style mapping |
 | `plans/2026-02-23-github-actions-admin-panel.md` | Implemented | Standalone `pipeline_runner.py`, GitHub Actions workflows, admin panel at `/admin/` |
 | `plans/2026-02-23-landing-login-client-dashboard.md` | Implemented | Landing page (placeholder), login form with SHA-256 auth, per-client dashboard routing under `/dashboard/{client_id}/` |
+| `plans/2026-02-23-client-intake-form.md` | Implemented | Self-serve client intake form at `/intake/`, EmailJS credential delivery, `/onboard-from-intake` command, `credentials.json` auto-write |
 
 ---
 

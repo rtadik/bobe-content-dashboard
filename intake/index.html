@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Client Intake Form</title>
+  <link rel="stylesheet" href="intake.css">
+</head>
+<body>
+
+<header class="site-header">
+  <span class="brand-name">RT Content<span class="brand-dot">.</span></span>
+  <span class="header-tag">Client Intake</span>
+</header>
+
+<div class="container">
+
+  <div class="form-header">
+    <h1 class="form-title">Client Intake Form</h1>
+    <p class="form-subtitle">Tell us about your brand. This takes about 10-15 minutes. We'll email you your dashboard login credentials when you submit.</p>
+    <div class="progress-bar" id="progressBar">
+      <div class="progress-step active" data-section="1"></div>
+      <div class="progress-step" data-section="2"></div>
+      <div class="progress-step" data-section="3"></div>
+      <div class="progress-step" data-section="4"></div>
+      <div class="progress-step" data-section="5"></div>
+      <div class="progress-step" data-section="6"></div>
+      <div class="progress-step" data-section="7"></div>
+      <div class="progress-step" data-section="8"></div>
+      <div class="progress-step" data-section="9"></div>
+    </div>
+  </div>
+
+  <form id="intakeForm" novalidate>
+
+    <!-- Section 1: Contact -->
+    <div class="section-card" data-section="1">
+      <div class="section-title">
+        <span class="section-num">1</span>
+        Contact
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="email">
+          Email address <span class="required-star">*</span>
+        </label>
+        <input class="input" type="email" id="email" name="email" placeholder="you@yourbrand.com"
+               autocomplete="email" required
+               data-tip="We'll send your dashboard login credentials here. Use a work email you check regularly.">
+        <div class="tip-box">We'll send your dashboard login credentials here. Use a work email you check regularly.</div>
+        <div class="field-error" id="error-email">Please enter a valid email address.</div>
+      </div>
+    </div>
+
+    <!-- Section 2: About Your Business -->
+    <div class="section-card" data-section="2">
+      <div class="section-title">
+        <span class="section-num">2</span>
+        About Your Business
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="client_id">
+          Client ID <span class="required-star">*</span>
+        </label>
+        <p class="field-hint">Lowercase, no spaces. E.g. acmecrypto</p>
+        <input class="input" type="text" id="client_id" name="client_id"
+               placeholder="acmecrypto" autocomplete="off" required
+               pattern="[a-z0-9_-]+"
+               data-tip="This becomes your username and your dashboard URL path. Use your brand name, all lowercase, no spaces. Example: if your brand is Acme Crypto, use 'acmecrypto'.">
+        <div class="tip-box">This becomes your username and dashboard URL path. Use your brand name, all lowercase, no spaces. Example: Acme Crypto becomes 'acmecrypto'.</div>
+        <div class="field-error" id="error-client_id">Required. Lowercase letters, numbers, hyphens only. No spaces.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="display_name">
+          Brand display name <span class="required-star">*</span>
+        </label>
+        <input class="input" type="text" id="display_name" name="display_name"
+               placeholder="Acme Crypto" required
+               data-tip="How your brand name appears in content and on your dashboard. Capitalization matters — e.g. 'Acme Crypto', not 'acmecrypto'.">
+        <div class="tip-box">How your brand name appears in content and on your dashboard. Capitalization matters.</div>
+        <div class="field-error" id="error-display_name">Required.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="website">Website URL</label>
+        <input class="input" type="url" id="website" name="website"
+               placeholder="https://yourbrand.com"
+               data-tip="Your main website. Include https://. Used in CTAs and content links.">
+        <div class="tip-box">Your main website. Include https://. Used in CTAs and content links.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="tagline">One-line tagline</label>
+        <input class="input" type="text" id="tagline" name="tagline"
+               placeholder="Automated crypto yield for busy investors."
+               data-tip="One sentence that captures what you do. Think of it as your Twitter bio or elevator pitch.">
+        <div class="tip-box">One sentence that captures what you do. Think of it as your Twitter bio or elevator pitch.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="description">
+          What does your product/service do? <span class="required-star">*</span>
+        </label>
+        <p class="field-hint">2-3 sentences</p>
+        <textarea class="input" id="description" name="description" rows="3" required
+                  placeholder="We help crypto holders earn automated yield through AI-driven DCA and grid strategies..."
+                  data-tip="Explain it like you're talking to a smart friend who doesn't know your industry. What problem does it solve? How does it work? What does the user get?"></textarea>
+        <div class="tip-box">Explain it like talking to a smart friend who doesn't know your industry. What problem does it solve? How does it work? What does the user get?</div>
+        <div class="field-error" id="error-description">Required.</div>
+      </div>
+    </div>
+
+    <!-- Section 3: Your Audience -->
+    <div class="section-card" data-section="3">
+      <div class="section-title">
+        <span class="section-num">3</span>
+        Your Audience
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="audience_age">Age range</label>
+        <input class="input" type="text" id="audience_age" name="audience_age"
+               placeholder="25-40"
+               data-tip="E.g. '25-40' or '18-35'. Be honest — this shapes the tone and vocabulary of all content.">
+        <div class="tip-box">E.g. '25-40' or '18-35'. Be honest — this shapes the tone and vocabulary of all content.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="audience_situation">
+          What's their current situation? <span class="required-star">*</span>
+        </label>
+        <p class="field-hint">What are they struggling with before finding you?</p>
+        <textarea class="input" id="audience_situation" name="audience_situation" rows="3" required
+                  placeholder="They're spending hours manually trading crypto and still losing money..."
+                  data-tip="Describe where they are right now, before they found you. The more specific, the better. E.g. 'They spend hours manually trading and still lose money to emotional decisions.'"></textarea>
+        <div class="tip-box">Describe where they are right now, before they found you. The more specific, the better.</div>
+        <div class="field-error" id="error-audience_situation">Required.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="pain_points">
+          Top 2-3 pain points <span class="required-star">*</span>
+        </label>
+        <p class="field-hint">One per line</p>
+        <textarea class="input" id="pain_points" name="pain_points" rows="3" required
+                  placeholder="Emotional trading decisions&#10;No time to manage positions&#10;Don't trust black-box products"
+                  data-tip="What frustrates them most? What keeps them up at night? Each line = one pain point."></textarea>
+        <div class="tip-box">What frustrates them most? What keeps them up at night? Each line = one pain point.</div>
+        <div class="field-error" id="error-pain_points">Required.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="desired_outcome">What do they want instead?</label>
+        <textarea class="input" id="desired_outcome" name="desired_outcome" rows="2"
+                  placeholder="Passive yield on their crypto without needing to watch charts all day..."
+                  data-tip="Describe their ideal situation after using your product. What does success look like for them?"></textarea>
+        <div class="tip-box">Describe their ideal situation after using your product. What does success look like for them?</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="differentiators">
+          Why do customers choose you? <span class="required-star">*</span>
+        </label>
+        <p class="field-hint">Top 2-3 differentiators, one per line</p>
+        <textarea class="input" id="differentiators" name="differentiators" rows="3" required
+                  placeholder="Fully on-chain transparency&#10;No lock-up periods&#10;AI adjusts to market conditions automatically"
+                  data-tip="What makes you different from other options? Think: what do your best customers say when they recommend you?"></textarea>
+        <div class="tip-box">What makes you different from alternatives? Think: what do your best customers say when recommending you? Each line = one differentiator.</div>
+        <div class="field-error" id="error-differentiators">Required.</div>
+      </div>
+    </div>
+
+    <!-- Section 4: Voice & Messaging -->
+    <div class="section-card" data-section="4">
+      <div class="section-title">
+        <span class="section-num">4</span>
+        Voice &amp; Messaging
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="tone_adjectives">
+          Brand tone in 3-4 adjectives <span class="required-star">*</span>
+        </label>
+        <input class="input" type="text" id="tone_adjectives" name="tone_adjectives"
+               placeholder="direct, educational, no-hype, approachable" required
+               data-tip="These guide every piece of content generated. Think about what it feels like to read your brand.">
+        <div class="tip-box">These guide every piece of content generated. Think about what it feels like to read your brand. E.g. 'direct, educational, no-hype, approachable'.</div>
+        <div class="field-error" id="error-tone_adjectives">Required.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="tone_description">Expand on the tone</label>
+        <p class="field-hint">What does it NOT sound like?</p>
+        <textarea class="input" id="tone_description" name="tone_description" rows="3"
+                  placeholder="We explain things clearly without jargon. We never hype or promise guaranteed results. We don't sound like a startup trying too hard to be cool."
+                  data-tip="Contrasts are as useful as positives. E.g. 'We never hype or promise guaranteed results. We don't use FOMO language.'"></textarea>
+        <div class="tip-box">Contrasts are as useful as positives. E.g. 'We explain things clearly without jargon. We never hype or promise guaranteed results.'</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="content_avoid">
+          What should content always avoid? <span class="required-star">*</span>
+        </label>
+        <p class="field-hint">One per line</p>
+        <textarea class="input" id="content_avoid" name="content_avoid" rows="3" required
+                  placeholder="guaranteed returns&#10;competitor comparisons&#10;overly technical jargon&#10;FOMO language"
+                  data-tip="Specific phrases, claim types, or topics that are off-brand or legally risky."></textarea>
+        <div class="tip-box">Specific phrases, claim types, or topics that are off-brand or legally risky. Each line = one thing to avoid.</div>
+        <div class="field-error" id="error-content_avoid">Required.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="messaging_pillars">
+          2-4 core messaging pillars <span class="required-star">*</span>
+        </label>
+        <p class="field-hint">What you want your audience to believe. One per line.</p>
+        <textarea class="input" id="messaging_pillars" name="messaging_pillars" rows="3" required
+                  placeholder="This platform is transparent and auditable&#10;Automation beats emotional trading&#10;You don't need to be an expert to earn yield"
+                  data-tip="What do you want people to think of when they think of your brand? Each line = one core belief."></textarea>
+        <div class="tip-box">What do you want people to think of when they think of your brand? Each line = one core belief you want your audience to hold.</div>
+        <div class="field-error" id="error-messaging_pillars">Required.</div>
+      </div>
+    </div>
+
+    <!-- Section 5: Platforms & Languages -->
+    <div class="section-card" data-section="5">
+      <div class="section-title">
+        <span class="section-num">5</span>
+        Platforms &amp; Languages
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label">Platforms <span class="required-star">*</span></label>
+        <p class="field-hint">Select all platforms you want content generated for</p>
+        <div class="check-group" id="platforms-group"
+             data-tip="Twitter/X and Telegram are fully supported. LinkedIn and Instagram use the same copy format with minor adjustments.">
+          <label class="check-label">
+            <input type="checkbox" name="platforms" value="twitter" checked> Twitter / X
+          </label>
+          <label class="check-label">
+            <input type="checkbox" name="platforms" value="telegram" checked> Telegram
+          </label>
+          <label class="check-label">
+            <input type="checkbox" name="platforms" value="linkedin"> LinkedIn
+          </label>
+          <label class="check-label">
+            <input type="checkbox" name="platforms" value="instagram"> Instagram
+          </label>
+        </div>
+        <div class="tip-box">Twitter/X and Telegram are fully supported. LinkedIn and Instagram use the same copy format with minor adjustments.</div>
+        <div class="field-error" id="error-platforms">Select at least one platform.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label">Languages</label>
+        <p class="field-hint">English is always included</p>
+        <div class="check-group"
+             data-tip="English is always included. Russian is built into the pipeline — all content gets auto-translated and Russian-specific images are generated.">
+          <label class="check-label">
+            <input type="checkbox" name="languages" value="english" checked disabled> English (always included)
+          </label>
+          <label class="check-label">
+            <input type="checkbox" name="languages" value="russian"> Russian (bilingual pipeline)
+          </label>
+        </div>
+        <div class="tip-box">English is always included. Russian is built into the pipeline — all content is auto-translated and Russian-specific images are generated.</div>
+      </div>
+    </div>
+
+    <!-- Section 6: Keywords & Community -->
+    <div class="section-card" data-section="6">
+      <div class="section-title">
+        <span class="section-num">6</span>
+        Keywords &amp; Community
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="keywords">
+          8-12 keywords your audience uses online <span class="required-star">*</span>
+        </label>
+        <p class="field-hint">One per line</p>
+        <textarea class="input" id="keywords" name="keywords" rows="5" required
+                  placeholder="crypto yield&#10;automated trading&#10;DCA strategy&#10;passive income crypto&#10;grid bot"
+                  data-tip="These filter scraped social media posts to find relevant trending topics for your content. Think: what would your ideal customer type into Twitter search?"></textarea>
+        <div class="tip-box">These filter scraped social media posts to find relevant trending topics. Think: what would your ideal customer type into Twitter search?</div>
+        <div class="field-error" id="error-keywords">Required.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="negative_keywords">Terms that indicate spam or off-topic content</label>
+        <p class="field-hint">One per line. Posts containing these will be filtered out.</p>
+        <textarea class="input" id="negative_keywords" name="negative_keywords" rows="3"
+                  placeholder="giveaway&#10;airdrop&#10;get rich quick&#10;NFT mint&#10;pump"
+                  data-tip="Posts containing these words will be filtered out during scraping. When in doubt, include it."></textarea>
+        <div class="tip-box">Posts containing these words will be filtered out during scraping. When in doubt, include it.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="subreddits">Reddit communities your audience uses</label>
+        <p class="field-hint">No r/ prefix, one per line</p>
+        <textarea class="input" id="subreddits" name="subreddits" rows="3"
+                  placeholder="CryptoCurrency&#10;algotrading&#10;personalfinance&#10;investing"
+                  data-tip="Where does your audience hang out on Reddit? We scrape these for trending discussion topics."></textarea>
+        <div class="tip-box">Where does your audience hang out on Reddit? We scrape these for trending discussion topics.</div>
+      </div>
+    </div>
+
+    <!-- Section 7: Content & CTAs -->
+    <div class="section-card" data-section="7">
+      <div class="section-title">
+        <span class="section-num">7</span>
+        Content &amp; CTAs
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="cta_examples">
+          2-3 calls-to-action for content <span class="required-star">*</span>
+        </label>
+        <p class="field-hint">One per line. Include the full CTA text and URL.</p>
+        <textarea class="input" id="cta_examples" name="cta_examples" rows="3" required
+                  placeholder="Start earning yield today: yourbrand.com&#10;Join 10,000 users: yourbrand.com/signup&#10;See how it works: yourbrand.com/demo"
+                  data-tip="What action do you want readers to take? Include the full CTA text and URL for each."></textarea>
+        <div class="tip-box">What action do you want readers to take? Include the full CTA text and URL for each. One per line.</div>
+        <div class="field-error" id="error-cta_examples">Required.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="hashtags">
+          2-4 brand hashtags <span class="required-star">*</span>
+        </label>
+        <p class="field-hint">Include the #, one per line</p>
+        <textarea class="input" id="hashtags" name="hashtags" rows="3" required
+                  placeholder="#YourBrand&#10;#YourBrandApp&#10;#AutomatedYield"
+                  data-tip="Hashtags that belong to your brand and will appear consistently in content. Keep it to 2-4."></textarea>
+        <div class="tip-box">Hashtags that belong to your brand and will appear consistently in content. Keep it to 2-4 — quality over quantity.</div>
+        <div class="field-error" id="error-hashtags">Required.</div>
+      </div>
+    </div>
+
+    <!-- Section 8: Brand & Visuals -->
+    <div class="section-card" data-section="8">
+      <div class="section-title">
+        <span class="section-num">8</span>
+        Brand &amp; Visuals
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="primary_color_text">
+          Primary brand color <span class="required-star">*</span>
+        </label>
+        <div class="color-row">
+          <input class="color-picker" type="color" id="primary_color" name="primary_color" value="#1a1a2e"
+                 data-tip="Your main brand color — used as the dominant background tone in generated images.">
+          <input class="input" type="text" id="primary_color_text" placeholder="#1a1a2e"
+                 style="flex:1" maxlength="7">
+        </div>
+        <div class="tip-box">Your main brand color — used as the dominant background tone in generated images. Click the swatch or type a hex code.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="accent_color_text">Accent color</label>
+        <div class="color-row">
+          <input class="color-picker" type="color" id="accent_color" name="accent_color" value="#1589DC"
+                 data-tip="Your highlight or call-to-action color. Used for glowing elements, buttons, and key visual accents.">
+          <input class="input" type="text" id="accent_color_text" placeholder="#1589DC"
+                 style="flex:1" maxlength="7">
+        </div>
+        <div class="tip-box">Your highlight or call-to-action color. Used for glowing elements, buttons, and key visual accents in generated images.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="text_color_text">Text color</label>
+        <div class="color-row">
+          <input class="color-picker" type="color" id="text_color" name="text_color" value="#ffffff"
+                 data-tip="Usually white (#ffffff) or near-white. This is the primary text color used in generated image banners.">
+          <input class="input" type="text" id="text_color_text" placeholder="#ffffff"
+                 style="flex:1" maxlength="7">
+        </div>
+        <div class="tip-box">Usually white (#ffffff) or near-white. This is the primary text color used in generated image banners.</div>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label" for="mascot">Mascot or brand character</label>
+        <p class="field-hint">Describe in detail, or write "none" for clean banner style</p>
+        <textarea class="input" id="mascot" name="mascot" rows="3"
+                  placeholder="A small friendly robot with a glowing blue chest panel, rounded edges, and a calm expression. Pixel art style, dark metallic body."
+                  data-tip="Describe in detail: species/type, appearance, colors, style, distinguishing features. If you have no mascot, write 'none' and we'll use a clean banner style."></textarea>
+        <div class="tip-box">Describe in detail: species/type, appearance, colors, style, distinguishing features. If you have no mascot, write 'none' and we'll use a clean banner style.</div>
+      </div>
+    </div>
+
+    <!-- Section 9: Content Delivery (Optional) -->
+    <div class="section-card" data-section="9">
+      <div class="section-title">
+        <span class="section-num">9</span>
+        Content Delivery
+        <span class="section-optional">(optional)</span>
+      </div>
+
+      <div class="field-wrapper">
+        <label class="field-label">Sync content to Airtable?</label>
+        <p class="field-hint">If yes, all generated content syncs to your Airtable base for review and approval</p>
+        <div class="radio-group"
+             data-tip="If Yes, all generated content syncs to an Airtable base where you can review, approve, and track status. Free Airtable account required. If No, content is delivered as an Excel file.">
+          <label class="radio-label">
+            <input type="radio" name="airtable_enabled" value="no" checked> No, Excel file is fine
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="airtable_enabled" value="yes"> Yes, sync to Airtable
+          </label>
+        </div>
+        <div class="tip-box">If Yes, all generated content syncs to an Airtable base where you can review, approve, and track status. Free Airtable account required.</div>
+      </div>
+
+      <div class="field-wrapper" id="airtable-base-row">
+        <label class="field-label" for="airtable_base_id">Airtable Base ID</label>
+        <p class="field-hint">Found in your Airtable URL: airtable.com/{BASE_ID}/... — starts with "app"</p>
+        <input class="input" type="text" id="airtable_base_id" name="airtable_base_id"
+               placeholder="appXXXXXXXXXXXXXX"
+               data-tip="Found in your Airtable base URL: airtable.com/{BASE_ID}/... — starts with 'app'. See the setup guide your partner will send for instructions.">
+        <div class="tip-box">Found in your Airtable base URL: airtable.com/{BASE_ID}/... — starts with 'app'. Your partner will send a setup guide.</div>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-submit" id="submitBtn">Submit and Send My Credentials</button>
+
+  </form>
+
+  <!-- Success panel (hidden until submit) -->
+  <div class="success-panel" id="successPanel">
+    <div class="success-icon">&#10003;</div>
+    <h2 class="success-title">You're all set!</h2>
+    <p class="success-msg" id="successMsg">Your login credentials have been sent to <strong id="clientEmail"></strong>.</p>
+    <div class="success-credentials" id="successCredentials"></div>
+    <div class="email-warning" id="emailWarning" style="display:none"></div>
+    <p class="success-hint">Save your intake file below and send it to your partner to complete setup.</p>
+    <div class="success-actions">
+      <button onclick="downloadJSON()" class="btn-download">Download Intake File</button>
+      <button onclick="copyJSON()" class="btn-copy">Copy to Clipboard</button>
+    </div>
+  </div>
+
+</div><!-- /.container -->
+
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="intake-config.js" onerror="window.INTAKE_CONFIG=null"></script>
+<script src="intake.js"></script>
+</body>
+</html>

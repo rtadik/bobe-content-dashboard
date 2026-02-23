@@ -16,3 +16,9 @@ outputs/content/images/
 outputs/content/*.json
 dist/
 .active-client
+
+# Intake JSONs (may contain client PII + plaintext passwords)
+clients/intake/*.json
+
+# EmailJS config (contains API keys)
+intake/intake-config.js

@@ -1241,6 +1241,17 @@ def main():
         else:
             print("  Warning: admin/ directory not found, skipping --include-admin")
 
+    # Copy intake form (always — no flag required)
+    intake_src = Path(__file__).parent.parent / "intake"
+    if intake_src.exists():
+        intake_dst = Path(args.output) / "intake"
+        shutil.copytree(str(intake_src), str(intake_dst), dirs_exist_ok=True)
+        # Never deploy intake-config.js — it contains EmailJS API keys
+        config_in_dist = intake_dst / "intake-config.js"
+        if config_in_dist.exists():
+            config_in_dist.unlink()
+        print(f"  Intake form copied to {intake_dst}")
+
 
 if __name__ == "__main__":
     main()
