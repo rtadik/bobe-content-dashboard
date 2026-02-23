@@ -68,15 +68,7 @@ Store the PAT in your password manager. You will enter it in the admin panel UI 
 
 ---
 
-## 5. Branch Note
-
-Both workflow files (`weekly-pipeline.yml` and `onboard-client.yml`) reference `Fork-#1`
-as the working branch (`ref: Fork-#1`). When `Fork-#1` is merged to `main`, update the
-`ref:` field in both workflow files to `main`.
-
----
-
-## 6. Trigger a Test Run
+## 5. Trigger a Test Run
 
 Once secrets are configured:
 
