@@ -19,14 +19,14 @@
     "background_style": "Describe the default background style for generated images"
   },
   "content": {
-    "tone": "clear, direct",
-    "voice": "Direct.",
+    "tone": "clear",
+    "voice": "",
     "brand_terms_keep": [
       "BRAND_NAME"
     ],
     "cta_url": "example.com",
     "cta_examples": [
-      "Try it: e2etest.com"
+      "Try it"
     ],
     "hashtags": [
       "#E2ETest"
@@ -54,8 +54,7 @@
   },
   "scraping": {
     "keywords": [
-      "automation",
-      "testing"
+      "automation"
     ],
     "negative_keywords": [
       "spam"

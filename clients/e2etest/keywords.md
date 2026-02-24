@@ -16,7 +16,7 @@ These directly relate to the core offering:
 
 These relate to the broader audience, pain points, and adjacent topics:
 
-- testing
+- (add secondary keywords here)
 
 ---
 

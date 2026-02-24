@@ -6,9 +6,9 @@ Reference for content generation. All generated content must align with these pr
 
 ## Brand Voice
 
-**clear, direct.**
+**clear.**
 
-Direct.
+E2E Test Co communicates with clarity and substance. Every post teaches something, builds trust, or addresses a real audience need.
 
 ---
 
@@ -57,10 +57,10 @@ Every piece of content should connect to one or more of these:
 ## CTAs by Platform
 
 **Twitter:**
-- Try it: e2etest.com
+- Try it
 
 **Telegram:**
-- Try it: e2etest.com
+- Try it
 
 ---
 

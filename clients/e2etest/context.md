@@ -15,13 +15,10 @@ End to end test.
 
 **Who they are:**
 * Age range: 25-40
-* Testing automation.
+* Testing.
 
 **Pain points:**
 * Manual work
-
-**What they want:**
-* Zero steps
 
 ---
 
