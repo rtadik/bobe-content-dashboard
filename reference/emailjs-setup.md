@@ -38,7 +38,7 @@ Hi {{to_name}},
 
 Your content dashboard is ready. Here are your login credentials:
 
-Username: {{client_id}}
+Username: {{username}}
 Password: {{password}}
 
 Login here: {{login_url}}
@@ -103,7 +103,8 @@ This is your permanent password. Contact your partner if you need it changed.
 |----------|-------|
 | `{{to_email}}` | Client's email address |
 | `{{to_name}}` | Client's display name |
-| `{{client_id}}` | Their username (e.g. `acmecrypto`) |
+| `{{username}}` | Always `admin` |
+| `{{client_id}}` | Their client ID (e.g. `acmecrypto`) |
 | `{{password}}` | Their password (e.g. `acmecrypto123`) |
 | `{{login_url}}` | Full login URL (e.g. `https://rtadik.github.io/bobe-content-dashboard/login.html`) |
 | `{{dashboard_url}}` | Direct dashboard URL (e.g. `.../dashboard/acmecrypto/`) |
@@ -132,8 +133,8 @@ This is your permanent password. Contact your partner if you need it changed.
 ## Credential Pattern
 
 Credentials follow a fixed pattern — no randomness needed:
-- Username: `{client_id}` (same as their client ID)
+- Username: `admin` (same for every client)
 - Password: `{client_id}123` (e.g. `acmecrypto123`)
-- Admin: username `admin`, password `admin123`
+- Admin panel: username `admin`, password `admin123`
 
 Only SHA-256 hashes are stored in `credentials.json`. The plaintext password is never stored anywhere.

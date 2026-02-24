@@ -277,6 +277,7 @@ async function sendCredentialEmail({ email, displayName, clientId, password, log
     to_email:      email,
     to_name:       displayName,
     client_id:     clientId,
+    username:      'admin',
     password:      password,
     login_url:     loginUrl,
     dashboard_url: dashboardUrl
@@ -284,7 +285,7 @@ async function sendCredentialEmail({ email, displayName, clientId, password, log
 }
 
 // ── Success panel ──────────────────────────────────────────────
-function showSuccessPanel({ emailFailed = false, clientId = '', password = '' } = {}) {
+function showSuccessPanel({ emailFailed = false, clientId = '', password = '', workerStatus = 'pending' } = {}) {
   document.getElementById('intakeForm').style.display = 'none';
   const panel = document.getElementById('successPanel');
   panel.classList.add('show');
@@ -296,8 +297,27 @@ function showSuccessPanel({ emailFailed = false, clientId = '', password = '' } 
   const creds = document.getElementById('successCredentials');
   creds.innerHTML =
     '<strong>Your credentials:</strong><br>' +
-    'Username: <strong>' + (clientId || getValue('client_id')) + '</strong><br>' +
+    'Username: <strong>admin</strong><br>' +
     'Password: <strong>' + (password || derivePassword(getValue('client_id'))) + '</strong>';
+
+  // Worker / onboarding status message
+  const statusEl = document.getElementById('onboardStatus');
+  if (statusEl) {
+    if (workerStatus === 'ok') {
+      statusEl.style.display = 'block';
+      statusEl.className = 'onboard-status onboard-ok';
+      statusEl.textContent =
+        'Your dashboard is being set up automatically. It will be live at content.rejiglabs.com/dashboard/' +
+        (clientId || getValue('client_id')) + '/ within 3-5 minutes.';
+    } else if (workerStatus === 'error') {
+      statusEl.style.display = 'block';
+      statusEl.className = 'onboard-status onboard-warn';
+      statusEl.textContent =
+        'Automatic setup encountered an issue. Your intake file has been downloaded. ' +
+        'Forward it to your partner to complete setup manually.';
+    }
+    // If 'pending' (workerUrl not configured), show nothing extra
+  }
 
   if (emailFailed) {
     const warn = document.getElementById('emailWarning');
@@ -351,25 +371,56 @@ async function handleSubmit(e) {
   submitBtn.textContent = 'Sending credentials...';
   submitBtn.disabled = true;
 
-  const clientId = getValue('client_id');
-  const password = derivePassword(clientId);
-  const email = getValue('email');
+  const clientId    = getValue('client_id');
+  const password    = derivePassword(clientId);
+  const email       = getValue('email');
   const displayName = getValue('display_name');
 
-  const baseUrl = window.INTAKE_CONFIG ? window.INTAKE_CONFIG.dashboardBaseUrl : '';
-  const loginUrl = baseUrl ? baseUrl + '/login.html' : '';
+  const baseUrl      = window.INTAKE_CONFIG ? window.INTAKE_CONFIG.dashboardBaseUrl : '';
+  const loginUrl     = baseUrl ? baseUrl + '/login.html' : '';
   const dashboardUrl = baseUrl ? baseUrl + '/dashboard/' + clientId + '/' : '';
 
   // Build JSON first (needed for fallback download even if email fails)
   intakeData = buildIntakeJSON();
 
+  // ── Step 1: EmailJS credential email ──────────────────────────────────────
+  let emailFailed = false;
   try {
     await sendCredentialEmail({ email, displayName, clientId, password, loginUrl, dashboardUrl });
-    showSuccessPanel();
   } catch (err) {
     console.warn('EmailJS error:', err);
-    showSuccessPanel({ emailFailed: true, clientId, password });
+    emailFailed = true;
   }
+
+  // ── Step 2: Cloudflare Worker — trigger auto-onboard (non-blocking) ───────
+  let workerStatus = 'pending'; // 'ok' | 'error' | 'pending'
+  const workerUrl = window.INTAKE_CONFIG ? window.INTAKE_CONFIG.workerUrl : null;
+
+  if (workerUrl) {
+    try {
+      submitBtn.textContent = 'Setting up your dashboard...';
+      const resp = await fetch(workerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(intakeData),
+      });
+      if (resp.ok) {
+        workerStatus = 'ok';
+      } else {
+        const errBody = await resp.json().catch(() => ({}));
+        console.warn('Worker error response:', resp.status, errBody);
+        workerStatus = 'error';
+      }
+    } catch (err) {
+      console.warn('Worker fetch error:', err);
+      workerStatus = 'error';
+    }
+  } else {
+    console.warn('INTAKE_CONFIG.workerUrl not set — skipping auto-onboard trigger');
+  }
+
+  // ── Step 3: Show success panel ────────────────────────────────────────────
+  showSuccessPanel({ emailFailed, clientId, password, workerStatus });
 }
 
 // ── Init ───────────────────────────────────────────────────────

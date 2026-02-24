@@ -1,0 +1,552 @@
+name: Auto-Onboard Client from Intake
+
+on:
+  workflow_dispatch:
+    inputs:
+      intake_json:
+        description: 'Full intake JSON string (sent by Cloudflare Worker)'
+        required: true
+
+concurrency:
+  group: gh-pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  onboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install requests openpyxl google-genai python-dotenv jinja2 flask pillow
+
+      - name: Validate and parse intake JSON
+        id: parse
+        env:
+          INTAKE_JSON: ${{ github.event.inputs.intake_json }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, sys, re
+
+          raw = os.environ["INTAKE_JSON"]
+          try:
+              intake = json.loads(raw)
+          except json.JSONDecodeError as e:
+              print(f"ERROR: Could not parse intake_json: {e}")
+              sys.exit(1)
+
+          client_id = intake.get("client_id", "").strip()
+          if not client_id or not re.match(r'^[a-z0-9_-]+$', client_id):
+              print(f"ERROR: Invalid or missing client_id: '{client_id}'")
+              sys.exit(1)
+
+          display_name = intake.get("display_name", "").strip()
+          if not display_name:
+              print("ERROR: Missing display_name")
+              sys.exit(1)
+
+          email = intake.get("contact", {}).get("email", "").strip()
+          if not email:
+              print("ERROR: Missing contact.email")
+              sys.exit(1)
+
+          output_file = os.environ.get("GITHUB_OUTPUT", "/dev/null")
+          with open(output_file, "a") as f:
+              f.write(f"client_id={client_id}\n")
+              f.write(f"display_name={display_name}\n")
+              f.write(f"email={email}\n")
+
+          print(f"Intake validated: client_id={client_id}, display_name={display_name}")
+          PYEOF
+
+      - name: Check client does not already exist
+        run: |
+          CLIENT_ID="${{ steps.parse.outputs.client_id }}"
+          if [ -d "clients/${CLIENT_ID}" ]; then
+            echo "WARNING: Client '${CLIENT_ID}' already exists. Skipping directory creation."
+            echo "CLIENT_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "CLIENT_EXISTS=false" >> $GITHUB_ENV
+          fi
+
+      - name: Create client directory from template
+        if: env.CLIENT_EXISTS == 'false'
+        run: |
+          CLIENT_ID="${{ steps.parse.outputs.client_id }}"
+          cp -r clients/_template "clients/${CLIENT_ID}"
+          echo "Copied template to clients/${CLIENT_ID}"
+
+      - name: Write config.json from intake data
+        env:
+          INTAKE_JSON: ${{ github.event.inputs.intake_json }}
+          CLIENT_ID: ${{ steps.parse.outputs.client_id }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os
+
+          raw = os.environ["INTAKE_JSON"]
+          intake = json.loads(raw)
+          client_id = os.environ["CLIENT_ID"]
+
+          config_path = f"clients/{client_id}/config.json"
+          with open(config_path) as f:
+              config = json.load(f)
+
+          # Core identity
+          config["client_id"]    = client_id
+          config["display_name"] = intake.get("display_name", "")
+          config["tagline"]      = intake.get("tagline", "")
+          config["website"]      = intake.get("website", "")
+
+          # Brand colors
+          brand = intake.get("brand", {})
+          config["brand"]["primary_color"] = brand.get("primary_color", "#1a1a2e")
+          config["brand"]["accent_color"]  = brand.get("accent_color",  "#00d4ff")
+          config["brand"]["text_color"]    = brand.get("text_color",    "#ffffff")
+          if brand.get("mascot"):
+              config["brand"]["mascot_description"] = brand["mascot"]
+
+          # Content settings
+          voice = intake.get("voice", {})
+          tone_adjectives = voice.get("tone_adjectives", [])
+          config["content"]["tone"]  = ", ".join(tone_adjectives) if tone_adjectives else "professional, clear, educational"
+          config["content"]["voice"] = voice.get("tone_description", "")
+          config["content"]["cta_examples"]       = intake.get("content", {}).get("cta_examples", [])
+          config["content"]["hashtags"]            = intake.get("content", {}).get("hashtags", [])
+          config["content"]["messaging_pillars"]   = voice.get("messaging_pillars", [])
+
+          # Platforms
+          platforms = intake.get("platforms", ["twitter", "telegram"])
+          config["content"]["platforms"] = platforms
+
+          # Languages
+          languages_raw = intake.get("languages", ["english"])
+          lang_map = {"english": "en", "russian": "ru"}
+          config["languages"] = [lang_map.get(l.lower(), l) for l in languages_raw]
+
+          # Scraping keywords
+          scraping = intake.get("scraping", {})
+          config["scraping"]["keywords"]          = scraping.get("keywords", [])
+          config["scraping"]["negative_keywords"] = scraping.get("negative_keywords", ["scam", "spam"])
+          config["scraping"]["subreddits"]        = scraping.get("subreddits", [])
+
+          # Airtable
+          airtable = intake.get("airtable", {})
+          if airtable.get("enabled") and airtable.get("base_id"):
+              config["airtable"]["enabled"] = True
+              config["airtable"]["base_id"] = airtable["base_id"]
+
+          with open(config_path, "w") as f:
+              json.dump(config, f, indent=2)
+
+          print(f"config.json written for client: {client_id}")
+          print(f"  Platforms: {platforms}")
+          print(f"  Languages: {config['languages']}")
+          print(f"  Keywords: {len(scraping.get('keywords', []))} entries")
+          PYEOF
+
+      - name: Write content-guidelines.md from intake data
+        env:
+          INTAKE_JSON: ${{ github.event.inputs.intake_json }}
+          CLIENT_ID: ${{ steps.parse.outputs.client_id }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os
+
+          raw = os.environ["INTAKE_JSON"]
+          intake = json.loads(raw)
+          client_id = os.environ["CLIENT_ID"]
+          display_name = intake.get("display_name", client_id)
+
+          voice = intake.get("voice", {})
+          tone_adjectives = voice.get("tone_adjectives", [])
+          tone_description = voice.get("tone_description", "")
+          content_avoid = voice.get("content_avoid", [])
+          messaging_pillars = voice.get("messaging_pillars", [])
+
+          content = intake.get("content", {})
+          cta_examples = content.get("cta_examples", [])
+          hashtags = content.get("hashtags", [])
+
+          tone_summary = ", ".join(tone_adjectives) if tone_adjectives else "professional, clear, educational"
+
+          lines = []
+          lines.append(f"# {display_name} Content Guidelines")
+          lines.append("")
+          lines.append("Reference for content generation. All generated content must align with these principles.")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## Brand Voice")
+          lines.append("")
+          lines.append(f"**{tone_summary}.**")
+          lines.append("")
+          if tone_description:
+              lines.append(tone_description)
+          else:
+              lines.append(f"{display_name} communicates with clarity and substance. Every post teaches something, builds trust, or addresses a real audience need.")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## Messaging Pillars")
+          lines.append("")
+          lines.append("Every piece of content should connect to one or more of these:")
+          lines.append("")
+          for i, pillar in enumerate(messaging_pillars, 1):
+              lines.append(f"### {i}. {pillar}")
+              lines.append("")
+          if not messaging_pillars:
+              lines.append("### 1. Education")
+              lines.append("### 2. Trust Building")
+              lines.append("### 3. Product Value")
+              lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## Twitter / X Guidelines")
+          lines.append("")
+          lines.append("### Single Post (up to 280 chars)")
+          lines.append("- Open with a hook or relatable pain point")
+          lines.append("- One clear insight or value proposition")
+          lines.append("- Optional: 1 soft CTA")
+          lines.append("- Max 2-3 hashtags from the hashtag library")
+          lines.append("")
+          lines.append("### Thread (5 tweets)")
+          lines.append("- Tweet 1: Hook or bold claim")
+          lines.append("- Tweets 2-3: Education or insight breakdown")
+          lines.append("- Tweet 4: How the product connects to the topic")
+          lines.append("- Tweet 5: Soft CTA or follow prompt")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## Telegram Guidelines")
+          lines.append("")
+          lines.append("- Length: 400 to 1200 characters")
+          lines.append("- More educational tone than Twitter, explain the why")
+          lines.append("- Use bullet points for clarity where appropriate")
+          lines.append("- Use line breaks generously, avoid walls of text")
+          lines.append("- End with an engagement question relevant to the audience")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## What to Always Avoid")
+          lines.append("")
+          lines.append("| Avoid | Why |")
+          lines.append("|-------|-----|")
+          for item in content_avoid:
+              lines.append(f"| {item} | Off-brand or damages audience trust |")
+          if not content_avoid:
+              lines.append("| Hype and unverifiable claims | Damages credibility |")
+              lines.append("| Spam language | Off-brand |")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## CTAs by Platform")
+          lines.append("")
+          lines.append("**Twitter:**")
+          for cta in cta_examples[:2]:
+              lines.append(f"- {cta}")
+          if not cta_examples:
+              lines.append(f"- Learn more at {intake.get('website', 'our website')}")
+          lines.append("")
+          lines.append("**Telegram:**")
+          for cta in (cta_examples[2:4] or cta_examples[:2]):
+              lines.append(f"- {cta}")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## Content Category Types")
+          lines.append("")
+          lines.append("| Type | Use Case |")
+          lines.append("|------|----------|")
+          lines.append("| Education | Explain a concept relevant to the product or industry |")
+          lines.append("| Pain Point | Speak to a frustration the target audience experiences |")
+          lines.append("| Proof | Share results, mechanics, or social proof transparently |")
+          lines.append("| Trend Reaction | Comment on an industry trend through the brand lens |")
+          lines.append("| Product | Direct feature or benefit highlight |")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## Hashtag Library")
+          lines.append("")
+          lines.append(f"**Always relevant:** {' '.join(hashtags[:4])}")
+          lines.append(f"**Contextual:** {' '.join(hashtags[4:8])}")
+          if not hashtags:
+              lines.append("**Always relevant:** #YourBrand")
+          lines.append("")
+
+          output = "\n".join(lines)
+          path = f"clients/{client_id}/content-guidelines.md"
+          with open(path, "w") as f:
+              f.write(output)
+          print(f"content-guidelines.md written ({len(output)} chars)")
+          PYEOF
+
+      - name: Write context.md from intake data
+        env:
+          INTAKE_JSON: ${{ github.event.inputs.intake_json }}
+          CLIENT_ID: ${{ steps.parse.outputs.client_id }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os
+
+          raw = os.environ["INTAKE_JSON"]
+          intake = json.loads(raw)
+          client_id = os.environ["CLIENT_ID"]
+          display_name = intake.get("display_name", client_id)
+
+          audience = intake.get("audience", {})
+          differentiators = intake.get("differentiators", [])
+          description = intake.get("description", "")
+          website = intake.get("website", "")
+          tagline = intake.get("tagline", "")
+
+          pain_points = audience.get("pain_points", [])
+          situation = audience.get("situation", "")
+          desired_outcome = audience.get("desired_outcome", "")
+          age_range = audience.get("age_range", "")
+
+          lines = []
+          lines.append(f"# {display_name} — Client Context")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## Organization Overview")
+          lines.append("")
+          if description:
+              lines.append(description)
+          else:
+              lines.append(f"{display_name} is a company focused on serving its target audience.")
+          if tagline:
+              lines.append("")
+              lines.append(f"**Tagline:** {tagline}")
+          if website:
+              lines.append(f"**Website:** {website}")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## Target Audience (ICP)")
+          lines.append("")
+          lines.append("**Who they are:**")
+          if age_range:
+              lines.append(f"* Age range: {age_range}")
+          if situation:
+              lines.append(f"* {situation}")
+          lines.append("")
+          lines.append("**Pain points:**")
+          for pp in pain_points:
+              lines.append(f"* {pp}")
+          if not pain_points:
+              lines.append("* (To be filled during onboarding)")
+          lines.append("")
+          if desired_outcome:
+              lines.append("**What they want:**")
+              lines.append(f"* {desired_outcome}")
+              lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## Positioning")
+          lines.append("")
+          lines.append(f"**How {display_name} is different:**")
+          for diff in differentiators:
+              lines.append(f"* {diff}")
+          if not differentiators:
+              lines.append("* (To be filled during onboarding)")
+          lines.append("")
+
+          output = "\n".join(lines)
+          path = f"clients/{client_id}/context.md"
+          with open(path, "w") as f:
+              f.write(output)
+          print(f"context.md written ({len(output)} chars)")
+          PYEOF
+
+      - name: Write keywords.md from intake data
+        env:
+          INTAKE_JSON: ${{ github.event.inputs.intake_json }}
+          CLIENT_ID: ${{ steps.parse.outputs.client_id }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os
+
+          raw = os.environ["INTAKE_JSON"]
+          intake = json.loads(raw)
+          client_id = os.environ["CLIENT_ID"]
+          display_name = intake.get("display_name", client_id)
+
+          scraping = intake.get("scraping", {})
+          keywords = scraping.get("keywords", [])
+          negative_keywords = scraping.get("negative_keywords", ["scam", "spam"])
+          subreddits = scraping.get("subreddits", [])
+
+          mid = max(1, len(keywords) // 2)
+          primary_kw = keywords[:mid]
+          secondary_kw = keywords[mid:]
+
+          lines = []
+          lines.append(f"# {display_name} — Keyword Reference")
+          lines.append("")
+          lines.append("Used by the content pipeline to filter and rank scraped posts for relevance.")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## Primary Keywords (High Relevance)")
+          lines.append("")
+          lines.append("These directly relate to the core offering:")
+          lines.append("")
+          for kw in primary_kw:
+              lines.append(f"- {kw}")
+          if not primary_kw:
+              lines.append("- (add primary keywords here)")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## Secondary Keywords (Medium Relevance)")
+          lines.append("")
+          lines.append("These relate to the broader audience, pain points, and adjacent topics:")
+          lines.append("")
+          for kw in secondary_kw:
+              lines.append(f"- {kw}")
+          if not secondary_kw:
+              lines.append("- (add secondary keywords here)")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## Negative Keywords (Filter Out)")
+          lines.append("")
+          lines.append("Exclude posts containing these:")
+          lines.append("")
+          for kw in negative_keywords:
+              lines.append(f"- {kw}")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## Subreddits to Monitor")
+          lines.append("")
+          for sub in subreddits:
+              clean = sub.lstrip("r/")
+              lines.append(f"- r/{clean}")
+          if not subreddits:
+              lines.append("- (add relevant subreddits here)")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+          lines.append("## Twitter Search Queries")
+          lines.append("")
+          lines.append("Ready-to-use queries for the Apify scraper:")
+          lines.append("")
+          for i, kw in enumerate(primary_kw[:5], 1):
+              lines.append(f'{i}. "{kw}" -scam -spam')
+          if not primary_kw:
+              lines.append('1. "your keyword" -scam -spam')
+          lines.append("")
+
+          output = "\n".join(lines)
+          path = f"clients/{client_id}/keywords.md"
+          with open(path, "w") as f:
+              f.write(output)
+          print(f"keywords.md written ({len(output)} chars)")
+          PYEOF
+
+      - name: Commit new client directory to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "clients/${{ steps.parse.outputs.client_id }}/"
+          git diff --cached --quiet && echo "Nothing to commit" || \
+            git commit -m "Auto-onboard client: ${{ steps.parse.outputs.client_id }} (${{ steps.parse.outputs.display_name }})"
+          git push origin main
+
+      - name: Log onboard summary
+        run: |
+          echo ""
+          echo "Client '${{ steps.parse.outputs.client_id }}' onboarded successfully."
+          echo "Contact email: ${{ steps.parse.outputs.email }}"
+          echo ""
+
+  deploy:
+    needs: onboard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    concurrency:
+      group: gh-pages-deploy
+      cancel-in-progress: false
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install requests openpyxl google-genai python-dotenv jinja2 flask pillow
+
+      - name: Create .env from secrets
+        run: |
+          echo "APIFY_API_TOKEN=${{ secrets.APIFY_API_TOKEN }}" >> .env
+          echo "GOOGLE_AI_API_KEY=${{ secrets.GOOGLE_AI_API_KEY }}" >> .env
+          echo "WAVESPEED_API_KEY=${{ secrets.WAVESPEED_API_KEY }}" >> .env
+          echo "AIRTABLE_API_KEY=${{ secrets.AIRTABLE_API_KEY }}" >> .env
+          echo "GH_REGEN_TOKEN=${{ secrets.GH_REGEN_TOKEN }}" >> .env
+
+      - name: Build static site (all clients)
+        run: |
+          python scripts/build_static.py \
+            --output dist \
+            --include-admin
+
+      - name: Copy admin panel to dist
+        run: |
+          mkdir -p dist/admin
+          cp admin/index.html dist/admin/index.html
+          cp admin/admin.css dist/admin/admin.css
+          cp admin/admin.js dist/admin/admin.js
+
+      - name: Copy intake form to dist
+        run: |
+          mkdir -p dist/intake
+          cp intake/index.html dist/intake/index.html
+          cp intake/intake.css dist/intake/intake.css
+          cp intake/intake.js dist/intake/intake.js
+          cp intake/intake-config.example.js dist/intake/intake-config.example.js
+          if [ -f intake/intake-config.js ]; then
+            cp intake/intake-config.js dist/intake/intake-config.js
+          fi
+
+      - name: Deploy to GitHub Pages (gh-pages branch)
+        run: |
+          cd dist
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Deploy after auto-onboard: ${{ steps.parse.outputs.client_id }} $(date +%Y-%m-%d)"
+          git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/rtadik/bobe-content-dashboard.git HEAD:gh-pages
+          cd ..

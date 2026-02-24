@@ -383,6 +383,25 @@ textarea.input {
 
 .success-credentials strong { color: var(--white); }
 
+.onboard-status {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  text-align: left;
+}
+.onboard-ok {
+  background: rgba(91, 214, 159, 0.12);
+  border: 1px solid rgba(91, 214, 159, 0.3);
+  color: #5bd69f;
+}
+.onboard-warn {
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  color: #ffc107;
+}
+
 .success-actions {
   display: flex;
   gap: 10px;

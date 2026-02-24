@@ -1,0 +1,12 @@
+name = "intake-onboard-worker"
+main = "onboard-worker.js"
+compatibility_date = "2024-01-01"
+
+# Non-secret env vars (safe to commit)
+[vars]
+ALLOWED_ORIGIN = "https://content.rejiglabs.com"
+GITHUB_REPO    = "rtadik/bobe-content-dashboard"
+
+# GITHUB_PAT is a secret — set it via:
+#   wrangler secret put GITHUB_PAT
+# Never put the PAT value in this file.
