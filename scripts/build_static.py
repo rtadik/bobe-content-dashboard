@@ -2076,11 +2076,33 @@ def main():
     if intake_src.exists():
         intake_dst = Path(args.output) / "intake"
         shutil.copytree(str(intake_src), str(intake_dst), dirs_exist_ok=True)
-        # Never deploy intake-config.js — it contains EmailJS API keys
+
+        # Inline intake-config.js into the deployed HTML so EmailJS works on the live site.
+        # The external file is deleted — keys are embedded in the page instead of a named file.
+        config_src = intake_src / "intake-config.js"
         config_in_dist = intake_dst / "intake-config.js"
+        intake_html_path = intake_dst / "index.html"
+
+        if config_src.exists() and intake_html_path.exists():
+            config_content = config_src.read_text(encoding="utf-8")
+            html = intake_html_path.read_text(encoding="utf-8")
+            inline_tag = f'<script src="intake-config.js" onerror="window.INTAKE_CONFIG=null"></script>'
+            replacement = f'<script>\n{config_content}\n</script>'
+            if inline_tag in html:
+                html = html.replace(inline_tag, replacement)
+                intake_html_path.write_text(html, encoding="utf-8")
+                print(f"  Intake form copied to {intake_dst} (EmailJS config inlined)")
+            else:
+                print(f"  Intake form copied to {intake_dst} (warning: could not find config script tag to inline)")
+        else:
+            if not config_src.exists():
+                print(f"  Intake form copied to {intake_dst} (warning: intake-config.js not found — email delivery will fail on live site)")
+            else:
+                print(f"  Intake form copied to {intake_dst}")
+
+        # Always remove the standalone config file from dist — config is inlined above
         if config_in_dist.exists():
             config_in_dist.unlink()
-        print(f"  Intake form copied to {intake_dst}")
 
     # Write CNAME for custom domain (GitHub Pages)
     cname_path = Path(args.output) / "CNAME"

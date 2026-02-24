@@ -134,11 +134,12 @@ def scrape_weekly_topics(week_of, count=100, mock=False, output_path=None, clien
     return ranked
 
 
-def create_weekly_workbook(week_of, client_id=None):
+def create_weekly_workbook(week_of, client_id=None, mock=False):
     """
     Create outputs/content/{client_id}/{week_of}-weekly-content.xlsx with:
     - Sheet 1: Topics (same columns as daily, Week Of instead of Date)
     - Sheet 2: Content (adds Day column as column B)
+    Mock runs produce {week_of}-mock-weekly-content.xlsx instead.
     """
     output_dir = _get_output_dir(client_id)
     wb = Workbook()
@@ -180,7 +181,8 @@ def create_weekly_workbook(week_of, client_id=None):
     ws2.freeze_panes = "A2"
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"{week_of}-weekly-content.xlsx"
+    filename = f"{week_of}-mock-weekly-content.xlsx" if mock else f"{week_of}-weekly-content.xlsx"
+    path = output_dir / filename
     wb.save(str(path))
     return str(path)
 
@@ -545,7 +547,7 @@ def main():
         scrape_weekly_topics(week_of, count=args.count, mock=args.mock, output_path=args.output, client_id=active_client)
 
     elif args.action == "create-workbook":
-        path = create_weekly_workbook(week_of, client_id=active_client)
+        path = create_weekly_workbook(week_of, client_id=active_client, mock=args.mock)
         print(f"Weekly workbook created: {path}")
 
     elif args.action == "save-content":

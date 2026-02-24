@@ -60,6 +60,23 @@
     </details>
   </section>
 
+  <!-- ── Intake Form Link ──────────────────────────────────── -->
+  <section id="section-intake" class="card">
+    <h2 class="card-title">
+      <span class="icon">&#128203;</span> Client Intake Form
+    </h2>
+    <p class="hint">
+      Send this link to a new client. They fill out the 9-section intake form and you receive their
+      answers by email + a JSON download to run <code>/onboard-from-intake</code>.
+    </p>
+    <div class="intake-link-row">
+      <code id="intake-url" class="intake-url">https://content.rejiglabs.com/intake/</code>
+      <button id="copy-intake-btn" class="btn btn-ghost btn-sm" onclick="copyIntakeLink()">
+        &#128203; Copy Link
+      </button>
+    </div>
+  </section>
+
   <!-- ── Weekly Pipeline Section ──────────────────────────── -->
   <section id="section-pipeline" class="card" style="display:none">
     <h2 class="card-title">

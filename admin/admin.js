@@ -357,6 +357,31 @@ function stopPolling() {
   document.getElementById("auto-refresh-indicator").style.display = "none";
 }
 
+// ── Intake form link copy ─────────────────────────────────────────────────────
+
+function copyIntakeLink() {
+  const url = document.getElementById("intake-url").textContent.trim();
+  const btn = document.getElementById("copy-intake-btn");
+  navigator.clipboard.writeText(url).then(() => {
+    btn.textContent = "✓ Copied!";
+    btn.style.color = "var(--green)";
+    btn.style.borderColor = "rgba(91,214,159,0.4)";
+    setTimeout(() => {
+      btn.innerHTML = "&#128203; Copy Link";
+      btn.style.color = "";
+      btn.style.borderColor = "";
+    }, 2000);
+  }).catch(() => {
+    // Fallback for older browsers
+    const range = document.createRange();
+    range.selectNodeContents(document.getElementById("intake-url"));
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    btn.textContent = "Selected — Ctrl+C to copy";
+    setTimeout(() => { btn.innerHTML = "&#128203; Copy Link"; }, 2500);
+  });
+}
+
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
 function showMsg(id, text) {

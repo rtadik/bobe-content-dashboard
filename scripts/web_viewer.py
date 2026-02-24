@@ -81,11 +81,16 @@ _jobs_lock = threading.Lock()
 
 def list_available_dates():
     dates = []
-    # Weekly files only: YYYY-MM-DD-weekly-content.xlsx — prefix with "week:"
+    # Real weekly files: YYYY-MM-DD-weekly-content.xlsx — prefix with "week:"
     for f in sorted(CONTENT_DIR.glob("*-weekly-content.xlsx"), reverse=True):
         m = re.match(r"(\d{4}-\d{2}-\d{2})-weekly-content\.xlsx", f.name)
         if m:
             dates.append(f"week:{m.group(1)}")
+    # Mock files: YYYY-MM-DD-mock-weekly-content.xlsx — prefix with "mock:"
+    for f in sorted(CONTENT_DIR.glob("*-mock-weekly-content.xlsx"), reverse=True):
+        m = re.match(r"(\d{4}-\d{2}-\d{2})-mock-weekly-content\.xlsx", f.name)
+        if m:
+            dates.append(f"mock:{m.group(1)}")
     return dates
 
 
@@ -94,12 +99,20 @@ def find_excel(date=None):
         week_of = date[len("week:"):]
         p = CONTENT_DIR / f"{week_of}-weekly-content.xlsx"
         return p if p.exists() else None
+    if date and date.startswith("mock:"):
+        week_of = date[len("mock:"):]
+        p = CONTENT_DIR / f"{week_of}-mock-weekly-content.xlsx"
+        return p if p.exists() else None
     # Default: most recent weekly workbook
     dates = list_available_dates()
     if not dates:
         return None
-    week_of = dates[0][len("week:"):]
-    return CONTENT_DIR / f"{week_of}-weekly-content.xlsx"
+    first = dates[0]
+    if first.startswith("week:"):
+        return CONTENT_DIR / f"{first[5:]}-weekly-content.xlsx"
+    if first.startswith("mock:"):
+        return CONTENT_DIR / f"{first[5:]}-mock-weekly-content.xlsx"
+    return None
 
 
 # ── Image resolution ──────────────────────────────────────────────────────────
