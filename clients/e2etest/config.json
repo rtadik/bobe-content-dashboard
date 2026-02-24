@@ -1,0 +1,95 @@
+{
+  "client_id": "e2etest",
+  "display_name": "E2E Test Co",
+  "tagline": "Testing",
+  "website": "https://e2etest.com",
+  "brand": {
+    "primary_color": "#1a1a2e",
+    "accent_color": "#00d4ff",
+    "text_color": "#ffffff",
+    "secondary_accent": "#ff4fda",
+    "surface_color": "#111b32",
+    "background_gradient": "#111b32 to #070a1b",
+    "logo_path": "brand/logo.png",
+    "reference_images": [
+      "brand/logo.png"
+    ],
+    "mascot_description": "none",
+    "logo_description": "Describe how the logo should appear in generated images (position, color, size)",
+    "background_style": "Describe the default background style for generated images"
+  },
+  "content": {
+    "tone": "clear, direct",
+    "voice": "Direct.",
+    "brand_terms_keep": [
+      "BRAND_NAME"
+    ],
+    "cta_url": "example.com",
+    "cta_examples": [
+      "Try it: e2etest.com"
+    ],
+    "hashtags": [
+      "#E2ETest"
+    ],
+    "messaging_pillars": [
+      "Automation"
+    ],
+    "platforms": [
+      "twitter",
+      "telegram"
+    ],
+    "platform_formats": {
+      "twitter": {
+        "thread_tweets": 5,
+        "single_max_chars": 280,
+        "thread_topics_per_day": 2,
+        "single_topics_per_day": 1
+      },
+      "telegram": {
+        "min_chars": 400,
+        "max_chars": 1200,
+        "end_with_question": true
+      }
+    }
+  },
+  "scraping": {
+    "keywords": [
+      "automation",
+      "testing"
+    ],
+    "negative_keywords": [
+      "spam"
+    ],
+    "subreddits": [
+      "devops"
+    ]
+  },
+  "image": {
+    "style_presets": {
+      "minimal": "clean minimalist banner, solid dark background",
+      "tech": "futuristic data visualization banner with glowing elements",
+      "notification": "realistic smartphone mockup showing app notification"
+    },
+    "angle_style_map": {
+      "Pain Point": "minimal",
+      "Education": "tech",
+      "Transparency": "notification",
+      "Product": "notification"
+    }
+  },
+  "languages": [
+    "en"
+  ],
+  "airtable": {
+    "enabled": false,
+    "base_id": "",
+    "api_key_env": "AIRTABLE_API_KEY",
+    "images_base_url": ""
+  },
+  "api_keys": {
+    "gemini": "",
+    "wavespeed_en": "",
+    "wavespeed_ru": ""
+  },
+  "github_regen_token": ""
+}
