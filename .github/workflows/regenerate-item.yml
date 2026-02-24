@@ -25,10 +25,14 @@ on:
         required: true
         default: 'image_en'
 
+concurrency:
+  group: gh-pages-deploy
+  cancel-in-progress: false
+
 jobs:
   regenerate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
 
     permissions:
       contents: write
@@ -57,6 +61,7 @@ jobs:
           echo "GOOGLE_AI_API_KEY=${{ secrets.GOOGLE_AI_API_KEY }}" >> .env
           echo "WAVESPEED_API_KEY=${{ secrets.WAVESPEED_API_KEY }}" >> .env
           echo "AIRTABLE_API_KEY=${{ secrets.AIRTABLE_API_KEY }}" >> .env
+          echo "GH_REGEN_TOKEN=${{ secrets.GH_REGEN_TOKEN }}" >> .env
 
       - name: Set active client
         run: echo "${{ github.event.inputs.client_id }}" > .active-client
@@ -69,6 +74,61 @@ jobs:
             --regen-topic ${{ github.event.inputs.topic_index }} \
             --regen-type ${{ github.event.inputs.regen_type }} \
             --skip-deploy
+
+      - name: Upload regenerated outputs as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: regen-outputs-${{ github.event.inputs.client_id }}-${{ github.run_id }}
+          path: outputs/content/${{ github.event.inputs.client_id }}/
+          retention-days: 1
+          if-no-files-found: warn
+
+  deploy:
+    needs: regenerate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    concurrency:
+      group: gh-pages-deploy
+      cancel-in-progress: false
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install requests openpyxl google-genai python-dotenv jinja2 flask pillow
+
+      - name: Create .env from secrets
+        run: |
+          echo "APIFY_API_TOKEN=${{ secrets.APIFY_API_TOKEN }}" >> .env
+          echo "GOOGLE_AI_API_KEY=${{ secrets.GOOGLE_AI_API_KEY }}" >> .env
+          echo "WAVESPEED_API_KEY=${{ secrets.WAVESPEED_API_KEY }}" >> .env
+          echo "AIRTABLE_API_KEY=${{ secrets.AIRTABLE_API_KEY }}" >> .env
+          echo "GH_REGEN_TOKEN=${{ secrets.GH_REGEN_TOKEN }}" >> .env
+
+      - name: Set active client
+        run: echo "${{ github.event.inputs.client_id }}" > .active-client
+
+      - name: Download regenerated outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: regen-outputs-${{ github.event.inputs.client_id }}-${{ github.run_id }}
+          path: outputs/content/${{ github.event.inputs.client_id }}/
 
       - name: Build static site
         run: |

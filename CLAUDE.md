@@ -128,7 +128,7 @@ Launch the Flask content dashboard at **http://localhost:5001**. Shows topic car
 ### /deploy [date]
 Build and deploy the static content dashboard to GitHub Pages. Renders the dashboard as static HTML files, copies images, and pushes to the `gh-pages` branch of `rtadik/bobe-content-dashboard`. Your client gets a URL to view all generated content. Zero hosting cost.
 
-- Live URL: https://rtadik.github.io/bobe-content-dashboard
+- Live URL: https://content.rejiglabs.com
 - Requires one-time setup: enable GitHub Pages on the repo (Settings → Pages → branch: gh-pages). The `/deploy` command walks through this.
 - Example: `/deploy` or `/deploy 2026-02-18`
 
@@ -246,10 +246,10 @@ The content dashboard can be deployed as a static site for client access:
 The deployed dashboard has a landing page, login form, and per-client auth. Clients log in with their credentials and see only their own content. The admin panel (`/admin/`) is write-capable via GitHub API.
 
 **Hosting**: GitHub Pages (free, 100 GB/month bandwidth, no credit card required)
-**Landing page**: https://rtadik.github.io/bobe-content-dashboard/
-**Login page**: https://rtadik.github.io/bobe-content-dashboard/login.html
-**BoBe dashboard**: https://rtadik.github.io/bobe-content-dashboard/dashboard/bobe/
-**Admin panel URL**: https://rtadik.github.io/bobe-content-dashboard/admin/
+**Landing page**: https://content.rejiglabs.com/
+**Login page**: https://content.rejiglabs.com/login.html
+**BoBe dashboard**: https://content.rejiglabs.com/dashboard/bobe/
+**Admin panel URL**: https://content.rejiglabs.com/admin/
 **Cost**: $0/month
 
 **Credentials**: Auto-generated from client IDs — no manual config or secrets required. Username: `admin`, password: `{client_id}123` (e.g. `bobe123`). New clients get credentials automatically on next deploy.

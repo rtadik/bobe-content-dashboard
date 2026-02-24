@@ -38,12 +38,12 @@ load_dotenv()
 
 sys.path.insert(0, str(Path(__file__).parent))
 import client_config
+from client_config import get_api_key
 
 # Use the same Python interpreter that launched this script (works on macOS + Linux + GH Actions)
 # Quoted to handle paths with spaces (e.g. "Claude Code" directory on macOS)
 PY = f'"{sys.executable}"'
 
-GOOGLE_AI_API_KEY = os.environ.get("GOOGLE_AI_API_KEY")
 PROJECT_ROOT = Path(__file__).parent.parent
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -94,19 +94,20 @@ def run_cmd(cmd, check=True):
 
 # ── Gemini API ─────────────────────────────────────────────────────────────────
 
-def call_gemini(prompt, model="gemini-2.0-flash"):
+def call_gemini(prompt, model="gemini-2.0-flash", client_id=None):
     """Call Gemini API and return the text response."""
-    if not GOOGLE_AI_API_KEY:
+    api_key = get_api_key(client_id or "bobe", "gemini")
+    if not api_key:
         raise ValueError("GOOGLE_AI_API_KEY not set. Check your .env file.")
     try:
         from google import genai
-        client = genai.Client(api_key=GOOGLE_AI_API_KEY)
+        client = genai.Client(api_key=api_key)
         response = client.models.generate_content(model=model, contents=prompt)
         return response.text
     except ImportError:
         try:
             import google.generativeai as genai
-            genai.configure(api_key=GOOGLE_AI_API_KEY)
+            genai.configure(api_key=api_key)
             m = genai.GenerativeModel(model)
             response = m.generate_content(prompt)
             return response.text
@@ -379,7 +380,7 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
         )
 
         try:
-            response = call_gemini(prompt)
+            response = call_gemini(prompt, client_id=client_id)
             topics = extract_json(response)
             # Fill in dates if Gemini omitted them
             for t in topics:
@@ -403,12 +404,14 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
 
     # ── Phase 3: Create Workbook ──────────────────────────────────────────────
     print("Phase 3: Creating workbook...")
+    workbook_suffix = "mock-weekly-content" if mock else "weekly-content"
     try:
+        mock_flag = " --mock" if mock else ""
         run_cmd(
             f"{PY} scripts/weekly_pipeline.py "
-            f"--action create-workbook --week-of {week_of} --client {client_id}"
+            f"--action create-workbook --week-of {week_of} --client {client_id}{mock_flag}"
         )
-        print(f"  Workbook: outputs/content/{client_id}/{week_of}-weekly-content.xlsx")
+        print(f"  Workbook: outputs/content/{client_id}/{week_of}-{workbook_suffix}.xlsx")
     except Exception as e:
         print(f"  Error creating workbook: {e}")
         raise
@@ -470,7 +473,7 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                 )
 
                 try:
-                    response = call_gemini(prompt)
+                    response = call_gemini(prompt, client_id=client_id)
                     c = extract_json(response)
                 except Exception as e:
                     print(f"    Warning: content generation failed for item {item_num}: {e}")
@@ -643,7 +646,7 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
         print(f"\n  Error log (first 10):")
         for err in errors[:10]:
             print(f"    - {err}")
-    print(f"\n  Excel:  outputs/content/{client_id}/{week_of}-weekly-content.xlsx")
+    print(f"\n  Excel:  outputs/content/{client_id}/{week_of}-{workbook_suffix}.xlsx")
     print(f"  Images: outputs/content/{client_id}/images/{week_of}-weekly/")
     print(f"{'='*60}\n")
 
@@ -747,7 +750,7 @@ def run_regen_item(client_id, week_of, topic_index, regen_type, mock=False):
             display_name=display_name, tone=tone, content=en_content
         )
         try:
-            ru_text = call_gemini(prompt).strip()
+            ru_text = call_gemini(prompt, client_id=client_id).strip()
         except Exception as e:
             print(f"  Error calling Gemini for translation: {e}")
             return False

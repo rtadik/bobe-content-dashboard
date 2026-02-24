@@ -24,21 +24,33 @@
   "content": {
     "tone": "transparent, educational, no hype, no guaranteed return claims",
     "voice": "Transparent. Calm. Confident. Educational. Like a knowledgeable friend who actually trades.",
-    "brand_terms_keep": ["BoBe", "USDT", "DCA"],
+    "brand_terms_keep": [
+      "BoBe",
+      "USDT",
+      "DCA"
+    ],
     "cta_url": "bobe.app",
     "cta_examples": [
-      "See how BoBe works \u2192",
+      "See how BoBe works →",
       "Learn more at bobe.app",
       "Try BoBe free: bobe.app"
     ],
-    "hashtags": ["#BoBe", "#BoBeApp", "#DeFi", "#CryptoYield"],
+    "hashtags": [
+      "#BoBe",
+      "#BoBeApp",
+      "#DeFi",
+      "#CryptoYield"
+    ],
     "messaging_pillars": [
       "Automation: removes the emotional, time-consuming parts of trading",
       "Transparency: on-chain visibility, audited smart contracts",
       "Risk Management: spot only, no leverage, structured strategies",
       "Accessibility: for retail users who want exposure without needing to be expert traders"
     ],
-    "platforms": ["twitter", "telegram"],
+    "platforms": [
+      "twitter",
+      "telegram"
+    ],
     "platform_formats": {
       "twitter": {
         "thread_tweets": 5,
@@ -55,17 +67,43 @@
   },
   "scraping": {
     "keywords": [
-      "trading bot", "yield", "DCA strategy", "automated trading",
-      "on-chain yield", "crypto automation", "AI trading", "grid bot",
-      "passive crypto", "crypto bot", "DeFi yield", "USDT yield",
-      "risk management crypto", "emotional trading", "crypto strategy"
+      "trading bot",
+      "yield",
+      "DCA strategy",
+      "automated trading",
+      "on-chain yield",
+      "crypto automation",
+      "AI trading",
+      "grid bot",
+      "passive crypto",
+      "crypto bot",
+      "DeFi yield",
+      "USDT yield",
+      "risk management crypto",
+      "emotional trading",
+      "crypto strategy"
     ],
     "negative_keywords": [
-      "rug pull", "scam", "pump and dump", "meme coin", "presale",
-      "1000x", "get rich quick", "guaranteed returns", "airdrop",
-      "nft mint", "play to earn", "casino", "gambling"
+      "rug pull",
+      "scam",
+      "pump and dump",
+      "meme coin",
+      "presale",
+      "1000x",
+      "get rich quick",
+      "guaranteed returns",
+      "airdrop",
+      "nft mint",
+      "play to earn",
+      "casino",
+      "gambling"
     ],
-    "subreddits": ["defi", "CryptoCurrency", "ethfinance", "algotrading"]
+    "subreddits": [
+      "defi",
+      "CryptoCurrency",
+      "ethfinance",
+      "algotrading"
+    ]
   },
   "image": {
     "style_presets": {
@@ -82,11 +120,20 @@
       "Product": "notification"
     }
   },
-  "languages": ["en", "ru"],
+  "languages": [
+    "en",
+    "ru"
+  ],
   "airtable": {
     "enabled": true,
     "base_id": "appikOGb5GyhPqoCd",
     "api_key_env": "AIRTABLE_API_KEY",
     "images_base_url": "https://rtadik.github.io/bobe-content-dashboard"
-  }
+  },
+  "api_keys": {
+    "gemini": "",
+    "wavespeed_en": "",
+    "wavespeed_ru": ""
+  },
+  "github_regen_token": ""
 }

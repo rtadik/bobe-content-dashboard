@@ -18,6 +18,7 @@ Usage:
 """
 
 import json
+import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -162,3 +163,16 @@ def resolve_client(args) -> str:
     if hasattr(args, "client") and args.client:
         return args.client
     return get_active_client()
+
+def get_api_key(client_id: str, service: str) -> str:
+    """Return client-specific API key, falling back to global env var."""
+    config = load_config(client_id)
+    client_key = config.get("api_keys", {}).get(service, "")
+    if client_key:
+        return client_key
+    env_map = {
+        "gemini": "GOOGLE_AI_API_KEY",
+        "wavespeed_en": "WAVESPEED_API_KEY",
+        "wavespeed_ru": "WAVESPEED_API_KEY",
+    }
+    return os.environ.get(env_map.get(service, ""), "")

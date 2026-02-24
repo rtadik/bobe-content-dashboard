@@ -23,6 +23,12 @@ import hashlib
 import argparse
 from pathlib import Path
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # Make scripts/ importable
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -43,6 +49,7 @@ except ImportError:
 def sanitize_date_id(date_id):
     """Convert date identifier to a safe filename.
     'week:2026-02-16' -> 'week-2026-02-16'
+    'mock:2026-02-23' -> 'mock-2026-02-23'
     """
     return date_id.replace(":", "-")
 
@@ -51,6 +58,8 @@ def date_display_label(date_id):
     """Human-readable label for a date identifier."""
     if date_id.startswith("week:"):
         return f"Week of {date_id[5:]}"
+    if date_id.startswith("mock:"):
+        return "Mock-up"
     return date_id
 
 
@@ -101,46 +110,49 @@ STATIC_HTML = """<!DOCTYPE html>
 <title>{{ brand_name }} Content Dashboard — {{ date_label }}</title>
 <link rel="icon" type="image/jpeg" href="../../favicon.jpg">
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg:        #0D1526;
-    --surface:   #111B32;
-    --surface2:  #162038;
-    --border:    rgba(21,137,220,0.15);
-    --blue:      #1589DC;
-    --blue-dim:  rgba(21,137,220,0.12);
-    --green:     #5BD69F;
-    --green-dim: rgba(91,214,159,0.12);
-    --yellow:    #E0C145;
-    --yellow-dim:rgba(224,193,69,0.12);
-    --pink:      #FF4FDA;
-    --white:     #FFFFFF;
-    --muted:     #6B82A8;
-    --text:      #C8D8EE;
+    --bg: #000e2b;
+    --surface: rgba(255,255,255,0.04);
+    --surface2: rgba(255,255,255,0.07);
+    --border: rgba(255,255,255,0.08);
+    --blue: #0055ff;
+    --blue-hover: #0044cc;
+    --blue-link: #0099ff;
+    --blue-dim: rgba(0,85,255,0.1);
+    --green: #5BD69F;
+    --green-dim: rgba(91,214,159,0.1);
+    --yellow: #f0c040;
+    --yellow-dim: rgba(240,192,64,0.1);
+    --white: #ffffff;
+    --muted: #999999;
+    --text: rgba(255,255,255,0.7);
   }
 
   html, body {
     background: var(--bg);
     color: var(--white);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+    font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
     min-height: 100vh;
     line-height: 1.5;
   }
 
   /* Header */
   header {
-    background: #080F1E;
+    background: rgba(0,14,43,0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
     padding: 0 24px;
-    height: 60px;
+    height: 80px;
     display: flex;
     align-items: center;
     gap: 16px;
     position: sticky;
     top: 0;
     z-index: 200;
-    position: sticky;
   }
 
   .brand {
@@ -160,7 +172,7 @@ STATIC_HTML = """<!DOCTYPE html>
   .header-count {
     font-size: 0.78rem;
     background: var(--blue-dim);
-    border: 1px solid rgba(21,137,220,0.25);
+    border: 1px solid rgba(0,85,255,0.2);
     color: var(--blue);
     padding: 2px 9px;
     border-radius: 20px;
@@ -191,10 +203,10 @@ STATIC_HTML = """<!DOCTYPE html>
     white-space: nowrap;
     transition: all 0.15s;
   }
-  .week-tab:hover:not(.active) { border-color: rgba(21,137,220,0.4); color: var(--text); }
+  .week-tab:hover:not(.active) { border-color: rgba(0,85,255,0.4); color: var(--text); }
   .week-tab.active {
     background: var(--blue-dim);
-    border-color: rgba(21,137,220,0.5);
+    border-color: rgba(0,85,255,0.5);
     color: var(--blue);
   }
 
@@ -258,15 +270,16 @@ STATIC_HTML = """<!DOCTYPE html>
   .card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 24px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     transition: border-color 0.2s, box-shadow 0.2s;
+    backdrop-filter: blur(8px);
   }
   .card:hover {
-    border-color: rgba(21,137,220,0.35);
-    box-shadow: 0 4px 32px rgba(21,137,220,0.08);
+    border-color: rgba(0,85,255,0.35);
+    box-shadow: 0 8px 40px rgba(0,85,255,0.12);
   }
 
   /* Card image */
@@ -322,7 +335,7 @@ STATIC_HTML = """<!DOCTYPE html>
 
   .day-badge {
     background: var(--blue-dim);
-    border: 1px solid rgba(21,137,220,0.25);
+    border: 1px solid rgba(0,85,255,0.2);
     color: var(--blue);
     padding: 2px 8px;
     border-radius: 20px;
@@ -359,13 +372,13 @@ STATIC_HTML = """<!DOCTYPE html>
     gap: 5px;
   }
   .tab:hover:not(.active) {
-    border-color: rgba(21,137,220,0.3);
+    border-color: rgba(0,85,255,0.3);
     color: var(--text);
     background: var(--blue-dim);
   }
   .tab.active {
     background: var(--blue-dim);
-    border-color: rgba(21,137,220,0.4);
+    border-color: rgba(0,85,255,0.4);
     color: var(--blue);
   }
   .tab .platform-icon { font-size: 0.9rem; }
@@ -375,7 +388,7 @@ STATIC_HTML = """<!DOCTYPE html>
   .panel.active { display: flex; }
 
   .content-box {
-    background: #080F1E;
+    background: rgba(0,0,0,0.3);
     border: 1px solid var(--border);
     border-radius: 9px;
     padding: 13px 14px;
@@ -396,7 +409,7 @@ STATIC_HTML = """<!DOCTYPE html>
 
   .tweet-divider {
     border: none;
-    border-top: 1px dashed rgba(21,137,220,0.2);
+    border-top: 1px dashed rgba(0,85,255,0.2);
     margin: 6px 0;
   }
 
@@ -413,13 +426,13 @@ STATIC_HTML = """<!DOCTYPE html>
     color: #fff;
     border: none;
     padding: 5px 14px;
-    border-radius: 7px;
+    border-radius: 10px;
     cursor: pointer;
     font-size: 0.77rem;
     font-weight: 500;
     transition: background 0.15s, transform 0.1s;
   }
-  .copy-btn:hover { background: #1070BB; }
+  .copy-btn:hover { background: var(--blue-hover); }
   .copy-btn:active { transform: scale(0.97); }
   .copy-btn.copied { background: var(--green); color: #0D1526; }
 
@@ -428,7 +441,7 @@ STATIC_HTML = """<!DOCTYPE html>
   .tag {
     background: var(--yellow-dim);
     color: var(--yellow);
-    border: 1px solid rgba(224,193,69,0.25);
+    border: 1px solid rgba(240,192,64,0.25);
     border-radius: 20px;
     padding: 2px 9px;
     font-size: 0.72rem;
@@ -436,7 +449,7 @@ STATIC_HTML = """<!DOCTYPE html>
     transition: background 0.15s;
     user-select: none;
   }
-  .tag:hover { background: rgba(224,193,69,0.2); }
+  .tag:hover { background: rgba(240,192,64,0.2); }
   .tag.tag-copied { background: var(--green-dim); color: var(--green); border-color: rgba(91,214,159,0.3); }
 
   /* Lightbox */
@@ -444,7 +457,7 @@ STATIC_HTML = """<!DOCTYPE html>
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(8,15,30,0.93);
+    background: rgba(0,0,0,0.9);
     z-index: 1000;
     align-items: center;
     justify-content: center;
@@ -480,7 +493,8 @@ STATIC_HTML = """<!DOCTYPE html>
     bottom: 24px;
     left: 50%;
     transform: translateX(-50%) translateY(20px);
-    background: #1A2540;
+    background: rgba(0,14,43,0.95);
+    backdrop-filter: blur(8px);
     border: 1px solid var(--border);
     color: var(--text);
     padding: 9px 18px;
@@ -517,7 +531,7 @@ STATIC_HTML = """<!DOCTYPE html>
     display: none;
     position: absolute;
     inset: 0;
-    background: rgba(8,15,30,0.82);
+    background: rgba(0,14,43,0.82);
     z-index: 10;
     align-items: center;
     justify-content: center;
@@ -528,7 +542,7 @@ STATIC_HTML = """<!DOCTYPE html>
   .img-loading-overlay.active { display: flex; }
   .spinner {
     width: 32px; height: 32px;
-    border: 3px solid rgba(21,137,220,0.2);
+    border: 3px solid rgba(0,85,255,0.2);
     border-top-color: var(--blue);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
@@ -563,12 +577,12 @@ STATIC_HTML = """<!DOCTYPE html>
     transition: all 0.15s;
     white-space: nowrap;
   }
-  .action-btn:hover:not(:disabled) { border-color: rgba(21,137,220,0.4); color: var(--blue); }
+  .action-btn:hover:not(:disabled) { border-color: rgba(0,85,255,0.4); color: var(--blue); }
   .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .approve-btn.approved { background: var(--green-dim); border-color: rgba(91,214,159,0.3); color: var(--green); }
   .card.is-approved { border-color: rgba(91,214,159,0.25); }
-  .regen-btn { color: var(--yellow); border-color: rgba(224,193,69,0.2); }
-  .regen-btn:hover:not(:disabled) { border-color: rgba(224,193,69,0.5); color: var(--yellow); background: var(--yellow-dim); }
+  .regen-btn { color: var(--yellow); border-color: rgba(240,192,64,0.2); }
+  .regen-btn:hover:not(:disabled) { border-color: rgba(240,192,64,0.5); color: var(--yellow); background: var(--yellow-dim); }
 
   /* Content regen bar */
   .content-regen-bar {
@@ -576,8 +590,8 @@ STATIC_HTML = """<!DOCTYPE html>
     align-items: center;
     gap: 8px;
     padding: 7px 14px;
-    background: rgba(224,193,69,0.04);
-    border: 1px dashed rgba(224,193,69,0.15);
+    background: rgba(240,192,64,0.04);
+    border: 1px dashed rgba(240,192,64,0.15);
     border-radius: 9px;
     margin-bottom: 4px;
   }
@@ -588,7 +602,7 @@ STATIC_HTML = """<!DOCTYPE html>
   }
   .content-regen-btn {
     background: var(--yellow-dim);
-    border: 1px solid rgba(224,193,69,0.25);
+    border: 1px solid rgba(240,192,64,0.25);
     color: var(--yellow);
     padding: 5px 12px;
     border-radius: 7px;
@@ -598,16 +612,16 @@ STATIC_HTML = """<!DOCTYPE html>
     transition: all 0.15s;
     white-space: nowrap;
   }
-  .content-regen-btn:hover:not(:disabled) { background: rgba(224,193,69,0.15); border-color: rgba(224,193,69,0.4); }
+  .content-regen-btn:hover:not(:disabled) { background: rgba(240,192,64,0.15); border-color: rgba(240,192,64,0.4); }
   .content-regen-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .content-regen-btn.triggering { background: rgba(21,137,220,0.1); border-color: rgba(21,137,220,0.3); color: var(--blue); }
+  .content-regen-btn.triggering { background: rgba(0,85,255,0.1); border-color: rgba(0,85,255,0.3); color: var(--blue); }
 
   /* GitHub token modal */
   #gh-token-modal {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(8,15,30,0.88);
+    background: rgba(0,14,43,0.88);
     z-index: 2000;
     align-items: center;
     justify-content: center;
@@ -617,28 +631,30 @@ STATIC_HTML = """<!DOCTYPE html>
   .modal-box {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 24px;
     padding: 28px 28px 24px;
     max-width: 440px;
     width: 100%;
+    backdrop-filter: blur(8px);
   }
   .modal-box h3 { font-size: 1rem; font-weight: 600; margin-bottom: 8px; }
   .modal-box p { font-size: 0.8rem; color: var(--muted); margin-bottom: 16px; line-height: 1.55; }
   .modal-box input[type=password] {
     width: 100%;
-    background: #080F1E;
+    background: rgba(255,255,255,0.05);
     border: 1px solid var(--border);
     color: var(--white);
     padding: 9px 12px;
-    border-radius: 8px;
+    border-radius: 10px;
     font-size: 0.85rem;
     margin-bottom: 14px;
     outline: none;
   }
-  .modal-box input[type=password]:focus { border-color: var(--blue); }
+  .modal-box input[type=password]:focus { border-color: #0099ff; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
-  .btn-primary { background: var(--blue); color: #fff; border: none; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-size: 0.83rem; font-weight: 500; }
-  .btn-secondary { background: none; border: 1px solid var(--border); color: var(--muted); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 0.83rem; }
+  .btn-primary { background: #0055ff; color: #fff; border: none; padding: 8px 18px; border-radius: 22px; cursor: pointer; font-size: 0.83rem; font-weight: 500; transition: background 0.2s ease; }
+  .btn-primary:hover { background: #0044cc; }
+  .btn-secondary { background: none; border: 1px solid rgba(255,255,255,0.12); color: var(--muted); padding: 8px 14px; border-radius: 22px; cursor: pointer; font-size: 0.83rem; transition: all 0.2s ease; }
 
   /* Regen status bar */
   #regen-status-bar {
@@ -647,7 +663,8 @@ STATIC_HTML = """<!DOCTYPE html>
     bottom: 24px;
     left: 50%;
     transform: translateX(-50%);
-    background: #1A2540;
+    background: rgba(0,14,43,0.95);
+    backdrop-filter: blur(8px);
     border: 1px solid var(--border);
     color: var(--text);
     padding: 10px 18px;
@@ -671,17 +688,17 @@ STATIC_HTML = """<!DOCTYPE html>
 <script>
 (function() {
   var auth = sessionStorage.getItem('dash_auth');
-  if (!auth) { window.location.replace('../../login.html'); return; }
+  if (!auth) { window.location.replace('login.html'); return; }
   try {
     var session = JSON.parse(auth);
     var expectedClient = '{{ expected_client_id }}';
     if (session.role !== 'admin' && session.clientId !== expectedClient) {
       sessionStorage.removeItem('dash_auth');
-      window.location.replace('../../login.html');
+      window.location.replace('login.html');
     }
   } catch(e) {
     sessionStorage.removeItem('dash_auth');
-    window.location.replace('../../login.html');
+    window.location.replace('login.html');
   }
 })();
 </script>
@@ -933,11 +950,12 @@ const GH_WORKFLOW  = 'regenerate-item.yml';
 const WEEK_OF      = '{{ week_of }}';
 const CLIENT_ID    = '{{ client_id }}';
 const TOPIC_COUNT  = {{ topics|length }};
+const GH_REGEN_TOKEN = '{{ github_regen_token }}';
 
 // ── Logout ────────────────────────────────────────────────────────────────────
 function logout() {
   sessionStorage.removeItem('dash_auth');
-  window.location.href = '../../login.html';
+  window.location.href = 'login.html';
 }
 
 // ── Language toggle ───────────────────────────────────────────────────────────
@@ -1121,7 +1139,7 @@ function approveImage(idx) {
 let _pendingRegenCb = null;
 
 function getGhToken(callback) {
-  const existing = sessionStorage.getItem('gh_pat');
+  const existing = GH_REGEN_TOKEN || sessionStorage.getItem('gh_pat');
   if (existing) { callback(existing); return; }
   _pendingRegenCb = callback;
   document.getElementById('gh-token-modal').classList.add('open');
@@ -1277,23 +1295,57 @@ LANDING_HTML = """<!DOCTYPE html>
 <title>{{ brand_name }} Content Platform</title>
 <link rel="icon" type="image/jpeg" href="favicon.jpg">
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #0D1526; --surface: #111B32; --surface2: #162038;
-    --border: rgba(21,137,220,0.15); --blue: #1589DC; --pink: #FF4FDA;
-    --muted: #6B82A8; --text: #C8D8EE;
+    --bg: #000e2b;
+    --surface: rgba(255,255,255,0.04);
+    --surface2: rgba(255,255,255,0.07);
+    --border: rgba(255,255,255,0.08);
+    --blue: #0055ff;
+    --blue-hover: #0044cc;
+    --blue-link: #0099ff;
+    --blue-dim: rgba(0,85,255,0.1);
+    --green: #5BD69F;
+    --green-dim: rgba(91,214,159,0.1);
+    --yellow: #f0c040;
+    --yellow-dim: rgba(240,192,64,0.1);
+    --white: #ffffff;
+    --muted: #999999;
+    --text: rgba(255,255,255,0.7);
   }
   html, body {
     background: var(--bg); color: #fff;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+    font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
     min-height: 100vh; display: flex; flex-direction: column;
   }
+  /* Background orbs */
+  .bg-orb {
+    position: fixed;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+    filter: blur(80px);
+  }
+  .bg-orb-1 {
+    width: 700px; height: 700px;
+    background: radial-gradient(circle, rgba(0,85,255,0.12) 0%, transparent 70%);
+    top: -200px; left: 50%; transform: translateX(-50%);
+  }
+  .bg-orb-2 {
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(0,153,255,0.08) 0%, transparent 70%);
+    bottom: 0; right: -100px;
+  }
+  nav, .hero-wrap, footer { position: relative; z-index: 1; }
   /* Navbar */
   nav {
-    background: #080F1E;
+    background: rgba(0,14,43,0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
     padding: 0 32px;
-    height: 60px;
+    height: 80px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1303,14 +1355,14 @@ LANDING_HTML = """<!DOCTYPE html>
     font-size: 1.2rem; font-weight: 800; color: var(--blue);
     letter-spacing: 0.3px; text-decoration: none;
   }
-  .nav-brand span { color: var(--pink); }
+  .nav-brand span { color: var(--blue-link); }
   .nav-login {
-    background: none; border: 1px solid rgba(21,137,220,0.4);
-    color: var(--blue); padding: 7px 20px; border-radius: 8px;
+    background: none; border: 1px solid rgba(255,255,255,0.12);
+    color: var(--blue); padding: 7px 20px; border-radius: 22px;
     font-size: 0.85rem; font-weight: 600; cursor: pointer;
-    text-decoration: none; transition: background 0.15s, border-color 0.15s;
+    text-decoration: none; transition: all 0.2s ease;
   }
-  .nav-login:hover { background: rgba(21,137,220,0.1); border-color: var(--blue); }
+  .nav-login:hover { background: var(--blue-dim); border-color: var(--blue); }
   /* Hero */
   .hero-wrap {
     flex: 1; display: flex; align-items: center; justify-content: center;
@@ -1321,11 +1373,11 @@ LANDING_HTML = """<!DOCTYPE html>
     gap: 24px; text-align: center; max-width: 560px;
   }
   .eyebrow {
-    font-size: 0.72rem; font-weight: 700; letter-spacing: 2.5px;
-    color: var(--muted); text-transform: uppercase;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 3px;
+    color: var(--blue-link); text-transform: uppercase;
   }
   .hero-title {
-    font-size: 3.2rem; font-weight: 800; letter-spacing: -1px; line-height: 1.05;
+    font-size: clamp(2.5rem, 6vw, 4.5rem); font-weight: 800; letter-spacing: -2px; line-height: 1.05;
     color: #fff;
   }
   .hero-title .accent { color: var(--blue); }
@@ -1334,12 +1386,12 @@ LANDING_HTML = """<!DOCTYPE html>
   }
   .hero-actions { display: flex; gap: 12px; margin-top: 4px; }
   .btn-primary {
-    background: var(--blue); color: #fff; border: none;
-    padding: 14px 40px; border-radius: 10px; font-size: 0.95rem;
+    background: #0055ff; color: #fff; border: none;
+    padding: 14px 40px; border-radius: 22px; font-size: 0.95rem;
     font-weight: 700; cursor: pointer; text-decoration: none;
-    transition: background 0.15s, transform 0.1s; display: inline-block;
+    transition: background 0.2s ease, transform 0.1s; display: inline-block;
   }
-  .btn-primary:hover { background: #1070BB; }
+  .btn-primary:hover { background: #0044cc; }
   .btn-primary:active { transform: scale(0.98); }
   /* Features */
   .features {
@@ -1347,7 +1399,7 @@ LANDING_HTML = """<!DOCTYPE html>
     margin-top: 8px;
   }
   .feature-pill {
-    background: var(--surface); border: 1px solid var(--border);
+    background: var(--surface); border: 1px solid rgba(255,255,255,0.12);
     color: var(--text); font-size: 0.78rem; padding: 6px 14px;
     border-radius: 20px; white-space: nowrap;
   }
@@ -1359,6 +1411,8 @@ LANDING_HTML = """<!DOCTYPE html>
 </style>
 </head>
 <body>
+<div class="bg-orb bg-orb-1"></div>
+<div class="bg-orb bg-orb-2"></div>
 <nav>
   <a class="nav-brand" href="#">{{ brand_name }}<span>.</span></a>
   <a href="login.html" class="nav-login">Log In</a>
@@ -1394,28 +1448,58 @@ LOGIN_HTML = """<!DOCTYPE html>
 <title>Log In — {{ brand_name }}</title>
 <link rel="icon" type="image/jpeg" href="favicon.jpg">
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #0D1526; --surface: #111B32; --surface2: #162038;
-    --border: rgba(21,137,220,0.15); --blue: #1589DC; --pink: #FF4FDA;
-    --muted: #6B82A8; --text: #C8D8EE; --red: #FF6B6B;
+    --bg: #000e2b;
+    --surface: rgba(255,255,255,0.04);
+    --surface2: rgba(255,255,255,0.07);
+    --border: rgba(255,255,255,0.08);
+    --blue: #0055ff;
+    --blue-hover: #0044cc;
+    --blue-link: #0099ff;
+    --blue-dim: rgba(0,85,255,0.1);
+    --white: #ffffff;
+    --muted: #999999;
+    --text: rgba(255,255,255,0.7);
+    --red: #FF6B6B;
   }
   html, body {
     background: var(--bg); color: #fff;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+    font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
     min-height: 100vh; display: flex; flex-direction: column;
     align-items: center; justify-content: center; padding: 24px;
   }
+  /* Background orbs */
+  .bg-orb {
+    position: fixed;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+    filter: blur(80px);
+  }
+  .bg-orb-1 {
+    width: 700px; height: 700px;
+    background: radial-gradient(circle, rgba(0,85,255,0.12) 0%, transparent 70%);
+    top: -200px; left: 50%; transform: translateX(-50%);
+  }
+  .bg-orb-2 {
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(0,153,255,0.08) 0%, transparent 70%);
+    bottom: 0; right: -100px;
+  }
   .card {
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: 16px; padding: 36px 32px; width: 100%; max-width: 380px;
+    border-radius: 24px; padding: 36px 32px; width: 100%; max-width: 380px;
     display: flex; flex-direction: column; gap: 24px;
+    backdrop-filter: blur(8px);
+    position: relative; z-index: 1;
   }
   .card-header { display: flex; flex-direction: column; gap: 6px; }
   .back-link {
     font-size: 0.75rem; color: var(--muted); text-decoration: none;
     display: flex; align-items: center; gap: 4px; margin-bottom: 8px;
-    transition: color 0.15s;
+    transition: color 0.2s ease;
   }
   .back-link:hover { color: var(--text); }
   .card-title { font-size: 1.35rem; font-weight: 700; }
@@ -1423,12 +1507,12 @@ LOGIN_HTML = """<!DOCTYPE html>
   .field { display: flex; flex-direction: column; gap: 6px; }
   .field label { font-size: 0.78rem; font-weight: 600; color: var(--text); letter-spacing: 0.2px; }
   .field input {
-    background: var(--surface2); border: 1px solid var(--border);
-    color: #fff; padding: 10px 14px; border-radius: 9px; font-size: 0.9rem;
-    outline: none; transition: border-color 0.15s;
+    background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+    color: #fff; padding: 10px 14px; border-radius: 10px; font-size: 0.9rem;
+    outline: none; transition: border-color 0.2s ease;
     font-family: inherit;
   }
-  .field input:focus { border-color: var(--blue); }
+  .field input:focus { border-color: #0099ff; }
   .error-msg {
     background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.3);
     color: var(--red); font-size: 0.78rem; padding: 9px 13px; border-radius: 8px;
@@ -1436,19 +1520,22 @@ LOGIN_HTML = """<!DOCTYPE html>
   }
   .error-msg.show { display: block; }
   .submit-btn {
-    background: var(--blue); color: #fff; border: none;
-    padding: 12px; border-radius: 9px; font-size: 0.92rem;
+    background: #0055ff; color: #fff; border: none;
+    padding: 12px; border-radius: 22px; font-size: 0.92rem;
     font-weight: 600; cursor: pointer; width: 100%;
-    transition: background 0.15s; font-family: inherit;
+    transition: background 0.2s ease; font-family: inherit;
   }
-  .submit-btn:hover { background: #1070BB; }
+  .submit-btn:hover { background: #0044cc; }
   .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
   .site-footer {
     margin-top: 28px; font-size: 0.68rem; color: var(--muted);
+    position: relative; z-index: 1;
   }
 </style>
 </head>
 <body>
+<div class="bg-orb bg-orb-1"></div>
+<div class="bg-orb bg-orb-2"></div>
 <div class="card">
   <div class="card-header">
     <a href="index.html" class="back-link">&#8592; Back</a>
@@ -1538,6 +1625,193 @@ document.addEventListener('keydown', e => {
 </html>"""
 
 
+# ── Per-client login page template ────────────────────────────────────────────
+# This is identical to LOGIN_HTML but with:
+#   - Relative favicon path (../../favicon.jpg from dashboard/{client_id}/)
+#   - Back link going to ../../index.html (root landing page)
+#   - CREDENTIALS contains only this client's credential (credential isolation)
+#   - After login, redirect to ./ (the client's own dashboard directory)
+
+PER_CLIENT_LOGIN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log In — {{ brand_name }}</title>
+<link rel="icon" type="image/jpeg" href="../../favicon.jpg">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #000e2b;
+    --surface: rgba(255,255,255,0.04);
+    --surface2: rgba(255,255,255,0.07);
+    --border: rgba(255,255,255,0.08);
+    --blue: #0055ff;
+    --blue-hover: #0044cc;
+    --blue-link: #0099ff;
+    --blue-dim: rgba(0,85,255,0.1);
+    --white: #ffffff;
+    --muted: #999999;
+    --text: rgba(255,255,255,0.7);
+    --red: #FF6B6B;
+  }
+  html, body {
+    background: var(--bg); color: #fff;
+    font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 24px;
+  }
+  .bg-orb {
+    position: fixed;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+    filter: blur(80px);
+  }
+  .bg-orb-1 {
+    width: 700px; height: 700px;
+    background: radial-gradient(circle, rgba(0,85,255,0.12) 0%, transparent 70%);
+    top: -200px; left: 50%; transform: translateX(-50%);
+  }
+  .bg-orb-2 {
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(0,153,255,0.08) 0%, transparent 70%);
+    bottom: 0; right: -100px;
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 24px; padding: 36px 32px; width: 100%; max-width: 380px;
+    display: flex; flex-direction: column; gap: 24px;
+    backdrop-filter: blur(8px);
+    position: relative; z-index: 1;
+  }
+  .card-header { display: flex; flex-direction: column; gap: 6px; }
+  .back-link {
+    font-size: 0.75rem; color: var(--muted); text-decoration: none;
+    display: flex; align-items: center; gap: 4px; margin-bottom: 8px;
+    transition: color 0.2s ease;
+  }
+  .back-link:hover { color: var(--text); }
+  .card-title { font-size: 1.35rem; font-weight: 700; }
+  .card-subtitle { font-size: 0.8rem; color: var(--muted); }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 0.78rem; font-weight: 600; color: var(--text); letter-spacing: 0.2px; }
+  .field input {
+    background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+    color: #fff; padding: 10px 14px; border-radius: 10px; font-size: 0.9rem;
+    outline: none; transition: border-color 0.2s ease;
+    font-family: inherit;
+  }
+  .field input:focus { border-color: #0099ff; }
+  .error-msg {
+    background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.3);
+    color: var(--red); font-size: 0.78rem; padding: 9px 13px; border-radius: 8px;
+    display: none;
+  }
+  .error-msg.show { display: block; }
+  .submit-btn {
+    background: #0055ff; color: #fff; border: none;
+    padding: 12px; border-radius: 22px; font-size: 0.92rem;
+    font-weight: 600; cursor: pointer; width: 100%;
+    transition: background 0.2s ease; font-family: inherit;
+  }
+  .submit-btn:hover { background: #0044cc; }
+  .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .site-footer {
+    margin-top: 28px; font-size: 0.68rem; color: var(--muted);
+    position: relative; z-index: 1;
+  }
+</style>
+</head>
+<body>
+<div class="bg-orb bg-orb-1"></div>
+<div class="bg-orb bg-orb-2"></div>
+<div class="card">
+  <div class="card-header">
+    <a href="../../index.html" class="back-link">&#8592; Back</a>
+    <h1 class="card-title">Welcome back</h1>
+    <p class="card-subtitle">Log in to access your content dashboard</p>
+  </div>
+  <div class="field">
+    <label for="username">Username</label>
+    <input type="text" id="username" placeholder="Enter username" autocomplete="username" autocapitalize="none">
+  </div>
+  <div class="field">
+    <label for="password">Password</label>
+    <input type="password" id="password" placeholder="Enter password" autocomplete="current-password">
+  </div>
+  <div class="error-msg" id="error-msg">Incorrect username or password.</div>
+  <button class="submit-btn" id="login-btn" onclick="handleLogin()">Log In</button>
+</div>
+<footer class="site-footer">{{ brand_name }} Content Platform</footer>
+
+<script>
+// Credentials: only this client's credential is baked in (credential isolation)
+const CREDENTIALS = {{ credentials_json }};
+
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function handleLogin() {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const btn = document.getElementById('login-btn');
+  const errEl = document.getElementById('error-msg');
+
+  if (!username || !password) {
+    errEl.textContent = 'Please enter both username and password.';
+    errEl.classList.add('show');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Checking...';
+  errEl.classList.remove('show');
+
+  try {
+    const hash = await sha256(password);
+    const match = CREDENTIALS.find(c => c.username === username && c.password_hash === hash);
+
+    if (!match) {
+      errEl.textContent = 'Incorrect username or password.';
+      errEl.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = 'Log In';
+      return;
+    }
+
+    // Store session
+    sessionStorage.setItem('dash_auth', JSON.stringify({
+      clientId: match.client_id,
+      username: match.username,
+      role: match.role,
+      display_name: match.display_name
+    }));
+
+    // Redirect to this client's dashboard (same directory)
+    window.location.href = './';
+  } catch (err) {
+    errEl.textContent = 'Login error. Please try again.';
+    errEl.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = 'Log In';
+  }
+}
+
+// Allow Enter key to submit
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') handleLogin();
+});
+</script>
+</body>
+</html>"""
+
+
 def build_site(output_dir, dates=None, credentials=None, active_client="bobe"):
     """Build the static site into output_dir.
 
@@ -1548,6 +1822,7 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe"):
         active_client: Client ID for scoped output paths
     """
     output = Path(output_dir)
+    github_regen_token = ""  # Phase 4a: inject via Cloudflare Worker proxy, not static HTML
 
     # Clean previous build
     if output.exists():
@@ -1660,6 +1935,7 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe"):
             week_of=week_of_str,
             client_id=active_client,
             gh_repo=gh_repo,
+            github_regen_token=github_regen_token,
         )
 
         page_path = client_dash_dir / f"{safe_name}.html"
@@ -1702,6 +1978,35 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe"):
     (output / "login.html").write_text(login_html, encoding="utf-8")
     creds_count = len(creds_for_js)
     print(f"  Built: login.html ({creds_count} credential(s) baked in)")
+
+    # Generate per-client login pages: dist/dashboard/{client_id}/login.html
+    # Each page only contains that client's own credential (credential isolation).
+    # This prevents any client from seeing other clients' hashed credentials in source.
+    per_client_login_template = plain_env.from_string(PER_CLIENT_LOGIN_HTML)
+    all_creds = credentials or []
+    clients_dir_for_login = Path(__file__).parent.parent / "clients"
+    for client_dir in sorted(clients_dir_for_login.iterdir()):
+        if not client_dir.is_dir() or client_dir.name.startswith("_"):
+            continue
+        client_cfg_path = client_dir / "config.json"
+        if not client_cfg_path.exists():
+            continue
+        with open(client_cfg_path) as _f:
+            _cfg = json.load(_f)
+        _cid = _cfg.get("client_id", client_dir.name)
+        _dname = _cfg.get("display_name", _cid)
+        # Filter to only this client's credential
+        client_cred = [c for c in all_creds if c.get("client_id") == _cid]
+        if not client_cred:
+            continue
+        client_login_html = per_client_login_template.render(
+            brand_name=_dname,
+            credentials_json=json.dumps(client_cred, ensure_ascii=False),
+        )
+        client_login_dir = output / "dashboard" / _cid
+        client_login_dir.mkdir(parents=True, exist_ok=True)
+        (client_login_dir / "login.html").write_text(client_login_html, encoding="utf-8")
+        print(f"  Built: dashboard/{_cid}/login.html (1 credential baked in)")
 
     # Calculate total size
     total_size = sum(f.stat().st_size for f in output.rglob("*") if f.is_file())
@@ -1776,6 +2081,11 @@ def main():
         if config_in_dist.exists():
             config_in_dist.unlink()
         print(f"  Intake form copied to {intake_dst}")
+
+    # Write CNAME for custom domain (GitHub Pages)
+    cname_path = Path(args.output) / "CNAME"
+    cname_path.write_text("content.rejiglabs.com\n")
+    print(f"  CNAME written: content.rejiglabs.com")
 
 
 if __name__ == "__main__":

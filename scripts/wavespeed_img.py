@@ -31,22 +31,23 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 sys.path.insert(0, str(Path(__file__).parent))
 
 import client_config
+from client_config import get_api_key
 
-WAVESPEED_API_KEY = os.getenv("WAVESPEED_API_KEY")
 API_BASE = "https://api.wavespeed.ai/api/v3"
 MODEL_ENDPOINT = f"{API_BASE}/bytedance/seedream-v4.5"
 EDIT_ENDPOINT = f"{API_BASE}/bytedance/seedream-v4.5/edit"
 POLL_ENDPOINT = f"{API_BASE}/predictions"
 
 
-def generate_image(prompt, output_path, size="2560*1440", timeout=120):
+def generate_image(prompt, output_path, size="2560*1440", timeout=120, client_id=None):
     """Submit image generation, poll for completion, download result."""
-    if not WAVESPEED_API_KEY:
+    api_key = get_api_key(client_id or "bobe", "wavespeed_ru")
+    if not api_key:
         raise RuntimeError("WAVESPEED_API_KEY not set in .env")
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {WAVESPEED_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
     }
     payload = {"prompt": prompt, "size": size}
 
@@ -109,7 +110,8 @@ Topic context: {topic}"""
 
 def translate_image(source_path, output_path, size="2560*1440", timeout=120, client_id=None):
     """Translate an existing English image to Russian using Seedream 4.5 Edit."""
-    if not WAVESPEED_API_KEY:
+    api_key = get_api_key(client_id or "bobe", "wavespeed_ru")
+    if not api_key:
         raise RuntimeError("WAVESPEED_API_KEY not set in .env")
 
     config = client_config.load_config(client_id)
@@ -118,7 +120,7 @@ def translate_image(source_path, output_path, size="2560*1440", timeout=120, cli
     b64 = base64.b64encode(Path(source_path).read_bytes()).decode()
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {WAVESPEED_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
     }
     payload = {
         "prompt": (
@@ -204,10 +206,10 @@ def main():
     if args.edit_image:
         translate_image(args.edit_image, args.output, size=args.size, client_id=active_client)
     elif args.prompt:
-        generate_image(args.prompt, args.output, size=args.size)
+        generate_image(args.prompt, args.output, size=args.size, client_id=active_client)
     elif args.topic and args.headline:
         prompt = build_prompt_ru(args.topic, args.headline, args.style, client_id=active_client)
-        generate_image(prompt, args.output, size=args.size)
+        generate_image(prompt, args.output, size=args.size, client_id=active_client)
     else:
         parser.error("Provide --edit-image, --prompt, or both --topic and --headline")
 

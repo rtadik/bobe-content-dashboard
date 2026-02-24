@@ -24,10 +24,14 @@ on:
         type: boolean
         default: false
 
+concurrency:
+  group: gh-pages-deploy
+  cancel-in-progress: false
+
 jobs:
-  run-pipeline:
+  generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 110
 
     permissions:
       contents: write
@@ -56,6 +60,7 @@ jobs:
           echo "GOOGLE_AI_API_KEY=${{ secrets.GOOGLE_AI_API_KEY }}" >> .env
           echo "WAVESPEED_API_KEY=${{ secrets.WAVESPEED_API_KEY }}" >> .env
           echo "AIRTABLE_API_KEY=${{ secrets.AIRTABLE_API_KEY }}" >> .env
+          echo "GH_REGEN_TOKEN=${{ secrets.GH_REGEN_TOKEN }}" >> .env
 
       - name: Set active client
         run: echo "${{ github.event.inputs.client_id }}" > .active-client
@@ -76,6 +81,70 @@ jobs:
             ARGS="$ARGS --mock"
           fi
           python scripts/pipeline_runner.py $ARGS --skip-deploy
+
+      - name: Upload pipeline outputs as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-outputs-${{ github.event.inputs.client_id }}-${{ github.run_id }}
+          path: outputs/content/${{ github.event.inputs.client_id }}/
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload Excel workbook as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: weekly-content-${{ github.event.inputs.client_id }}-${{ github.run_id }}
+          path: outputs/content/${{ github.event.inputs.client_id }}/*.xlsx
+          retention-days: 30
+          if-no-files-found: warn
+
+  deploy:
+    needs: generate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    concurrency:
+      group: gh-pages-deploy
+      cancel-in-progress: false
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout working branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install requests openpyxl google-genai python-dotenv jinja2 flask pillow
+
+      - name: Create .env from secrets
+        run: |
+          echo "APIFY_API_TOKEN=${{ secrets.APIFY_API_TOKEN }}" >> .env
+          echo "GOOGLE_AI_API_KEY=${{ secrets.GOOGLE_AI_API_KEY }}" >> .env
+          echo "WAVESPEED_API_KEY=${{ secrets.WAVESPEED_API_KEY }}" >> .env
+          echo "AIRTABLE_API_KEY=${{ secrets.AIRTABLE_API_KEY }}" >> .env
+          echo "GH_REGEN_TOKEN=${{ secrets.GH_REGEN_TOKEN }}" >> .env
+
+      - name: Set active client
+        run: echo "${{ github.event.inputs.client_id }}" > .active-client
+
+      - name: Download pipeline outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-outputs-${{ github.event.inputs.client_id }}-${{ github.run_id }}
+          path: outputs/content/${{ github.event.inputs.client_id }}/
 
       - name: Build static site
         run: |
@@ -101,12 +170,3 @@ jobs:
           git commit -m "Deploy content dashboard $(date +%Y-%m-%d)"
           git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/rtadik/bobe-content-dashboard.git HEAD:gh-pages
           cd ..
-
-      - name: Upload Excel workbook as artifact
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: weekly-content-${{ github.event.inputs.client_id }}-${{ github.run_id }}
-          path: outputs/content/${{ github.event.inputs.client_id }}/*.xlsx
-          retention-days: 30
-          if-no-files-found: warn

@@ -46,7 +46,7 @@ cd "/Users/rt/Claude Code/bobe-image-content-gen/dist" && git init && git add -A
 
 Tell the user:
 - Build successful: X pages, Y images, Z total size
-- Deployed to: https://rtadik.github.io/bobe-content-dashboard
+- Deployed to: https://content.rejiglabs.com (custom domain via GitHub Pages)
 - Share this URL with your client
 
 ---

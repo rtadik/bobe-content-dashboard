@@ -34,8 +34,8 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 sys.path.insert(0, str(Path(__file__).parent))
 
 import client_config
+from client_config import get_api_key
 
-WAVESPEED_API_KEY = os.environ.get("WAVESPEED_API_KEY")
 
 API_BASE = "https://api.wavespeed.ai/api/v3"
 EDIT_ENDPOINT = f"{API_BASE}/openai/gpt-image-1.5/edit"
@@ -137,18 +137,19 @@ def _poll_result(request_id, headers, timeout=180):
     raise TimeoutError(f"Image generation timed out after {timeout}s")
 
 
-def generate_image(prompt: str, output_path: str, reference_paths: list = None) -> str:
+def generate_image(prompt: str, output_path: str, reference_paths: list = None, client_id: str = None) -> str:
     """Generate an image using WaveSpeed GPT-Image-1.5 with reference images for brand fidelity.
 
     If reference_paths are provided, uses the Edit endpoint (supports up to 10 reference images).
     If no references, falls back to the Text-to-Image endpoint.
     """
-    if not WAVESPEED_API_KEY:
+    api_key = get_api_key(client_id or "bobe", "wavespeed_en")
+    if not api_key:
         raise ValueError("WAVESPEED_API_KEY not set. Check your .env file.")
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {WAVESPEED_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
     }
 
     if reference_paths is None:
@@ -319,7 +320,7 @@ def main():
         print("Running in MOCK mode, no API call made.")
         result_path = mock_generate(output_path)
     else:
-        result_path = generate_image(prompt, output_path, reference_paths)
+        result_path = generate_image(prompt, output_path, reference_paths, client_id=active_client)
 
     print(f"\nDone: {result_path}")
     return result_path

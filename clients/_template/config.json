@@ -21,18 +21,25 @@
   "content": {
     "tone": "Describe the brand tone and voice (e.g., professional, friendly, educational)",
     "voice": "Longer description of how the brand communicates",
-    "brand_terms_keep": ["BRAND_NAME"],
+    "brand_terms_keep": [
+      "BRAND_NAME"
+    ],
     "cta_url": "example.com",
     "cta_examples": [
       "Learn more at example.com",
       "Try it free: example.com"
     ],
-    "hashtags": ["#BrandHashtag"],
+    "hashtags": [
+      "#BrandHashtag"
+    ],
     "messaging_pillars": [
       "Pillar 1: Description",
       "Pillar 2: Description"
     ],
-    "platforms": ["twitter", "telegram"],
+    "platforms": [
+      "twitter",
+      "telegram"
+    ],
     "platform_formats": {
       "twitter": {
         "thread_tweets": 5,
@@ -49,12 +56,17 @@
   },
   "scraping": {
     "keywords": [
-      "keyword1", "keyword2", "keyword3"
+      "keyword1",
+      "keyword2",
+      "keyword3"
     ],
     "negative_keywords": [
-      "scam", "spam"
+      "scam",
+      "spam"
     ],
-    "subreddits": ["relevant_subreddit"]
+    "subreddits": [
+      "relevant_subreddit"
+    ]
   },
   "image": {
     "style_presets": {
@@ -69,11 +81,19 @@
       "Product": "notification"
     }
   },
-  "languages": ["en"],
+  "languages": [
+    "en"
+  ],
   "airtable": {
     "enabled": false,
     "base_id": "",
     "api_key_env": "AIRTABLE_API_KEY",
     "images_base_url": ""
-  }
+  },
+  "api_keys": {
+    "gemini": "",
+    "wavespeed_en": "",
+    "wavespeed_ru": ""
+  },
+  "github_regen_token": ""
 }
