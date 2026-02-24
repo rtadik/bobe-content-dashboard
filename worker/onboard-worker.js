@@ -55,6 +55,7 @@ export default {
           Accept: 'application/vnd.github+json',
           'X-GitHub-Api-Version': '2022-11-28',
           'Content-Type': 'application/json',
+          'User-Agent': 'intake-onboard-worker/1.0',
         },
         body: JSON.stringify({
           ref: 'main',
@@ -66,10 +67,11 @@ export default {
     );
 
     if (!ghResponse.ok) {
-      let ghError = 'GitHub API error';
+      let ghError = `HTTP ${ghResponse.status}`;
       try {
-        const body = await ghResponse.json();
-        ghError = body.message || ghError;
+        const ghBody = await ghResponse.text();
+        const parsed = JSON.parse(ghBody);
+        ghError = `HTTP ${ghResponse.status}: ${parsed.message || ghBody}`;
       } catch {}
       console.error(`GitHub API returned ${ghResponse.status}: ${ghError}`);
       return jsonResponse(
