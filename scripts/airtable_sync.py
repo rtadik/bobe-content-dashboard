@@ -4,7 +4,7 @@ Airtable Sync
 
 Pushes weekly content from the local Excel workbook to the client's Airtable base.
 Each week gets its own Airtable table: "Week-YYYY-MM-DD".
-Records map 1:1 to Excel rows (14 content fields + Week + Client = 16 fields total).
+Records map 1:1 to Excel rows (15 content fields + Week + Client = 17 fields total).
 
 Image attachments: Airtable's API accepts images via public URLs (not local file upload).
 Images must be deployed to a public host (e.g. Cloudflare Pages via /deploy) first.
@@ -61,22 +61,24 @@ BATCH_SIZE = 10
 ATTACHMENT_FIELD_EN = "Image_Path"
 ATTACHMENT_FIELD_RU = "Image_Path_RU"
 
-# Excel column index → Airtable field name (1-based, 14-column workbook schema)
+# Excel column index → Airtable field name (1-based, 15-column workbook schema)
+# Column B (index 2) is now "Bucket" — all subsequent columns shifted +1 vs old schema
 COLUMN_MAP = {
     1: "Date",
-    2: "Day",
-    3: "Topic",
-    4: "Platform",
-    5: "Format",
-    6: "Content",
-    7: "Image_Prompt",
-    8: "Image_Path",
-    9: "Hashtags",
-    10: "Content_RU",
-    11: "Image_Prompt_RU",
-    12: "Image_Path_RU",
-    13: "Hashtags_RU",
-    14: "Status",
+    2: "Bucket",
+    3: "Day",
+    4: "Topic",
+    5: "Platform",
+    6: "Format",
+    7: "Content",
+    8: "Image_Prompt",
+    9: "Image_Path",
+    10: "Hashtags",
+    11: "Content_RU",
+    12: "Image_Prompt_RU",
+    13: "Image_Path_RU",
+    14: "Hashtags_RU",
+    15: "Status",
 }
 
 
@@ -89,6 +91,7 @@ def build_table_fields(use_attachments: bool) -> list:
     image_type = "multipleAttachments" if use_attachments else "singleLineText"
     return [
         {"name": "Date", "type": "singleLineText"},
+        {"name": "Bucket", "type": "singleLineText"},
         {"name": "Day", "type": "singleLineText"},
         {"name": "Topic", "type": "multilineText"},
         {"name": "Platform", "type": "singleLineText"},

@@ -232,6 +232,15 @@ STATIC_HTML = """<!DOCTYPE html>
   .lang-btn.active { background: var(--blue); color: #fff; }
   .lang-btn:hover:not(.active) { color: var(--text); }
 
+  /* Client logo (top-left, replaces brand name) */
+  .client-logo {
+    height: 40px;
+    width: auto;
+    max-width: 140px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+
   /* Logout button */
   .logout-btn {
     background: none;
@@ -681,6 +690,43 @@ STATIC_HTML = """<!DOCTYPE html>
   #regen-status-bar.show { display: flex; }
   #regen-status-bar .status-msg { flex: 1; }
   #regen-status-bar .dismiss-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1rem; padding: 2px 6px; }
+
+  /* Bucket tabs */
+  .bucket-tabs {
+    display: flex; gap: 8px; padding: 16px 24px 0;
+    border-bottom: 2px solid rgba(255,255,255,0.06); margin-bottom: 0;
+    flex-wrap: wrap;
+  }
+  .bucket-tab {
+    padding: 10px 20px; border: none; border-radius: 8px 8px 0 0;
+    background: rgba(255,255,255,0.04); color: var(--muted); cursor: pointer;
+    font-size: 14px; font-weight: 600; transition: all 0.2s; font-family: inherit;
+  }
+  .bucket-tab.active { background: var(--blue); color: #fff; }
+  .bucket-tab:hover:not(.active) { background: rgba(255,255,255,0.07); color: var(--text); }
+
+  /* Announcement input panel */
+  .announcement-input-panel {
+    margin: 20px 24px; padding: 20px; background: rgba(255,255,255,0.04);
+    border-radius: 12px; border: 1px solid var(--border);
+  }
+  .announcement-input-panel h3 { color: var(--white); margin: 0 0 8px; font-size: 16px; }
+  .announcement-input-panel p { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .announcement-input-panel textarea {
+    width: 100%; box-sizing: border-box;
+    background: rgba(0,0,0,0.3); color: var(--white); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px; font-size: 14px; resize: vertical;
+    font-family: inherit;
+  }
+  .announcement-input-panel textarea:focus { outline: none; border-color: var(--blue-link); }
+  .btn-generate-announcement {
+    margin-top: 12px; padding: 10px 20px; background: var(--blue);
+    color: #fff; border: none; border-radius: 8px; cursor: pointer;
+    font-weight: 600; font-size: 14px; transition: background 0.2s; font-family: inherit;
+  }
+  .btn-generate-announcement:hover { background: var(--blue-hover); }
+  .btn-generate-announcement:disabled { opacity: 0.6; cursor: not-allowed; }
+  #announcement-status { margin-top: 10px; font-size: 13px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -733,7 +779,11 @@ STATIC_HTML = """<!DOCTYPE html>
 </div>
 
 <header>
+  {% if client_logo_url %}
+  <img src="{{ client_logo_url }}" alt="{{ brand_name }}" class="client-logo">
+  {% else %}
   <div class="brand">{{ brand_name }}<span class="brand-dot">.</span></div>
+  {% endif %}
   {% if topics %}
   <span class="header-count">{{ topics|length }} topic{{ 's' if topics|length != 1 else '' }}</span>
   {% endif %}
@@ -752,10 +802,26 @@ STATIC_HTML = """<!DOCTYPE html>
   <button class="logout-btn" onclick="logout()" title="Log out">Log out</button>
 </header>
 
+<!-- Bucket tab navigation -->
+<div class="bucket-tabs" id="bucket-tabs">
+  <button class="bucket-tab active" data-bucket="trending" onclick="switchBucket('trending')">&#128200; Trending</button>
+  <button class="bucket-tab" data-bucket="education" onclick="switchBucket('education')">&#127891; Education</button>
+  <button class="bucket-tab" data-bucket="announcements" onclick="switchBucket('announcements')">&#128227; Announcements</button>
+</div>
+
+<!-- Announcement input panel (shown only on announcements tab) -->
+<div class="announcement-input-panel" id="announcement-input-panel" style="display:none">
+  <h3>Weekly Announcement</h3>
+  <p>Paste your weekly update below. The system will generate 7 different content angles from it (one per day).</p>
+  <textarea id="announcement-text" rows="4" placeholder="e.g. We launched a new grid bot feature for ETH/USDT pairs..."></textarea>
+  <button class="btn-generate-announcement" id="btn-gen-ann" onclick="submitAnnouncement()">Generate 7 Content Angles</button>
+  <div id="announcement-status"></div>
+</div>
+
 <main class="grid">
 {% if topics %}
   {% for t in topics %}
-  <div class="card" id="card-{{ loop.index }}">
+  <div class="card" id="card-{{ loop.index }}" data-bucket="{{ t.bucket or 'trending' }}">
 
     <!-- EN Image -->
     <div class="card-img en-only" {% if t.image_filename %}data-src="images/{{ t.image_filename }}"{% endif %}
@@ -1280,6 +1346,97 @@ async function pollRegenCompletion(token) {
   }
   showRegenStatus('Workflow is taking longer than expected. Refresh manually when done.');
 }
+
+// ── Bucket tab switching ───────────────────────────────────────────────────────
+function switchBucket(bucket) {
+  document.querySelectorAll('.bucket-tab').forEach(function(tab) {
+    tab.classList.toggle('active', tab.dataset.bucket === bucket);
+  });
+  document.querySelectorAll('.card').forEach(function(card) {
+    var cardBucket = card.dataset.bucket || 'trending';
+    card.style.display = cardBucket === bucket ? '' : 'none';
+  });
+  var inputPanel = document.getElementById('announcement-input-panel');
+  if (inputPanel) {
+    inputPanel.style.display = bucket === 'announcements' ? 'block' : 'none';
+  }
+  try { localStorage.setItem('active-bucket', bucket); } catch(e) {}
+}
+
+// Initialise bucket on load
+(function() {
+  var saved = '';
+  try { saved = localStorage.getItem('active-bucket') || ''; } catch(e) {}
+  var firstBucket = 'trending';
+  var allBuckets = new Set();
+  document.querySelectorAll('.card').forEach(function(c) { if(c.dataset.bucket) allBuckets.add(c.dataset.bucket); });
+  if (allBuckets.size > 0) firstBucket = allBuckets.values().next().value;
+  switchBucket(saved && allBuckets.has(saved) ? saved : firstBucket);
+})();
+
+// ── Announcement generation (via GitHub Actions) ───────────────────────────────
+async function submitAnnouncement() {
+  var text = (document.getElementById('announcement-text') || {}).value;
+  if (!text || !text.trim()) {
+    alert('Please enter your announcement text first.');
+    return;
+  }
+  var btn = document.getElementById('btn-gen-ann');
+  var statusEl = document.getElementById('announcement-status');
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
+  if (statusEl) statusEl.textContent = 'Preparing to trigger workflow...';
+
+  if (!GH_REPO || GH_REPO === '') {
+    if (statusEl) statusEl.textContent = 'GitHub repo not configured. Contact admin.';
+    if (btn) { btn.disabled = false; btn.textContent = 'Generate 7 Content Angles'; }
+    return;
+  }
+
+  getGhToken(async function(token) {
+    try {
+      if (statusEl) statusEl.textContent = 'Triggering announcement pipeline...';
+      const resp = await fetch(
+        'https://api.github.com/repos/' + GH_REPO + '/actions/workflows/weekly-pipeline.yml/dispatches',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Accept': 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ref: 'main',
+            inputs: {
+              client_id: CLIENT_ID,
+              week_of:   WEEK_OF,
+              bucket:    'announcements',
+              announcement_text: text.trim(),
+            },
+          }),
+        }
+      );
+
+      if (resp.status === 204) {
+        if (statusEl) statusEl.textContent = 'Workflow triggered! Generating 7 content angles (2-5 min). Refresh when done.';
+        if (btn) { btn.textContent = 'Queued ✓'; }
+        showRegenStatus('Announcement pipeline started. Refresh in a few minutes.');
+        pollRegenCompletion(token);
+      } else if (resp.status === 401 || resp.status === 403) {
+        sessionStorage.removeItem('gh_pat');
+        if (statusEl) statusEl.textContent = 'Token invalid or expired. Please try again.';
+        if (btn) { btn.disabled = false; btn.textContent = 'Generate 7 Content Angles'; }
+      } else {
+        const err = await resp.text();
+        if (statusEl) statusEl.textContent = 'GitHub API error: ' + resp.status;
+        if (btn) { btn.disabled = false; btn.textContent = 'Generate 7 Content Angles'; }
+        console.error('GH API error', resp.status, err);
+      }
+    } catch(e) {
+      if (statusEl) statusEl.textContent = 'Network error: ' + e.message;
+      if (btn) { btn.disabled = false; btn.textContent = 'Generate 7 Content Angles'; }
+    }
+  });
+}
 </script>
 </body>
 </html>"""
@@ -1292,7 +1449,7 @@ LANDING_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ brand_name }} Content Platform</title>
+<title>Content · Rejig Labs</title>
 <link rel="icon" type="image/jpeg" href="favicon.jpg">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');
@@ -1352,10 +1509,11 @@ LANDING_HTML = """<!DOCTYPE html>
     position: sticky; top: 0; z-index: 100;
   }
   .nav-brand {
-    font-size: 1.2rem; font-weight: 800; color: var(--blue);
+    font-size: 1.2rem; font-weight: 800; color: #ffffff;
     letter-spacing: 0.3px; text-decoration: none;
   }
-  .nav-brand span { color: var(--blue-link); }
+  .nav-brand .brand-sep { color: var(--muted); font-weight: 400; padding: 0 2px; }
+  .nav-brand .brand-studio { color: var(--muted); font-weight: 600; }
   .nav-login {
     background: none; border: 1px solid rgba(255,255,255,0.12);
     color: var(--blue); padding: 7px 20px; border-radius: 22px;
@@ -1414,7 +1572,7 @@ LANDING_HTML = """<!DOCTYPE html>
 <div class="bg-orb bg-orb-1"></div>
 <div class="bg-orb bg-orb-2"></div>
 <nav>
-  <a class="nav-brand" href="#">{{ brand_name }}<span>.</span></a>
+  <a class="nav-brand" href="#">Content<span class="brand-sep"> · </span><span class="brand-studio">Rejig Labs</span></a>
   <a href="login.html" class="nav-login">Log In</a>
 </nav>
 <div class="hero-wrap">
@@ -1433,7 +1591,7 @@ LANDING_HTML = """<!DOCTYPE html>
     </div>
   </div>
 </div>
-<footer>{{ brand_name }} Content Platform</footer>
+<footer>Content · Rejig Labs</footer>
 </body>
 </html>"""
 
@@ -1812,7 +1970,7 @@ document.addEventListener('keydown', e => {
 </html>"""
 
 
-def build_site(output_dir, dates=None, credentials=None, active_client="bobe"):
+def build_site(output_dir, dates=None, credentials=None, active_client="bobe", clean=True):
     """Build the static site into output_dir.
 
     Args:
@@ -1820,14 +1978,15 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe"):
         dates: List of date identifiers to build, or None for all available
         credentials: List of credential dicts from load_credentials()
         active_client: Client ID for scoped output paths
+        clean: Wipe output_dir before building (set False for multi-client sequential builds)
     """
     output = Path(output_dir)
     github_regen_token = ""  # Phase 4a: inject via Cloudflare Worker proxy, not static HTML
 
-    # Clean previous build
-    if output.exists():
+    # Clean previous build (skip when building multiple clients sequentially)
+    if clean and output.exists():
         shutil.rmtree(output)
-    output.mkdir(parents=True)
+    output.mkdir(parents=True, exist_ok=True)
 
     # Discover available dates
     all_dates = list_available_dates()
@@ -1850,6 +2009,17 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe"):
     # Dashboard subdirectory for this client
     client_dash_dir = output / "dashboard" / active_client
     client_dash_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy client logo to dashboard dir and record relative URL for template
+    client_logo_url = ""
+    _client_cfg = client_config.load_config(active_client)
+    _logo_rel = _client_cfg.get("brand", {}).get("logo_path", "")
+    if _logo_rel:
+        _logo_src = Path(__file__).parent.parent / "clients" / active_client / _logo_rel
+        if _logo_src.exists():
+            _logo_dst_name = "client-logo" + _logo_src.suffix
+            shutil.copy2(str(_logo_src), str(client_dash_dir / _logo_dst_name))
+            client_logo_url = _logo_dst_name
 
     # Images go inside the client dashboard dir
     images_out = client_dash_dir / "images"
@@ -1936,6 +2106,7 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe"):
             client_id=active_client,
             gh_repo=gh_repo,
             github_regen_token=github_regen_token,
+            client_logo_url=client_logo_url,
         )
 
         page_path = client_dash_dir / f"{safe_name}.html"
@@ -2036,6 +2207,8 @@ def main():
                         help="Specific date(s) to build (can be repeated). Omit for all.")
     parser.add_argument("--include-admin", action="store_true", default=False,
                         help="Copy admin/ panel to dist/admin/ after building")
+    parser.add_argument("--no-clean", action="store_true", default=False,
+                        help="Don't wipe output dir before building (use for multi-client sequential builds)")
     client_config.add_client_arg(parser)
     args = parser.parse_args()
 
@@ -2059,7 +2232,8 @@ def main():
     print(f"Client: {active_client}")
     print("=" * 40)
 
-    build_site(args.output, args.dates, credentials=credentials, active_client=active_client)
+    build_site(args.output, args.dates, credentials=credentials, active_client=active_client,
+               clean=not args.no_clean)
 
     # Copy admin panel if requested
     if args.include_admin:

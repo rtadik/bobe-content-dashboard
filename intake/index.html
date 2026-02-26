@@ -28,6 +28,7 @@
       <div class="progress-step" data-section="7"></div>
       <div class="progress-step" data-section="8"></div>
       <div class="progress-step" data-section="9"></div>
+      <div class="progress-step" data-section="10"></div>
     </div>
   </div>
 
@@ -423,6 +424,92 @@
         <div class="tip-box">Found in your Airtable base URL: airtable.com/{BASE_ID}/... — starts with 'app'. Your partner will send a setup guide.</div>
       </div>
     </div>
+
+        <!-- Section: Content Strategy -->
+        <div class="section-card" id="section-content-strategy">
+          <h2 class="section-title">
+            <span class="section-num">10</span>
+            Content Strategy
+          </h2>
+          <p class="section-desc">
+            Choose exactly 3 content buckets for your weekly content plan. Each bucket produces 7 posts per week across Twitter and Telegram, in English and Russian.
+          </p>
+
+          <div class="field-wrapper">
+            <label class="field-label">Content Buckets <span class="required">*</span></label>
+            <p class="field-hint">Select exactly 3. Each bucket generates 7 topics per week, each published on Twitter and Telegram.</p>
+
+            <div class="content-type-grid" id="content-type-grid">
+              <label class="content-type-option">
+                <input type="checkbox" name="content_types" value="trending" checked>
+                <div class="content-type-card">
+                  <span class="ct-icon">📈</span>
+                  <span class="ct-name">Trending</span>
+                  <span class="ct-desc">React to trending industry topics from X and Reddit, filtered for brand relevance. Fully auto-generated.</span>
+                </div>
+              </label>
+
+              <label class="content-type-option">
+                <input type="checkbox" name="content_types" value="education" checked>
+                <div class="content-type-card">
+                  <span class="ct-icon">🎓</span>
+                  <span class="ct-name">Education</span>
+                  <span class="ct-desc">Belief-building content mapped to your buyer journey. Moves leads from cold to ready-to-buy. Fully auto-generated from your onboarding data.</span>
+                </div>
+              </label>
+
+              <label class="content-type-option">
+                <input type="checkbox" name="content_types" value="announcements" checked>
+                <div class="content-type-card">
+                  <span class="ct-icon">📣</span>
+                  <span class="ct-name">Announcements</span>
+                  <span class="ct-desc">You submit one weekly update from your dashboard. The system generates 7 different content angles from it automatically.</span>
+                </div>
+              </label>
+
+              <label class="content-type-option">
+                <input type="checkbox" name="content_types" value="social_proof">
+                <div class="content-type-card">
+                  <span class="ct-icon">⭐</span>
+                  <span class="ct-name">Social Proof</span>
+                  <span class="ct-desc">Community wins, user results, and testimonials. Auto-generated from brand context, or enriched with your real testimonials via the dashboard.</span>
+                </div>
+              </label>
+
+              <label class="content-type-option">
+                <input type="checkbox" name="content_types" value="behind_the_scenes">
+                <div class="content-type-card">
+                  <span class="ct-icon">🔍</span>
+                  <span class="ct-name">Behind the Scenes</span>
+                  <span class="ct-desc">Team culture, product decisions, and process transparency. Auto-generated from brand values, or enriched with your own updates via the dashboard.</span>
+                </div>
+              </label>
+
+              <label class="content-type-option">
+                <input type="checkbox" name="content_types" value="community_engagement">
+                <div class="content-type-card">
+                  <span class="ct-icon">💬</span>
+                  <span class="ct-name">Community</span>
+                  <span class="ct-desc">Discussion starters, polls, and audience questions designed to drive replies and algorithmic reach. Fully auto-generated.</span>
+                </div>
+              </label>
+
+              <label class="content-type-option">
+                <input type="checkbox" name="content_types" value="market_commentary">
+                <div class="content-type-card">
+                  <span class="ct-icon">🌐</span>
+                  <span class="ct-name">Market Commentary</span>
+                  <span class="ct-desc">Your brand's perspective on broader industry trends and macro developments. Uses scraped market data where available.</span>
+                </div>
+              </label>
+            </div>
+
+            <div class="content-type-counter">
+              <span id="ct-count">3</span> / 3 selected
+            </div>
+            <div class="field-error" id="error-content_types">Please select exactly 3 content buckets.</div>
+          </div>
+        </div>
 
     <button type="submit" class="btn-submit" id="submitBtn">Submit and Send My Credentials</button>
 

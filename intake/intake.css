@@ -472,3 +472,71 @@ textarea.input {
   .site-header { padding: 0 14px; }
   .btn-submit { width: 100%; text-align: center; }
 }
+
+/* ── Content Type Selector ────────────────────────────────── */
+.content-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.content-type-option {
+  cursor: pointer;
+}
+
+.content-type-option input[type="checkbox"] {
+  display: none;
+}
+
+.content-type-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 2px solid #1e2d4a;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: #070a1b;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.content-type-option input[type="checkbox"]:checked + .content-type-card {
+  border-color: #1589dc;
+  background: #0d1829;
+}
+
+.content-type-card:hover {
+  border-color: #2a4070;
+}
+
+.ct-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.ct-name {
+  font-weight: 700;
+  color: #fff;
+  font-size: 14px;
+}
+
+.ct-desc {
+  font-size: 12px;
+  color: #8a9bb5;
+  line-height: 1.5;
+}
+
+.content-type-counter {
+  margin-top: 12px;
+  color: #8a9bb5;
+  font-size: 13px;
+}
+
+.content-type-counter span {
+  color: #1589dc;
+  font-weight: 700;
+  font-size: 16px;
+}

@@ -166,11 +166,11 @@ def create_weekly_workbook(week_of, client_id=None, mock=False):
     ws2 = wb.create_sheet("Content")
 
     content_headers = [
-        "Date", "Day", "Topic", "Platform Target", "Format",
+        "Date", "Bucket", "Day", "Topic", "Platform Target", "Format",
         "Content", "Image Prompt", "Image Path", "Hashtags",
         "Content_RU", "Image_Prompt_RU", "Image_Path_RU", "Hashtags_RU", "Status",
     ]
-    content_col_widths = [12, 6, 30, 14, 10, 70, 50, 40, 35, 70, 50, 40, 35, 12]
+    content_col_widths = [12, 14, 6, 30, 14, 10, 70, 50, 40, 35, 70, 50, 40, 35, 12]
 
     for i, (header, width) in enumerate(zip(content_headers, content_col_widths), 1):
         cell = ws2.cell(row=1, column=i, value=header)
@@ -187,14 +187,15 @@ def create_weekly_workbook(week_of, client_id=None, mock=False):
     return str(path)
 
 
-def append_content_row(week_of, content_item, client_id=None):
+def append_content_row(week_of, content_item, client_id=None, mock=False):
     """
     Append one content row to the weekly workbook's Content sheet.
     content_item must have: date, day, topic, platform, format, content,
                             image_prompt, image_path, hashtags, status
     """
     output_dir = _get_output_dir(client_id)
-    path = output_dir / f"{week_of}-weekly-content.xlsx"
+    filename = f"{week_of}-mock-weekly-content.xlsx" if mock else f"{week_of}-weekly-content.xlsx"
+    path = output_dir / filename
     if not path.exists():
         raise FileNotFoundError(f"Weekly workbook not found: {path}. Run --action create-workbook first.")
 
@@ -211,6 +212,7 @@ def append_content_row(week_of, content_item, client_id=None):
 
     values = [
         content_item.get("date", ""),
+        content_item.get("bucket", "trending"),
         content_item.get("day", ""),
         content_item.get("topic", ""),
         content_item.get("platform", ""),
@@ -329,22 +331,23 @@ def update_ru_columns(week_of, row_index, content_ru, image_prompt_ru, image_pat
 
     excel_row = row_index + 1  # +1 for header row
 
-    # Columns J=10, K=11, L=12, M=13
-    ws.cell(row=excel_row, column=10, value=content_ru)
-    ws.cell(row=excel_row, column=11, value=image_prompt_ru)
-    ws.cell(row=excel_row, column=12, value=image_path_ru)
-    ws.cell(row=excel_row, column=13, value=hashtags_ru)
+    # Columns K=11, L=12, M=13, N=14 (shifted +1 due to new Bucket column B)
+    ws.cell(row=excel_row, column=11, value=content_ru)
+    ws.cell(row=excel_row, column=12, value=image_prompt_ru)
+    ws.cell(row=excel_row, column=13, value=image_path_ru)
+    ws.cell(row=excel_row, column=14, value=hashtags_ru)
 
     wb.save(str(path))
 
 
-def finalize(week_of, client_id=None):
+def finalize(week_of, client_id=None, mock=False):
     """Send macOS notification and print completion summary."""
     output_dir = _get_output_dir(client_id)
     config = client_config.load_config(client_id)
     display_name = config.get("display_name", client_id or "Client")
 
-    path = output_dir / f"{week_of}-weekly-content.xlsx"
+    filename = f"{week_of}-mock-weekly-content.xlsx" if mock else f"{week_of}-weekly-content.xlsx"
+    path = output_dir / filename
     row_count = 0
 
     if path.exists():
@@ -353,7 +356,7 @@ def finalize(week_of, client_id=None):
             row_count = wb["Content"].max_row - 1  # subtract header
         wb.close()
 
-    msg = f"{row_count} content items ready in {week_of}-weekly-content.xlsx"
+    msg = f"{row_count} content items ready in {filename}"
     title = f"{display_name} Weekly Pipeline Complete"
 
     # macOS notification via osascript
@@ -412,18 +415,18 @@ def regenerate_topic_content(xlsx_path, topic_index, client_id=None, mock=False)
     topic_order = []
     topic_rows = {}  # topic_name -> list of {excel_row, platform, format, date, day}
     for row_idx, row in enumerate(ws_read.iter_rows(min_row=2, values_only=True), start=2):
-        if not row or not row[2]:
+        if not row or not row[3]:
             continue
-        tname = row[2]
+        tname = row[3]  # Col D (index 3): Topic (shifted +1 due to Bucket col)
         if tname not in topic_rows:
             topic_order.append(tname)
             topic_rows[tname] = []
         topic_rows[tname].append({
             "excel_row": row_idx,
-            "platform": (row[3] or "").lower(),
-            "format": row[4] or "thread",
-            "date": str(row[0]) if row[0] else "",
-            "day": row[1] or "",
+            "platform": (row[4] or "").lower(),   # Col E: Platform Target
+            "format": row[5] or "thread",          # Col F: Format
+            "date": str(row[0]) if row[0] else "",  # Col A: Date
+            "day": row[2] or "",                   # Col C: Day
         })
     wb_read.close()
 
@@ -514,9 +517,9 @@ Return ONLY the content text, no JSON, no extra explanation."""
         excel_row = row_info["excel_row"]
         platform = row_info["platform"]
         if "twitter" in platform:
-            ws_write.cell(row=excel_row, column=6, value=new_twitter)
+            ws_write.cell(row=excel_row, column=7, value=new_twitter)   # Col G: Content (shifted)
         elif "telegram" in platform:
-            ws_write.cell(row=excel_row, column=6, value=new_telegram)
+            ws_write.cell(row=excel_row, column=7, value=new_telegram)  # Col G: Content (shifted)
 
     wb_write.save(str(xlsx))
     return {"twitter": new_twitter, "telegram": new_telegram}
@@ -556,11 +559,11 @@ def main():
             sys.exit(1)
         with open(args.content_file) as f:
             item = json.load(f)
-        append_content_row(week_of, item, client_id=active_client)
+        append_content_row(week_of, item, client_id=active_client, mock=args.mock)
         print(f"Saved: [{item.get('day', '?')}] {item.get('topic', '')[:60]} ({item.get('platform', '')})")
 
     elif args.action == "finalize":
-        finalize(week_of, client_id=active_client)
+        finalize(week_of, client_id=active_client, mock=args.mock)
 
     elif args.action == "sync-airtable":
         cmd = [sys.executable, str(Path(__file__).parent / "airtable_sync.py"),

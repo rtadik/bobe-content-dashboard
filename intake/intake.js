@@ -191,6 +191,11 @@ function validateForm() {
   showError('hashtags', !hashtagsOk);
   if (!hashtagsOk) valid = false;
 
+  // content_types (exactly 3)
+  var contentTypesOk = getChecked('content_types').length === 3;
+  showError('content_types', !contentTypesOk);
+  if (!contentTypesOk) valid = false;
+
   if (!valid) {
     // Scroll to first error
     const firstError = document.querySelector('.field-error.show');
@@ -261,7 +266,8 @@ function buildIntakeJSON() {
     airtable: {
       enabled: airtableEnabled,
       base_id: airtableEnabled ? getValue('airtable_base_id') : ''
-    }
+    },
+    content_types: getChecked('content_types')
   };
 }
 
@@ -423,11 +429,29 @@ async function handleSubmit(e) {
   showSuccessPanel({ emailFailed, clientId, password, workerStatus });
 }
 
+// ── Content Type Selector ──────────────────────────────────────
+function initContentTypeSelector() {
+  var checkboxes = document.querySelectorAll('input[name="content_types"]');
+  var counter = document.getElementById('ct-count');
+
+  checkboxes.forEach(function(cb) {
+    cb.addEventListener('change', function() {
+      var checked = Array.from(checkboxes).filter(function(c) { return c.checked; });
+      if (checked.length > 3) {
+        cb.checked = false;
+      }
+      var currentCount = Array.from(checkboxes).filter(function(c) { return c.checked; }).length;
+      if (counter) counter.textContent = currentCount;
+    });
+  });
+}
+
 // ── Init ───────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   initTips();
   initAirtableToggle();
   initColorPickers();
+  initContentTypeSelector();
   updateProgress();
 
   window.addEventListener('scroll', updateProgress, { passive: true });

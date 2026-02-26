@@ -1,0 +1,179 @@
+name: Scheduled Weekly Pipeline
+
+# Runs automatically every Monday at 9:00 UTC for all onboarded clients.
+# Also available manually via workflow_dispatch for testing or forced re-runs.
+#
+# Logic per client:
+#   - If this week's Excel already exists → skip pipeline, still include in deploy
+#   - If force=true → run pipeline regardless
+#   - Clients with no config.json (or starting with _) are ignored
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday at 09:00 UTC
+  workflow_dispatch:
+    inputs:
+      client_id:
+        description: 'Specific client to run (leave blank for all clients)'
+        required: false
+        default: ''
+      force:
+        description: 'Force pipeline even if already generated this week'
+        type: boolean
+        default: false
+      skip_images:
+        description: 'Skip image generation (faster, text only)'
+        type: boolean
+        default: false
+      mock:
+        description: 'Dry run — no API calls (for testing)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: gh-pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  run-all-clients:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install requests openpyxl google-genai python-dotenv jinja2 flask pillow
+
+      - name: Create .env from secrets
+        run: |
+          echo "APIFY_API_TOKEN=${{ secrets.APIFY_API_TOKEN }}" >> .env
+          echo "GOOGLE_AI_API_KEY=${{ secrets.GOOGLE_AI_API_KEY }}" >> .env
+          echo "WAVESPEED_API_KEY=${{ secrets.WAVESPEED_API_KEY }}" >> .env
+          echo "AIRTABLE_API_KEY=${{ secrets.AIRTABLE_API_KEY }}" >> .env
+          echo "GH_REGEN_TOKEN=${{ secrets.GH_REGEN_TOKEN }}" >> .env
+
+      - name: Run pipelines and build site for all clients
+        env:
+          FORCE_RUN: ${{ github.event.inputs.force }}
+          SKIP_IMAGES: ${{ github.event.inputs.skip_images }}
+          MOCK_RUN: ${{ github.event.inputs.mock }}
+          SPECIFIC_CLIENT: ${{ github.event.inputs.client_id }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, json, subprocess, sys
+          from pathlib import Path
+          from datetime import date, timedelta
+
+          # Resolve current week's Monday
+          today = date.today()
+          monday = today - timedelta(days=today.weekday())
+          week_of = monday.strftime('%Y-%m-%d')
+
+          force      = os.environ.get('FORCE_RUN',      'false').lower() == 'true'
+          skip_images = os.environ.get('SKIP_IMAGES',   'false').lower() == 'true'
+          mock       = os.environ.get('MOCK_RUN',       'false').lower() == 'true'
+          only_client = os.environ.get('SPECIFIC_CLIENT', '').strip()
+
+          # Discover all onboarded clients
+          clients_dir = Path('clients')
+          all_clients = []
+          for d in sorted(clients_dir.iterdir()):
+              if not d.is_dir() or d.name.startswith('_') or d.name == 'intake':
+                  continue
+              if (d / 'config.json').exists():
+                  all_clients.append(d.name)
+
+          clients = [only_client] if only_client and only_client in all_clients else all_clients
+
+          print(f"Scheduled Weekly Pipeline — Week of {week_of}")
+          print(f"Clients to process: {clients}")
+          print(f"Force: {force} | Skip images: {skip_images} | Mock: {mock}")
+          print()
+
+          first_build = True
+          pipeline_results = {}
+
+          for client_id in clients:
+              print(f"{'='*50}")
+              print(f"Client: {client_id}")
+
+              xlsx = Path(f'outputs/content/{client_id}/{week_of}-weekly-content.xlsx')
+
+              if xlsx.exists() and not force:
+                  print(f"  Already generated for week {week_of} — skipping pipeline.")
+                  pipeline_results[client_id] = 'skipped'
+              else:
+                  print(f"  Running pipeline...")
+                  cmd = ['python', 'scripts/pipeline_runner.py',
+                         '--client', client_id,
+                         '--week-of', week_of,
+                         '--skip-deploy']
+                  if skip_images:
+                      cmd.append('--skip-images')
+                  if mock:
+                      cmd.append('--mock')
+
+                  result = subprocess.run(cmd)
+                  if result.returncode == 0:
+                      print(f"  Pipeline complete.")
+                      pipeline_results[client_id] = 'success'
+                  else:
+                      print(f"  WARNING: Pipeline failed for {client_id} (exit {result.returncode})")
+                      pipeline_results[client_id] = 'failed'
+
+              # Build static site for this client
+              # First client: clean build. Subsequent clients: --no-clean to preserve prior builds.
+              build_cmd = ['python', 'scripts/build_static.py',
+                           '--output', 'dist',
+                           '--include-admin',
+                           '--client', client_id]
+              if not first_build:
+                  build_cmd.append('--no-clean')
+
+              build_result = subprocess.run(build_cmd)
+              if build_result.returncode == 0:
+                  first_build = False
+                  print(f"  Site built for {client_id}.")
+              else:
+                  print(f"  WARNING: Build failed for {client_id}")
+
+          print()
+          print("Pipeline summary:")
+          for cid, status in pipeline_results.items():
+              print(f"  {cid}: {status}")
+          PYEOF
+
+      - name: Deploy to GitHub Pages
+        run: |
+          cd dist
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Scheduled weekly deploy $(date +%Y-%m-%d)" || echo "Nothing to commit"
+          git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/rtadik/bobe-content-dashboard.git HEAD:gh-pages
+          cd ..
+
+      - name: Upload Excel workbooks as artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: weekly-content-all-${{ github.run_id }}
+          path: outputs/content/**/*.xlsx
+          retention-days: 30
+          if-no-files-found: warn

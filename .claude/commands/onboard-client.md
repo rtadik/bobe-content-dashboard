@@ -179,6 +179,31 @@ Using the Q&A answers and config:
 - Subreddits: from Q14 (formatted as `r/subreddit`)
 - Twitter search queries: 3-5 ready-to-use Apify queries constructed from primary keywords
 
+**3f. Generate `clients/{client_id}/belief-journey.md`** — belief journey for Education bucket:
+
+Using all Q&A answers, write a complete `belief-journey.md` that maps the 7 belief stages a prospect must hold before becoming a customer. Follow this process:
+
+1. Identify the cold prospect's starting state: what do they believe right now about their problem and available solutions?
+2. Identify the warm/ready state: what must they believe to confidently choose and start using this product?
+3. Map 7 stages from cold-to-ready, each building on the previous belief
+
+For each of the 7 stages, write:
+- **Belief needed:** The exact belief the prospect must hold by the end of this stage
+- **Starting belief:** What they currently think (skepticism, misconception, or ignorance)
+- **Content angle:** One sentence on how to frame a post that moves them from starting to needed belief
+- **Example topic title:** A social media post title (max 80 chars, no em-dashes) that serves this stage
+
+The 7 stages must follow this arc:
+1. Awareness — they have a costly problem
+2. Problem depth — the problem is bigger than they thought
+3. Solution category — a structured solution exists
+4. Skepticism overcome — not all solutions in this category are risky
+5. Product differentiation — this product specifically is the right choice
+6. Proof — they can verify the claims
+7. Action readiness — they know the first safe step
+
+Write the full belief-journey.md to `clients/{client_id}/belief-journey.md` before proceeding to Phase 4.
+
 ---
 
 ### Phase 4 — Airtable Setup (if enabled)

@@ -69,35 +69,63 @@ Load `/tmp/weekly_scraped.json`. Note how many unique relevant topics it contain
 
 ---
 
-## Phase 2: Topic Pool Assembly
+## Phase 2: Topic Pool Assembly — 3 Buckets × 7 Topics
 
-You need **21 topics total** (3 per day × 7 days). Build the pool:
+You need **21 topics total: 7 per content bucket × 3 buckets**. Read `content.content_types` from the active client's config to determine the 3 bucket types (default: `["trending", "education", "announcements"]`).
 
-1. Use all scraped live topics (sorted by engagement × relevance).
-2. Fill remaining slots from the **Evergreen Fallback Bank** below.
-3. Assign to days: live/trending topics → Mon–Wed; evergreen → Thu–Sun (plus remaining Mon–Wed slots).
-4. Each day should have variety: aim for a mix of Pain Point, Education, and Transparency/Product angles.
-5. Across the week, vary the theme so consecutive days don't repeat the same angle.
+Check if `outputs/content/{active_client}/{week_of}-bucket-inputs.json` exists — this contains any client-submitted input texts (e.g. announcement text). Load it if present.
 
-### Evergreen Fallback Bank
+### Bucket 1: Trending (7 topics)
 
-Generate 20 evergreen topics based on the active client's context, keywords, and messaging pillars from `clients/{active_client}/config.json` and `clients/{active_client}/context.md`. Topics should:
+Use the scraped posts from Phase 1. Select up to 7 most relevant posts as topic seeds. Fill any remaining slots with evergreen trending topics generated from the client's keywords and context. Assign one topic per day (Mon–Sun). Angles: mix of Pain Point, Market Commentary, Trend Reaction.
 
-- Cover a mix of Pain Point, Education, and Transparency/Product angles
-- Be relevant to the client's product and target audience
-- Align with the client's tone and voice settings
-- Use the client's keywords as thematic anchors
-- NEVER use em-dashes, en-dashes, or double-hyphens in topic text
+Fallback if 0 scraped posts: generate 7 evergreen trending topics from `clients/{active_client}/keywords.md` and `clients/{active_client}/context.md`.
+
+### Bucket 2: Education (7 topics)
+
+Read `clients/{active_client}/belief-journey.md`. Extract the 7 belief stages. For each stage, write ONE topic title (max 80 chars) that frames the belief as a natural social media post — a relatable question, bold statement, or scenario. Assign one per day (Mon–Sun). Angle: Education. Source: Belief Journey.
+
+If `belief-journey.md` does not exist: generate 7 evergreen education topics from the client's messaging pillars and context. Angle: Education. Source: Evergreen.
+
+### Bucket 3: Announcements (7 topics)
+
+Check `{week_of}-bucket-inputs.json` for `announcements.text`.
+
+- **If text exists**: Generate 7 topic titles from the announcement text, one per day, each from a different angle:
+  1. Direct announcement ("What's new")
+  2. User benefit ("What this means for you")
+  3. Behind-the-scenes ("How we built/decided this")
+  4. Social proof ("Why our users love this")
+  5. Educational ("Why this matters for the industry")
+  6. Before vs after ("How things have changed")
+  7. Future vision ("Where this is taking us")
+- **If no text**: Create 7 placeholder rows with topic `[Announcement — Awaiting client input]` and status `Pending Input`. No content will be generated for these rows.
+
+### For other bucket types (if configured)
+
+- `social_proof`: Generate 7 community-voice topics. Use client_inputs.social_proof.text if available.
+- `behind_the_scenes`: Generate 7 transparency topics. Use client_inputs.behind_the_scenes.text if available.
+- `community_engagement`: Generate 7 discussion-starter topics (polls, questions, debates). Fully auto.
+- `market_commentary`: Generate 7 industry-perspective topics. Use scraped posts if available.
+
+### Interleave into daily schedule
+
+Each day gets exactly 1 topic from each bucket:
+- Mon: trending[0], education[0], announcements[0]
+- Tue: trending[1], education[1], announcements[1]
+- ... etc.
+
+Number topics 1–21 sequentially after interleaving.
 
 **Print the full 21-topic schedule as a table before proceeding to Phase 3:**
 
-| # | Day | Date | Topic | Angle | Source |
-|---|-----|------|-------|-------|--------|
-| 1 | Mon | {date} | ... | Pain Point | Live/Evergreen |
-| 2 | Mon | {date} | ... | Education | Live/Evergreen |
-| 3 | Mon | {date} | ... | Product | Live/Evergreen |
-| ... | | | | | |
-| 21 | Sun | {date} | ... | Education | Evergreen |
+| # | Bucket | Day | Date | Topic | Angle | Source |
+|---|--------|-----|------|-------|-------|--------|
+| 1 | Trending | Mon | {date} | ... | Pain Point | Live/Evergreen |
+| 2 | Education | Mon | {date} | ... | Education | Belief Journey |
+| 3 | Announcements | Mon | {date} | ... | Announcement | Client Input/Pending |
+| ... | | | | | | |
+| 21 | Announcements | Sun | {date} | ... | Announcement | ... |
 
 ---
 
@@ -108,6 +136,8 @@ python scripts/weekly_pipeline.py --action create-workbook --week-of {week_of}
 ```
 
 Expected: `Weekly workbook created: outputs/content/{active_client}/{week_of}-weekly-content.xlsx`
+
+The workbook Content sheet now has **15 columns**: Date, Bucket, Day, Topic, Platform Target, Format, Content, Image Prompt, Image Path, Hashtags, Content_RU, Image_Prompt_RU, Image_Path_RU, Hashtags_RU, Status.
 
 ---
 

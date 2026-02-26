@@ -164,6 +164,23 @@ def resolve_client(args) -> str:
         return args.client
     return get_active_client()
 
+def get_content_types(client_id: str = None) -> list:
+    """Return the 3 content bucket type IDs for the client."""
+    config = load_config(client_id)
+    return config.get("content", {}).get("content_types", ["trending", "education", "announcements"])
+
+
+def get_bucket_size(client_id: str = None) -> int:
+    """Return topics per bucket (always 7 by default)."""
+    config = load_config(client_id)
+    return config.get("content", {}).get("bucket_size", 7)
+
+
+def get_belief_journey_path(client_id: str = None) -> Path:
+    """Return path to the client's belief-journey.md file."""
+    return get_client_dir(client_id) / "belief-journey.md"
+
+
 def get_api_key(client_id: str, service: str) -> str:
     """Return client-specific API key, falling back to global env var."""
     config = load_config(client_id)

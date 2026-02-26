@@ -10,7 +10,7 @@ This file is the single source of truth for how Claude should understand and ope
 
 **The user** (Rut Adk) is BoBe's Strategic Marketing Lead and Growth Architect, an external partner responsible for acquisition systems, messaging clarity, funnel infrastructure, and ambassador expansion.
 
-**This workspace** is a multi-client content automation platform. It scrapes trending topics, generates Twitter threads and Telegram posts, creates branded images, and packages everything into Excel workbooks for scheduling. Originally built for BoBe, it now supports multiple clients via config-driven architecture.
+**This workspace** is a multi-client content automation platform. It scrapes trending topics, generates Twitter threads and Telegram posts, creates branded images, and packages everything into Excel workbooks for scheduling. Originally built for BoBe, it now supports multiple clients via config-driven architecture. Content is organized into **3 buckets** per week: Trending (scraped), Education (belief-journey), and Announcements (client input → 7 angles).
 
 ---
 
@@ -32,8 +32,10 @@ This file is the single source of truth for how Claude should understand and ope
 ├── .gitignore
 ├── .github/
 │   └── workflows/
-│       ├── weekly-pipeline.yml   # GH Actions: workflow_dispatch → pipeline_runner.py → deploy
-│       └── onboard-client.yml    # GH Actions: workflow_dispatch → create client dir → commit
+│       ├── weekly-pipeline.yml        # GH Actions: workflow_dispatch → pipeline_runner.py → deploy
+│       ├── generate-announcement.yml  # GH Actions: client announcement input → 7 content angles → deploy
+│       ├── onboard-client.yml         # GH Actions: workflow_dispatch → create client dir → commit
+│       └── auto-onboard.yml           # GH Actions: intake form submit → create client config → deploy
 ├── .claude/
 │   ├── commands/
 │   │   ├── prime.md                   # /prime — session initialization
@@ -69,13 +71,15 @@ This file is the single source of truth for how Claude should understand and ope
 │   │   ├── brand/README.md       # Brand asset instructions
 │   │   ├── content-guidelines.md # Voice and messaging template
 │   │   ├── keywords.md           # Keyword list template
-│   │   └── context.md            # Business context template
+│   │   ├── context.md            # Business context template
+│   │   └── belief-journey.md     # 7-stage buyer belief journey template (Education bucket source)
 │   └── bobe/                     # BoBe client (default)
 │       ├── config.json           # Brand, keywords, tone, mascot, colors, style presets
 │       ├── brand/                # Logo, banner examples, color references
 │       ├── content-guidelines.md # Voice, tone, messaging pillars
 │       ├── keywords.md           # Scraping/filtering keywords
-│       └── context.md            # Business context and ICP
+│       ├── context.md            # Business context and ICP
+│       └── belief-journey.md     # BoBe-specific 7-stage belief journey (auto-generated at onboarding)
 ├── context/
 │   ├── BoBe Context.md           # Organization overview (legacy, mirrored in clients/bobe/)
 │   └── RT BoBe Info.md           # User's role, responsibilities, working style
@@ -88,20 +92,22 @@ This file is the single source of truth for how Claude should understand and ope
 ├── outputs/
 │   └── content/
 │       └── {client_id}/          # Client-scoped output directory
-│           ├── {date}-weekly-content.xlsx   # Weekly workbooks (14-col, bilingual)
-│           ├── {date}-approvals.json        # Image approval state (local only)
+│           ├── {date}-weekly-content.xlsx      # Weekly workbooks (15-col, bilingual, 3-bucket)
+│           ├── {date}-bucket-inputs.json       # Announcement text input (written on dashboard submit)
+│           ├── {date}-approvals.json           # Image approval state (local only)
 │           └── images/
-│               └── {date}-weekly/           # Weekly images (EN + RU, 42 total)
+│               └── {date}-weekly/              # Weekly images (EN + RU, 42 total)
 ├── scripts/
 │   ├── client_config.py          # Multi-client config loader (central module)
 │   ├── apify_scraper.py          # Twitter + Reddit scraping via Apify API
 │   ├── excel_manager.py          # Excel styling helpers (library only)
 │   ├── nano_banana.py            # EN image generation via WaveSpeed GPT-Image-1.5
 │   ├── wavespeed_img.py          # RU image generation via WaveSpeed Seedream 4.5
-│   ├── weekly_pipeline.py        # Weekly pipeline orchestrator (14-col, bilingual)
+│   ├── weekly_pipeline.py        # Weekly pipeline orchestrator (15-col, bilingual, 3-bucket)
+│   ├── bucket_generators.py      # 3-bucket topic generators (trending, education, announcements + 4 more)
 │   ├── airtable_sync.py          # Push weekly content to client's Airtable base (opt-in)
-│   ├── web_viewer.py             # Flask dashboard server (localhost:5001, EN/RU toggle)
-│   └── build_static.py           # Static site builder for deployment (EN/RU toggle)
+│   ├── web_viewer.py             # Flask dashboard server (localhost:5001, EN/RU toggle, bucket tabs)
+│   └── build_static.py           # Static site builder for deployment (EN/RU toggle, bucket tabs)
 ├── dist/                         # Static site build output (gitignored, deployed via /deploy)
 └── venv/                         # Python virtual environment
 ```
@@ -114,9 +120,9 @@ This file is the single source of truth for how Claude should understand and ope
 Initialize a new session. Reads CLAUDE.md and context files, summarizes understanding, confirms readiness. **Run this at the start of every session.**
 
 ### /weekly-pipeline [week-of]
-Fully automated bilingual weekly content pipeline for the active client. Scrapes trending topics (falls back to evergreen), assigns 21 topics across 7 days (3/day: 2 Twitter threads + 1 Telegram), generates all 42 content items in English AND Russian, generates 42 images (21 EN via GPT-Image-1.5 + 21 RU via Seedream 4.5), saves to weekly Excel workbook. Zero user input after triggering.
+Fully automated bilingual weekly content pipeline for the active client. Assembles 21 topics across 3 buckets (7 Trending, 7 Education, 7 Announcements), generates all 42 content items in English AND Russian, generates 42 images (21 EN via GPT-Image-1.5 + 21 RU via Seedream 4.5), saves to weekly Excel workbook. Zero user input after triggering. Announcement topics are placeholders until the client submits input via the dashboard.
 
-- Output: `outputs/content/{client_id}/{week-of}-weekly-content.xlsx` (14-column, bilingual)
+- Output: `outputs/content/{client_id}/{week-of}-weekly-content.xlsx` (15-column, bilingual, 3-bucket)
 - Images: `outputs/content/{client_id}/images/{week-of}-weekly/` (EN + RU images)
 - Example: `/weekly-pipeline` or `/weekly-pipeline 2026-02-16`
 
@@ -166,7 +172,7 @@ One-time setup command. Implements the full content automation infrastructure fr
 
 This workspace supports multiple clients via a config-driven architecture:
 
-- **Client configs** live in `clients/{client_id}/` with `config.json`, `brand/`, `content-guidelines.md`, `keywords.md`, `context.md`
+- **Client configs** live in `clients/{client_id}/` with `config.json`, `brand/`, `content-guidelines.md`, `keywords.md`, `context.md`, `belief-journey.md`
 - **Active client** is stored in `.active-client` (gitignored). Default: `bobe`
 - **All scripts** accept `--client {id}` to override the active client
 - **`scripts/client_config.py`** is the central module that all scripts import for client-specific values
@@ -181,30 +187,36 @@ This workspace supports multiple clients via a config-driven architecture:
 
 | Script | Purpose | Key flags |
 |--------|---------|-----------|
-| `client_config.py` | Multi-client config loader (central module) | Import only: `load_config()`, `get_output_dir()`, `get_keywords()`, `get_airtable_config()`, `is_airtable_enabled()` |
+| `client_config.py` | Multi-client config loader (central module) | Import only: `load_config()`, `get_output_dir()`, `get_keywords()`, `get_content_types()`, `get_bucket_size()`, `get_belief_journey_path()`, `is_airtable_enabled()` |
 | `apify_scraper.py` | Scrape Twitter/Reddit via Apify for trending topics | `--platform`, `--keywords`, `--count`, `--days`, `--top`, `--output`, `--mock`, `--client` |
 | `excel_manager.py` | Excel styling library (no CLI) | Import only: `style_header_cell`, `style_data_cell`, color constants |
 | `nano_banana.py` | Generate EN branded images via WaveSpeed GPT-Image-1.5 | `--prompt`, `--output`, `--style`, `--mock`, `--no-reference`, `--client` |
 | `wavespeed_img.py` | Generate RU branded images via WaveSpeed Seedream 4.5 | `--prompt`, `--topic`, `--headline`, `--style`, `--output`, `--mock`, `--client` |
-| `weekly_pipeline.py` | Weekly pipeline orchestrator (14-col bilingual workbook) | `--action` (scrape, create-workbook, save-content, finalize, sync-airtable), `--week-of`, `--mock`, `--client` |
-| `pipeline_runner.py` | Standalone end-to-end pipeline (Gemini-powered, no Claude required) | `--client`, `--week-of`, `--mock`, `--skip-images`, `--skip-airtable`, `--skip-deploy`, `--regen-topic INT`, `--regen-type {image_en,image_ru,content,content_ru}` |
-| `airtable_sync.py` | Push weekly content to client's Airtable base | `--week-of`, `--mock`, `--client` |
-| `web_viewer.py` | Flask dashboard server with EN/RU toggle | Runs on localhost:5001, `--client` |
-| `build_static.py` | Static site builder with EN/RU toggle + admin panel | `--output`, `--date`, `--include-admin`, `--client` |
+| `weekly_pipeline.py` | Weekly pipeline orchestrator (15-col bilingual workbook, 3-bucket) | `--action` (scrape, create-workbook, save-content, finalize, sync-airtable), `--week-of`, `--mock`, `--client` |
+| `bucket_generators.py` | 3-bucket topic generators dispatched by type | Import only: `generate_bucket(type, config, week_of, ...)`, `BUCKET_DISPLAY_NAMES` |
+| `pipeline_runner.py` | Standalone end-to-end pipeline (Gemini-powered, no Claude required) | `--client`, `--week-of`, `--mock`, `--skip-images`, `--skip-airtable`, `--skip-deploy`, `--mode {full,announcement}`, `--announcement-text`, `--regen-topic INT`, `--regen-type {image_en,image_ru,content,content_ru}` |
+| `airtable_sync.py` | Push weekly content to client's Airtable base (15-col schema) | `--week-of`, `--mock`, `--client` |
+| `web_viewer.py` | Flask dashboard server with EN/RU toggle and bucket tabs | Runs on localhost:5001, `--client`; `/api/generate-announcement` endpoint |
+| `build_static.py` | Static site builder with EN/RU toggle, bucket tabs, admin panel | `--output`, `--date`, `--include-admin`, `--client` |
 
 ---
 
 ## Weekly Pipeline Structure
 
-- 21 topics per week (3 per day x 7 days)
+- 21 topics per week = **3 buckets × 7 topics** (1 topic per bucket per day, interleaved)
+  - **Bucket 1: Trending** — 7 scraped/relevant topics from X and Reddit
+  - **Bucket 2: Education** — 7 belief-building topics from `clients/{client_id}/belief-journey.md`
+  - **Bucket 3: Announcements** — client inputs ONE text update → Gemini generates 7 content angles
 - Each topic gets Twitter + Telegram in English AND Russian = **42 content rows** in workbook
-- Workbook Content sheet: **14 columns** (Date, Day, Topic, Platform, Format, Content, Image Prompt, Image Path, Hashtags, Content_RU, Image_Prompt_RU, Image_Path_RU, Hashtags_RU, Status)
-- JSON temp files: `/tmp/weekly_content_1.json` through `/tmp/weekly_content_42.json`
-- Odd items (1,3,5...) = Twitter; Even items (2,4,6...) = Telegram
-- Per day: topics 1-2 get Twitter thread format (5 tweets); topic 3 gets single tweet format
-- Image styles: Pain Point → minimal, Education → tech, Transparency/Product → notification
+- Workbook Content sheet: **15 columns** (Date, Bucket, Day, Topic, Platform, Format, Content, Image Prompt, Image Path, Hashtags, Content_RU, Image_Prompt_RU, Image_Path_RU, Hashtags_RU, Status)
+- Interleaved day order: Mon = [Trending#1, Education#1, Announcement#1], Tue = [Trending#2, Education#2, Announcement#2], etc.
+- Per day: topics 1-2 (positions 1 and 2 in the day) get Twitter thread format (5 tweets); topic 3 gets single tweet format
+- Image styles: Pain Point → minimal, Education → tech, Announcement → notification
 - Images: 42 total — 21 EN via GPT-Image-1.5 (`nano_banana.py`) + 21 RU via Seedream 4.5 (`wavespeed_img.py`)
 - RU image naming: append `_ru` before `.png` (e.g., `topic_slug_twitter_ru.png`)
+- **Announcement flow**: Dashboard Announcements tab shows a textarea. Client types update → submits → Flask `/api/generate-announcement` (local) or `generate-announcement.yml` (live) generates 7 angles and rebuilds workbook/site
+- **Bucket config**: Each client's `config.json` has `content.content_types` (array of 3 type IDs) and `content.bucket_size` (default 7)
+- **`belief-journey.md`**: Auto-generated at onboarding from intake data by reading ICP/pain points/product; maps 7 buyer belief stages from awareness to action readiness
 
 ---
 
@@ -256,11 +268,12 @@ The deployed dashboard has a landing page, login form, and per-client auth. Clie
 
 ### GitHub Actions
 
-Four workflows in `.github/workflows/`:
+Five workflows in `.github/workflows/`:
 - **`weekly-pipeline.yml`**: Triggered via `workflow_dispatch` (admin panel or GitHub UI). Runs `pipeline_runner.py`, builds static site with admin panel, deploys to `gh-pages`, uploads Excel as artifact.
+- **`generate-announcement.yml`**: Triggered from the live dashboard's Announcements tab (or GitHub UI). Accepts `client_id`, `week_of`, `announcement_text`. Runs `pipeline_runner.py --mode announcement`, rebuilds and deploys static site.
 - **`regenerate-item.yml`**: Triggered by the live dashboard's Regen buttons (via GitHub API from the client's browser, using a PAT). Regenerates a single topic item (image_en, image_ru, content, or content_ru), rebuilds and redeploys the static site. Inputs: `client_id`, `week_of`, `topic_index` (0-based), `regen_type`.
 - **`onboard-client.yml`**: Creates a new client directory from template inputs and commits it to the repo.
-- **`auto-onboard.yml`**: Triggered by the Cloudflare Worker when a client submits the intake form. Parses the intake JSON, creates all four client config files from the data, commits to main, rebuilds and deploys the static site. Zero manual steps required.
+- **`auto-onboard.yml`**: Triggered by the Cloudflare Worker when a client submits the intake form. Parses the intake JSON, creates all client config files including `belief-journey.md` and `content_types`, commits to main, rebuilds and deploys the static site. Zero manual steps required.
 
 **Live dashboard regeneration**: Clients on the deployed dashboard can regenerate images and content directly. On first use, they enter a GitHub PAT with `Actions: write` scope (stored in `sessionStorage` for the session). Approving an EN image auto-switches the view to Russian and unlocks the RU regen buttons. After triggering, the workflow runs (~2-5 min) and the page auto-reloads when complete.
 
@@ -282,6 +295,7 @@ Setup: See `reference/github-actions-setup.md` for GitHub Secrets, permissions, 
 | `plans/2026-02-23-client-intake-form.md` | Implemented | Self-serve client intake form at `/intake/`, EmailJS credential delivery, `/onboard-from-intake` command, `credentials.json` auto-write |
 | `plans/2026-02-24-regenerate-buttons-live-dashboard.md` | Implemented | Regen buttons (content + images) on local Flask dashboard and live static site; EN approval auto-switches to RU and unlocks RU regen; GitHub Actions `regenerate-item.yml` as backend for live regen |
 | `plans/2026-02-24-auto-onboard-on-intake-submit.md` | Implemented | Cloudflare Worker proxy triggers `auto-onboard.yml` on intake form submit; creates client dir, commits to main, rebuilds and deploys site automatically |
+| `plans/2026-02-26-three-bucket-content-strategy.md` | Implemented | 3-bucket content strategy: Trending (7 scraped), Education (7 from belief-journey.md), Announcements (client input → 7 angles). 15-col workbook, bucket tabs on dashboard, intake content type selection, belief-journey.md auto-generated at onboarding |
 
 ---
 

@@ -38,6 +38,7 @@ load_dotenv()
 
 sys.path.insert(0, str(Path(__file__).parent))
 import client_config
+import bucket_generators
 from client_config import get_api_key
 
 # Use the same Python interpreter that launched this script (works on macOS + Linux + GH Actions)
@@ -323,7 +324,7 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
 
     errors = []
 
-    # ── Phase 1: Scrape Topics ────────────────────────────────────────────────
+    # ── Phase 1: Scrape Topics (for trending bucket) ──────────────────────────
     print("Phase 1: Scraping trending topics...")
     scraped_topics = []
 
@@ -347,66 +348,71 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
     else:
         print("  [mock] Skipping scrape")
 
-    # ── Phase 2: Assemble 21-Topic Pool ──────────────────────────────────────
-    print("\nPhase 2: Assembling 21-topic pool via Gemini...")
+    # ── Phase 2: Assemble 21 Topics (3 buckets × 7 topics) ───────────────────
+    print("\nPhase 2: Assembling 3-bucket topic pool...")
+
+    content_types = client_config.get_content_types(client_id)
+    bucket_size = client_config.get_bucket_size(client_id)
+
+    # Load any existing client inputs for this week
+    inputs_file = output_dir / f"{week_of}-bucket-inputs.json"
+    client_inputs = {}
+    if inputs_file.exists():
+        try:
+            client_inputs = json.loads(inputs_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
 
     if mock:
-        topics = make_mock_topics(day_dates)
-        print("  [mock] Using mock topics")
-    else:
-        scraped_summary = (
-            "\n".join(
-                f"  - {t.get('text', t.get('topic', ''))[:100]}"
-                for t in scraped_topics[:20]
+        all_bucket_lists = []
+        for bucket_type in content_types:
+            bucket_topics = bucket_generators.generate_bucket(
+                bucket_type, config, week_of, day_dates,
+                scraped_posts=scraped_topics, client_inputs=client_inputs, mock=True
             )
-            or "  (none available — use 100% evergreen)"
-        )
+            all_bucket_lists.append((bucket_type, bucket_topics))
+        print(f"  [mock] 3 buckets: {', '.join(content_types)}")
+    else:
+        all_bucket_lists = []
+        for bucket_type in content_types:
+            display = bucket_generators.BUCKET_DISPLAY_NAMES.get(bucket_type, bucket_type)
+            print(f"  Generating {display} bucket topics...")
+            bucket_topics = bucket_generators.generate_bucket(
+                bucket_type, config, week_of, day_dates,
+                scraped_posts=scraped_topics, client_inputs=client_inputs, mock=False
+            )
+            all_bucket_lists.append((bucket_type, bucket_topics))
+            print(f"    {len(bucket_topics)} topics generated")
 
-        prompt = TOPIC_POOL_PROMPT.format(
-            display_name=display_name,
-            tagline=config.get("tagline", ""),
-            tone=tone,
-            pillars=pillars,
-            keywords=keywords,
-            n_scraped=len(scraped_topics),
-            scraped_summary=scraped_summary,
-            date_mon=day_dates["Mon"],
-            date_tue=day_dates["Tue"],
-            date_wed=day_dates["Wed"],
-            date_thu=day_dates["Thu"],
-            date_fri=day_dates["Fri"],
-            date_sat=day_dates["Sat"],
-            date_sun=day_dates["Sun"],
-        )
+    # Interleave: each day gets 1 topic from each bucket
+    # Mon: bucket0[0], bucket1[0], bucket2[0]
+    # Tue: bucket0[1], bucket1[1], bucket2[1]  etc.
+    topics = []
+    for day_idx in range(bucket_size):
+        for bucket_type, bucket_topics in all_bucket_lists:
+            if day_idx < len(bucket_topics):
+                topics.append(bucket_topics[day_idx])
 
-        try:
-            response = call_gemini(prompt, client_id=client_id)
-            topics = extract_json(response)
-            # Fill in dates if Gemini omitted them
-            for t in topics:
-                if not t.get("date"):
-                    t["date"] = day_dates.get(t.get("day", "Mon"), week_of)
-            print(f"  Generated {len(topics)} topics via Gemini")
-        except Exception as e:
-            print(f"  Warning: Gemini topic generation failed ({e}), using mock fallback")
-            errors.append(f"Phase 2 topic generation: {e}")
-            topics = make_mock_topics(day_dates)
+    # Renumber topic_num 1–21 sequentially
+    for i, t in enumerate(topics):
+        t["topic_num"] = i + 1
 
     # Print topic schedule
-    print(f"\n  {'#':<4} {'Day':<5} {'Date':<12} {'Angle':<16} Topic")
-    print(f"  {'-'*72}")
+    print(f"\n  {'#':<4} {'Bucket':<16} {'Day':<5} {'Date':<12} {'Angle':<18} Topic")
+    print(f"  {'-'*80}")
     for t in topics:
+        bucket_label = bucket_generators.BUCKET_DISPLAY_NAMES.get(t.get("bucket",""), t.get("bucket",""))
         print(
-            f"  {t['topic_num']:<4} {t['day']:<5} {t.get('date', ''):<12} "
-            f"{t.get('angle', ''):<16} {t['topic'][:48]}"
+            f"  {t['topic_num']:<4} {bucket_label:<16} {t['day']:<5} {t.get('date', ''):<12} "
+            f"{t.get('angle', ''):<18} {t['topic'][:40]}"
         )
     print()
 
     # ── Phase 3: Create Workbook ──────────────────────────────────────────────
     print("Phase 3: Creating workbook...")
     workbook_suffix = "mock-weekly-content" if mock else "weekly-content"
+    mock_flag = " --mock" if mock else ""
     try:
-        mock_flag = " --mock" if mock else ""
         run_cmd(
             f"{PY} scripts/weekly_pipeline.py "
             f"--action create-workbook --week-of {week_of} --client {client_id}{mock_flag}"
@@ -484,6 +490,7 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
 
             content_json = {
                 "date": date,
+                "bucket": topic_data.get("bucket", "trending"),
                 "day": day,
                 "topic": topic,
                 "platform": platform,
@@ -506,7 +513,7 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
             try:
                 run_cmd(
                     f"{PY} scripts/weekly_pipeline.py --action save-content "
-                    f"--week-of {week_of} --content-file {tmp_file} --client {client_id}"
+                    f"--week-of {week_of} --content-file {tmp_file} --client {client_id}{mock_flag}"
                 )
             except Exception as e:
                 print(f"    Warning: failed to save item {item_num}: {e}")
@@ -590,7 +597,7 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
     try:
         run_cmd(
             f"{PY} scripts/weekly_pipeline.py "
-            f"--action finalize --week-of {week_of} --client {client_id}"
+            f"--action finalize --week-of {week_of} --client {client_id}{mock_flag}"
         )
         print("  Workbook finalized")
     except Exception as e:
@@ -879,10 +886,179 @@ def main():
         default="image_en",
         help="What to regenerate: image_en, image_ru, content, content_ru",
     )
+    parser.add_argument(
+        "--mode", default="full",
+        choices=["full", "announcement"],
+        help="Pipeline mode: 'full' runs complete pipeline, 'announcement' generates only the announcement bucket for a week",
+    )
+    parser.add_argument(
+        "--announcement-text", default=None,
+        help="Announcement text for --mode announcement (used by generate-announcement.yml workflow)",
+    )
     args = parser.parse_args()
 
     client_id = args.client or client_config.get_active_client()
     week_of = get_monday(getattr(args, "week_of", None))
+
+    # Announcement-only mode: save input text and regenerate announcement bucket
+    if args.mode == "announcement" and args.announcement_text:
+        print(f"\nAnnouncement mode: {client_id}, week {week_of}")
+        cfg = client_config.load_config(client_id)
+        out_dir = client_config.get_output_dir(client_id)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save input text
+        inputs_file = out_dir / f"{week_of}-bucket-inputs.json"
+        inputs = {}
+        if inputs_file.exists():
+            try:
+                inputs = json.loads(inputs_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        inputs["announcements"] = {"text": args.announcement_text, "submitted_at": datetime.now().isoformat()}
+        inputs_file.write_text(json.dumps(inputs, indent=2, ensure_ascii=False))
+        print(f"  Input saved to {inputs_file}")
+
+        day_dates_ann = {
+            DAYS[i]: (datetime.strptime(week_of, "%Y-%m-%d") + timedelta(days=i)).strftime("%Y-%m-%d")
+            for i in range(7)
+        }
+        ann_topics = bucket_generators.generate_announcement_placeholders(
+            cfg, week_of, day_dates_ann, args.announcement_text, mock=args.mock
+        )
+        print(f"  Generated {len(ann_topics)} announcement topics")
+
+        # Generate full content + images for each announcement topic
+        # (Reuse the same per-topic content generation as Phase 4)
+        xlsx_path = out_dir / f"{week_of}-weekly-content.xlsx"
+        if not xlsx_path.exists():
+            print(f"  Error: workbook not found at {xlsx_path}. Run full pipeline first.")
+            sys.exit(1)
+
+        # Update announcement rows in workbook by generating content for each topic
+        from openpyxl import load_workbook as opxl_load
+        wb = opxl_load(str(xlsx_path))
+        ws = wb["Content"]
+
+        for row in ws.iter_rows(min_row=2):
+            bucket_cell = row[1]  # Column B = Bucket
+            if str(bucket_cell.value or "").lower() == "announcements":
+                # Find matching announcement topic by day
+                day_val = str(row[2].value or "")  # Column C = Day
+                ann_topic = next((t for t in ann_topics if t["day"] == day_val), None)
+                if ann_topic:
+                    row[3].value = ann_topic["topic"]  # Column D = Topic
+                    row[14].value = "Draft"            # Column O = Status (was Pending Input)
+
+        wb.save(str(xlsx_path))
+        print(f"  Workbook updated with announcement topics")
+
+        # Generate content via Gemini for each announcement topic (both platforms)
+        tone = cfg.get("content", {}).get("tone", "educational")
+        voice = cfg.get("content", {}).get("voice", "")
+        display_name = cfg.get("display_name", client_id)
+        pillars = "; ".join(cfg.get("content", {}).get("messaging_pillars", []))
+        ctas = "; ".join(cfg.get("content", {}).get("cta_examples", []))
+        hashtags_cfg = ", ".join(cfg.get("content", {}).get("hashtags", []))
+        mascot = cfg.get("brand", {}).get("mascot_description", "brand mascot")
+        bg_style = cfg.get("brand", {}).get("background_style", "dark background")
+
+        for topic_data in ann_topics:
+            for platform in ["Twitter", "Telegram"]:
+                day_pos = topic_data["topic_num"]
+                twitter_fmt = "thread" if day_pos <= 2 else "single"
+                fmt = twitter_fmt if platform == "Twitter" else "long-form"
+                slug = topic_slug(topic_data["topic"])
+                style_key, style_desc = get_style_preset(cfg, topic_data.get("angle", "Product"))
+
+                en_path = make_image_path(client_id, week_of, topic_data["day"], slug, platform)
+                ru_path = make_image_path(client_id, week_of, topic_data["day"], slug, platform, ru=True)
+
+                print(f"  Generating content: {topic_data['day']} {platform} [{topic_data['topic'][:40]}]...")
+
+                if not args.mock:
+                    format_desc = fmt + (" (5 tweets separated by ---)" if fmt == "thread" else "")
+                    platform_rules = get_platform_rules(cfg, platform, fmt)
+                    prompt = CONTENT_GEN_PROMPT.format(
+                        display_name=display_name, tone=tone, voice=voice,
+                        tagline=cfg.get("tagline", ""), pillars=pillars, ctas=ctas,
+                        hashtags=hashtags_cfg,
+                        topic_num=topic_data["topic_num"], topic=topic_data["topic"],
+                        angle=topic_data.get("angle", "Announcement"),
+                        day=topic_data["day"], date=topic_data["date"],
+                        platform=platform, format_desc=format_desc,
+                        platform_rules=platform_rules, mascot=mascot, bg_style=bg_style,
+                        style_preset=style_desc,
+                    )
+                    try:
+                        response = call_gemini(prompt, client_id=client_id)
+                        c = extract_json(response)
+                    except Exception as e:
+                        print(f"    Warning: content gen failed: {e}")
+                        c = dict(MOCK_CONTENT)
+                else:
+                    c = dict(MOCK_CONTENT)
+                    c["content"] = f"[Mock announcement {platform} EN] {topic_data['topic'][:60]}"
+
+                content_json = {
+                    "date": topic_data["date"],
+                    "bucket": "announcements",
+                    "day": topic_data["day"],
+                    "topic": topic_data["topic"],
+                    "platform": platform,
+                    "format": fmt,
+                    "content": c.get("content", ""),
+                    "image_prompt": c.get("image_prompt", f"{display_name}: {topic_data['topic']}"),
+                    "image_path": en_path,
+                    "hashtags": c.get("hashtags", []),
+                    "content_ru": c.get("content_ru", ""),
+                    "image_prompt_ru": c.get("image_prompt_ru", ""),
+                    "image_path_ru": ru_path,
+                    "hashtags_ru": c.get("hashtags_ru", []),
+                    "status": "Draft",
+                }
+
+                tmp_file = f"/tmp/ann_content_{topic_data['day']}_{platform.lower()}.json"
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    json.dump(content_json, f, ensure_ascii=False, indent=2)
+
+                # Update the existing row in workbook (find by bucket+day+platform)
+                wb2 = opxl_load(str(xlsx_path))
+                ws2 = wb2["Content"]
+                for row in ws2.iter_rows(min_row=2):
+                    if (str(row[1].value or "").lower() == "announcements" and
+                            str(row[2].value or "") == topic_data["day"] and
+                            str(row[4].value or "").lower() == platform.lower()):
+                        row[3].value = topic_data["topic"]     # D: Topic
+                        row[6].value = c.get("content", "")   # G: Content
+                        row[7].value = c.get("image_prompt", "")  # H: Image Prompt
+                        row[8].value = en_path                 # I: Image Path
+                        row[9].value = ", ".join(c.get("hashtags", []))  # J: Hashtags
+                        row[10].value = c.get("content_ru", "")  # K: Content_RU
+                        row[11].value = c.get("image_prompt_ru", "")  # L: Image_Prompt_RU
+                        row[12].value = ru_path                # M: Image_Path_RU
+                        row[13].value = ", ".join(c.get("hashtags_ru", []))  # N: Hashtags_RU
+                        row[14].value = "Draft"                # O: Status
+                        break
+                wb2.save(str(xlsx_path))
+
+                # Generate images if not skipping
+                if not args.mock and not args.skip_images:
+                    img_dir = (PROJECT_ROOT / en_path).parent
+                    img_dir.mkdir(parents=True, exist_ok=True)
+                    safe_en = c.get("image_prompt", "").replace('"', "'")
+                    safe_ru = c.get("image_prompt_ru", "").replace('"', "'")
+                    try:
+                        run_cmd(f'{PY} scripts/nano_banana.py --prompt "{safe_en}" --output "{en_path}" --style {style_key} --client {client_id}')
+                    except Exception as e:
+                        print(f"    Warning: EN image failed: {e}")
+                    try:
+                        run_cmd(f'{PY} scripts/wavespeed_img.py --prompt "{safe_ru}" --output "{ru_path}" --client {client_id}')
+                    except Exception as e:
+                        print(f"    Warning: RU image failed: {e}")
+
+        print(f"\nAnnouncement mode complete. Week: {week_of}")
+        sys.exit(0)
 
     if args.regen_topic is not None:
         success = run_regen_item(

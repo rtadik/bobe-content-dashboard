@@ -40,6 +40,12 @@
       "twitter",
       "telegram"
     ],
+    "content_types": [
+      "trending",
+      "education",
+      "announcements"
+    ],
+    "bucket_size": 7,
     "platform_formats": {
       "twitter": {
         "thread_tweets": 5,

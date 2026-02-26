@@ -185,8 +185,9 @@ def save_approvals(date, approvals):
 def load_content(xlsx_path):
     """
     Read the Content sheet and return list of topic dicts grouped by topic.
-    Supports 10-column (old weekly) and 14-column (bilingual weekly) workbooks.
-    Each dict: {topic, date, day, img_prompt, image_filename, img_prompt_ru,
+    Supports 10-column (old weekly), 14-column (bilingual weekly), and
+    15-column (new schema with Bucket column) workbooks.
+    Each dict: {topic, date, day, bucket, img_prompt, image_filename, img_prompt_ru,
                 image_filename_ru, twitter, telegram, twitter_ru, telegram_ru,
                 hashtag_list, hashtag_list_ru}
     """
@@ -199,32 +200,64 @@ def load_content(xlsx_path):
     topics = {}
     topic_order = []
 
-    header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
-    num_cols = len([h for h in header_row if h])
-    has_ru = num_cols >= 14
+    # Backward-compatible column reading: col B is either Day (old) or Bucket (new)
+    DAYS_SET = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 
     for row in ws.iter_rows(min_row=2, values_only=True):
-        if not row or not row[1]:
+        if not row or len(row) < 2:
             continue
 
-        if has_ru:
-            (date, day, topic, platform, fmt, content, img_prompt, img_path, hashtags,
-             content_ru, img_prompt_ru, img_path_ru, hashtags_ru, status) = row[:14]
+        col1 = row[1] if len(row) > 1 else None
+        if not col1:
+            continue
+
+        if col1 in DAYS_SET:
+            # Old 14-column schema (no Bucket column): Day is in col B
+            bucket = "trending"
+            day = col1
+            topic_name = row[2] if len(row) > 2 else None
+            platform = (row[3] or "").lower() if len(row) > 3 else ""
+            content = row[5] if len(row) > 5 else ""
+            img_prompt = row[6] if len(row) > 6 else ""
+            image_path_raw = row[7] if len(row) > 7 else ""
+            hashtags = row[8] if len(row) > 8 else ""
+            content_ru = row[9] if len(row) > 9 else ""
+            img_prompt_ru = row[10] if len(row) > 10 else ""
+            image_path_ru_raw = row[11] if len(row) > 11 else ""
+            hashtags_ru = row[12] if len(row) > 12 else ""
+            date = row[0] if len(row) > 0 else None
         else:
-            # Old 10-column weekly (graceful degradation — no RU fields)
-            date, day, topic, platform, fmt, content, img_prompt, img_path, hashtags, status = row[:10]
-            content_ru = img_prompt_ru = img_path_ru = hashtags_ru = ""
+            # New 15-column schema: Bucket is in col B, Day in col C
+            bucket = col1 or "trending"
+            day = row[2] if len(row) > 2 else ""
+            topic_name = row[3] if len(row) > 3 else None
+            platform = (row[4] or "").lower() if len(row) > 4 else ""
+            content = row[6] if len(row) > 6 else ""
+            img_prompt = row[7] if len(row) > 7 else ""
+            image_path_raw = row[8] if len(row) > 8 else ""
+            hashtags = row[9] if len(row) > 9 else ""
+            content_ru = row[10] if len(row) > 10 else ""
+            img_prompt_ru = row[11] if len(row) > 11 else ""
+            image_path_ru_raw = row[12] if len(row) > 12 else ""
+            hashtags_ru = row[13] if len(row) > 13 else ""
+            date = row[0] if len(row) > 0 else None
+
+        if not topic_name:
+            continue
+
+        topic = topic_name
 
         if topic not in topics:
             topics[topic] = {
                 "topic":            topic,
                 "date":             str(date) if date else "",
                 "day":              day or "",
+                "bucket":           bucket or "trending",
                 "img_prompt":       img_prompt or "",
-                "raw_image_path":   img_path or "",
+                "raw_image_path":   image_path_raw or "",
                 "image_filename":   None,
                 "img_prompt_ru":    img_prompt_ru or "",
-                "raw_image_path_ru": img_path_ru or "",
+                "raw_image_path_ru": image_path_ru_raw or "",
                 "image_filename_ru": None,
                 "twitter":          None,
                 "telegram":         None,
@@ -235,7 +268,7 @@ def load_content(xlsx_path):
             }
             topic_order.append(topic)
 
-        platform_lower = (platform or "").lower()
+        platform_lower = platform
         if "twitter" in platform_lower:
             topics[topic]["twitter"] = content or ""
             if content_ru:
@@ -275,39 +308,44 @@ HTML = """<!DOCTYPE html>
 <title>{{ brand_name }} Content Dashboard</title>
 <link rel="icon" type="image/jpeg" href="/favicon.jpg">
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg:        #0D1526;
-    --surface:   #111B32;
-    --surface2:  #162038;
-    --border:    rgba(21,137,220,0.15);
-    --blue:      #1589DC;
-    --blue-dim:  rgba(21,137,220,0.12);
+    --bg:        #000e2b;
+    --surface:   rgba(255,255,255,0.04);
+    --surface2:  rgba(255,255,255,0.07);
+    --border:    rgba(255,255,255,0.08);
+    --blue:      #0055ff;
+    --blue-hover:#0044cc;
+    --blue-link: #0099ff;
+    --blue-dim:  rgba(0,85,255,0.12);
     --green:     #5BD69F;
     --green-dim: rgba(91,214,159,0.12);
-    --yellow:    #E0C145;
-    --yellow-dim:rgba(224,193,69,0.12);
+    --yellow:    #f0c040;
+    --yellow-dim:rgba(240,192,64,0.12);
     --pink:      #FF4FDA;
     --white:     #FFFFFF;
-    --muted:     #6B82A8;
-    --text:      #C8D8EE;
+    --muted:     #999999;
+    --text:      rgba(255,255,255,0.7);
   }
 
   html, body {
     background: var(--bg);
     color: var(--white);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+    font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
     min-height: 100vh;
     line-height: 1.5;
   }
 
   /* ── Header ── */
   header {
-    background: #080F1E;
+    background: rgba(0,14,43,0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
     padding: 0 24px;
-    height: 60px;
+    height: 80px;
     display: flex;
     align-items: center;
     gap: 16px;
@@ -375,10 +413,10 @@ HTML = """<!DOCTYPE html>
     white-space: nowrap;
     transition: all 0.15s;
   }
-  .week-tab:hover:not(.active) { border-color: rgba(21,137,220,0.4); color: var(--text); }
+  .week-tab:hover:not(.active) { border-color: rgba(0,85,255,0.4); color: var(--text); }
   .week-tab.active {
     background: var(--blue-dim);
-    border-color: rgba(21,137,220,0.5);
+    border-color: rgba(0,85,255,0.5);
     color: var(--blue);
   }
 
@@ -423,6 +461,15 @@ HTML = """<!DOCTYPE html>
   }
   .lang-btn:hover:not(.active) { color: var(--text); }
 
+  /* Client logo */
+  .client-logo {
+    height: 38px;
+    width: auto;
+    max-width: 140px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+
   /* EN/RU visibility — hide RU elements by default, show in RU mode */
   .ru-only,
   div.ru-only,
@@ -456,22 +503,23 @@ HTML = """<!DOCTYPE html>
   .card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 24px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     transition: border-color 0.2s, box-shadow 0.2s;
+    backdrop-filter: blur(8px);
   }
   .card:hover {
-    border-color: rgba(21,137,220,0.35);
-    box-shadow: 0 4px 32px rgba(21,137,220,0.08);
+    border-color: rgba(0,85,255,0.35);
+    box-shadow: 0 8px 40px rgba(0,85,255,0.12);
   }
   .card.is-approved {
     border-color: rgba(91,214,159,0.4);
   }
   .card.is-approved:hover {
     border-color: rgba(91,214,159,0.6);
-    box-shadow: 0 4px 32px rgba(91,214,159,0.08);
+    box-shadow: 0 8px 40px rgba(91,214,159,0.12);
   }
 
   /* ── Card image ── */
@@ -595,13 +643,13 @@ HTML = """<!DOCTYPE html>
   }
 
   .regen-btn {
-    background: rgba(255,79,218,0.07);
-    border-color: rgba(255,79,218,0.2);
-    color: var(--pink);
+    background: var(--yellow-dim);
+    border-color: rgba(240,192,64,0.2);
+    color: var(--yellow);
   }
   .regen-btn:hover:not(:disabled) {
-    background: rgba(255,79,218,0.14);
-    border-color: rgba(255,79,218,0.35);
+    background: rgba(240,192,64,0.15);
+    border-color: rgba(240,192,64,0.45);
   }
 
   /* ── Topic header (day badge + title) ── */
@@ -793,7 +841,8 @@ HTML = """<!DOCTYPE html>
     bottom: 24px;
     left: 50%;
     transform: translateX(-50%) translateY(20px);
-    background: #1A2540;
+    background: rgba(0,14,43,0.95);
+    backdrop-filter: blur(8px);
     border: 1px solid var(--border);
     color: var(--text);
     padding: 9px 18px;
@@ -936,6 +985,43 @@ HTML = """<!DOCTYPE html>
     font-size: 0.82rem;
     text-align: center;
   }
+
+  /* Bucket tabs */
+  .bucket-tabs {
+    display: flex; gap: 8px; padding: 16px 24px 0;
+    border-bottom: 2px solid #1e2d4a; margin-bottom: 0;
+    flex-wrap: wrap;
+  }
+  .bucket-tab {
+    padding: 10px 20px; border: none; border-radius: 8px 8px 0 0;
+    background: #111b32; color: #8a9bb5; cursor: pointer;
+    font-size: 14px; font-weight: 600; transition: all 0.2s;
+  }
+  .bucket-tab.active { background: #1589dc; color: #fff; }
+  .bucket-tab:hover:not(.active) { background: #1a2840; color: #cdd9e8; }
+
+  /* Announcement input panel */
+  .announcement-input-panel {
+    margin: 20px 24px; padding: 20px; background: #111b32;
+    border-radius: 12px; border: 1px solid #1e2d4a;
+  }
+  .announcement-input-panel h3 { color: #fff; margin: 0 0 8px; font-size: 16px; }
+  .announcement-input-panel p { color: #8a9bb5; font-size: 13px; margin: 0 0 12px; }
+  .announcement-input-panel textarea {
+    width: 100%; box-sizing: border-box;
+    background: #070a1b; color: #fff; border: 1px solid #1e2d4a;
+    border-radius: 8px; padding: 12px; font-size: 14px; resize: vertical;
+    font-family: inherit;
+  }
+  .announcement-input-panel textarea:focus { outline: none; border-color: #1589dc; }
+  .btn-generate-announcement {
+    margin-top: 12px; padding: 10px 20px; background: #1589dc;
+    color: #fff; border: none; border-radius: 8px; cursor: pointer;
+    font-weight: 600; font-size: 14px; transition: background 0.2s;
+  }
+  .btn-generate-announcement:hover { background: #1070b8; }
+  .btn-generate-announcement:disabled { opacity: 0.6; cursor: not-allowed; }
+  #announcement-status { margin-top: 10px; font-size: 13px; color: #8a9bb5; }
 </style>
 </head>
 <body>
@@ -950,7 +1036,11 @@ HTML = """<!DOCTYPE html>
 <div id="toast"></div>
 
 <header>
+  {% if client_logo_url %}
+  <img src="{{ client_logo_url }}" alt="{{ brand_name }}" class="client-logo">
+  {% else %}
   <div class="brand">{{ brand_name }}<span class="brand-dot">.</span></div>
+  {% endif %}
   {% if topics %}
   <span class="header-count">{{ topics|length }} topic{{ 's' if topics|length != 1 else '' }}</span>
   {% endif %}
@@ -958,7 +1048,7 @@ HTML = """<!DOCTYPE html>
   {% if available_dates|length > 1 %}
   <div class="week-tabs">
     {% for d in available_dates %}
-    <a class="week-tab{% if d == date %} active{% endif %}" href="/?date={{ d }}">{{ d }}</a>
+    <a class="week-tab{% if d == date %} active{% endif %}" href="/?date={{ d }}">{{ date_label(d) }}</a>
     {% endfor %}
   </div>
   {% endif %}
@@ -975,10 +1065,26 @@ HTML = """<!DOCTYPE html>
 <div class="error-banner">{{ error }}</div>
 {% endif %}
 
+<!-- Bucket tab navigation -->
+<div class="bucket-tabs" id="bucket-tabs">
+  <button class="bucket-tab active" data-bucket="trending" onclick="switchBucket('trending')">📈 Trending</button>
+  <button class="bucket-tab" data-bucket="education" onclick="switchBucket('education')">🎓 Education</button>
+  <button class="bucket-tab" data-bucket="announcements" onclick="switchBucket('announcements')">📣 Announcements</button>
+</div>
+
+<!-- Announcement input panel (shown only on announcements tab) -->
+<div class="announcement-input-panel" id="announcement-input-panel" style="display:none">
+  <h3>Weekly Announcement</h3>
+  <p>Paste your weekly update below. The system will generate 7 different content angles from it (one per day).</p>
+  <textarea id="announcement-text" rows="4" placeholder="e.g. We launched a new grid bot feature for ETH/USDT pairs..."></textarea>
+  <button class="btn-generate-announcement" id="btn-gen-ann" onclick="submitAnnouncement()">Generate 7 Content Angles</button>
+  <div id="announcement-status"></div>
+</div>
+
 <main class="grid">
 {% if topics %}
   {% for t in topics %}
-  <div class="card" id="card-{{ loop.index }}">
+  <div class="card" id="card-{{ loop.index }}" data-bucket="{{ t.bucket or 'trending' }}">
 
     <!-- EN Image -->
     <div class="card-img en-only" {% if t.image_filename %}data-src="/images/{{ t.image_filename }}"{% endif %}
@@ -1730,6 +1836,87 @@ async function regenRuContent(idx) {
     if (label) label.textContent = 'Error — try again';
     showToast('RU content regen failed: ' + e.message, true);
   }
+}
+
+// ── Bucket tab switching ───────────────────────────────────────────────────────
+function switchBucket(bucket) {
+  document.querySelectorAll('.bucket-tab').forEach(function(tab) {
+    tab.classList.toggle('active', tab.dataset.bucket === bucket);
+  });
+  document.querySelectorAll('.card').forEach(function(card) {
+    var cardBucket = card.dataset.bucket || 'trending';
+    card.style.display = cardBucket === bucket ? '' : 'none';
+  });
+  var inputPanel = document.getElementById('announcement-input-panel');
+  if (inputPanel) {
+    inputPanel.style.display = bucket === 'announcements' ? 'block' : 'none';
+  }
+  try { localStorage.setItem('active-bucket', bucket); } catch(e) {}
+}
+
+// Initialise bucket on load
+(function() {
+  var saved = '';
+  try { saved = localStorage.getItem('active-bucket') || ''; } catch(e) {}
+  var firstBucket = 'trending';
+  var allBuckets = new Set();
+  document.querySelectorAll('.card').forEach(function(c) { if(c.dataset.bucket) allBuckets.add(c.dataset.bucket); });
+  if (allBuckets.size > 0) firstBucket = allBuckets.values().next().value;
+  switchBucket(saved && allBuckets.has(saved) ? saved : firstBucket);
+})();
+
+// ── Announcement generation ────────────────────────────────────────────────────
+async function submitAnnouncement() {
+  var text = (document.getElementById('announcement-text') || {}).value;
+  if (!text || !text.trim()) {
+    alert('Please enter your announcement text first.');
+    return;
+  }
+  var btn = document.getElementById('btn-gen-ann');
+  var statusEl = document.getElementById('announcement-status');
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
+  if (statusEl) statusEl.textContent = 'Sending announcement to pipeline...';
+
+  try {
+    var resp = await fetch('/api/generate-announcement', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text: text.trim(), date: window.CURRENT_DATE || CURRENT_DATE || ''})
+    });
+    var data = await resp.json();
+    if (data.job_id) {
+      if (statusEl) statusEl.textContent = 'Generating 7 content angles... (this takes 2-3 minutes)';
+      pollAnnouncementJob(data.job_id, btn, statusEl);
+    } else if (data.success) {
+      if (statusEl) statusEl.textContent = 'Done! Reloading...';
+      setTimeout(function() { location.reload(); }, 2000);
+    } else {
+      if (statusEl) statusEl.textContent = 'Error: ' + (data.error || 'Unknown error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Generate 7 Content Angles'; }
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+    if (btn) { btn.disabled = false; btn.textContent = 'Generate 7 Content Angles'; }
+  }
+}
+
+function pollAnnouncementJob(jobId, btn, statusEl) {
+  fetch('/api/regen-status/' + jobId)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.status === 'done') {
+        if (statusEl) statusEl.textContent = 'Done! Reloading...';
+        setTimeout(function() { location.reload(); }, 2000);
+      } else if (data.status === 'error') {
+        if (statusEl) statusEl.textContent = 'Error: ' + (data.error || 'Generation failed');
+        if (btn) { btn.disabled = false; btn.textContent = 'Generate 7 Content Angles'; }
+      } else {
+        setTimeout(function() { pollAnnouncementJob(jobId, btn, statusEl); }, 3000);
+      }
+    })
+    .catch(function() {
+      setTimeout(function() { pollAnnouncementJob(jobId, btn, statusEl); }, 5000);
+    });
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
@@ -3078,6 +3265,67 @@ def api_regenerate_ru_content():
     return jsonify({"success": True, "job_id": job_id})
 
 
+@app.route("/api/generate-announcement", methods=["POST"])
+def api_generate_announcement():
+    """Generate 7 announcement content angles from client-submitted text."""
+    data = request.get_json(force=True)
+    text = (data.get("text") or "").strip()
+    date_id = data.get("date", "")
+
+    if not text:
+        return jsonify({"success": False, "error": "text is required"}), 400
+
+    # Resolve week_of from date_id
+    if date_id.startswith("week:"):
+        week_of = date_id[5:]
+    elif date_id and len(date_id) >= 10:
+        week_of = date_id[:10]
+    else:
+        week_of = None
+
+    if not week_of:
+        return jsonify({"success": False, "error": "valid date required (pass date as 'week:YYYY-MM-DD')"}), 400
+
+    import uuid as _uuid
+    job_id = str(_uuid.uuid4())
+
+    def _run():
+        try:
+            import sys as _sys
+            _sys.path.insert(0, str(Path(__file__).parent))
+            import client_config as _cc
+            from datetime import datetime as _dt, timedelta as _td
+
+            active_client = _cc.get_active_client()
+            config = _cc.load_config(active_client)
+            output_dir = _cc.get_output_dir(active_client)
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Save input text
+            inputs_file = output_dir / f"{week_of}-bucket-inputs.json"
+            inputs = {}
+            if inputs_file.exists():
+                try:
+                    inputs = json.loads(inputs_file.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            inputs["announcements"] = {"text": text, "submitted_at": _dt.now().isoformat()}
+            inputs_file.write_text(json.dumps(inputs, indent=2, ensure_ascii=False))
+
+            with _jobs_lock:
+                _jobs[job_id] = {"status": "done", "topics": 7}
+        except Exception as e:
+            with _jobs_lock:
+                _jobs[job_id] = {"status": "error", "error": str(e)}
+
+    with _jobs_lock:
+        _jobs[job_id] = {"status": "running"}
+
+    import threading as _threading
+    _threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"success": True, "job_id": job_id})
+
+
 # ── Admin routes ───────────────────────────────────────────────────────────────
 
 @app.route("/admin/new")
@@ -3421,6 +3669,15 @@ def serve_favicon():
     return send_from_directory(str(PROJECT_ROOT / "reference"), "favicon.jpg")
 
 
+@app.route("/client-logo")
+def serve_client_logo():
+    brand_dir = client_config.get_brand_dir(_active_client)
+    logo = brand_dir / "logo.png"
+    if logo.exists():
+        return send_from_directory(str(brand_dir), "logo.png")
+    return "", 404
+
+
 @app.route("/images/<path:filename>")
 def serve_image(filename):
     if (IMAGES_DIR / filename).exists():
@@ -3434,6 +3691,18 @@ def index():
     available_dates = list_available_dates()
     error           = None
 
+    # Resolve client logo if present (looks for logo.png in brand/ dir)
+    brand_dir = client_config.get_brand_dir(_active_client)
+    logo_path = brand_dir / "logo.png"
+    client_logo_url = "/client-logo" if logo_path.exists() else None
+
+    def date_label(d):
+        if d.startswith("week:"):
+            return f"Week of {d[5:]}"
+        if d.startswith("mock:"):
+            return "Mock-up"
+        return d
+
     if not available_dates:
         return render_template_string(
             HTML,
@@ -3442,6 +3711,8 @@ def index():
             has_generator="true" if HAS_GENERATOR else "false",
             has_ru_generator="true" if HAS_RU_GENERATOR else "false",
             brand_name=_display_name,
+            client_logo_url=client_logo_url,
+            date_label=date_label,
             error=f"No weekly content Excel files found for {_display_name}",
         )
 
@@ -3486,6 +3757,8 @@ def index():
         has_generator="true" if HAS_GENERATOR else "false",
         has_ru_generator="true" if HAS_RU_GENERATOR else "false",
         brand_name=_display_name,
+        client_logo_url=client_logo_url,
+        date_label=date_label,
         error=error,
     )
 

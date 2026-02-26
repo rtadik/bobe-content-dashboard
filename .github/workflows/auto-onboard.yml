@@ -462,6 +462,125 @@ jobs:
           print(f"keywords.md written ({len(output)} chars)")
           PYEOF
 
+      - name: Write content_types to config.json
+        env:
+          INTAKE_JSON: ${{ github.event.inputs.intake_json }}
+          CLIENT_ID: ${{ steps.parse.outputs.client_id }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os
+
+          intake = json.loads(os.environ["INTAKE_JSON"])
+          client_id = os.environ["CLIENT_ID"]
+          config_path = f"clients/{client_id}/config.json"
+
+          with open(config_path) as f:
+              config = json.load(f)
+
+          content_types = intake.get("content_types", ["trending", "education", "announcements"])
+          if not isinstance(content_types, list) or len(content_types) != 3:
+              content_types = ["trending", "education", "announcements"]
+
+          config.setdefault("content", {})["content_types"] = content_types
+          config["content"]["bucket_size"] = 7
+
+          with open(config_path, "w") as f:
+              json.dump(config, f, indent=2)
+
+          print(f"content_types written: {content_types}")
+          PYEOF
+
+      - name: Generate belief-journey.md via Gemini
+        env:
+          INTAKE_JSON: ${{ github.event.inputs.intake_json }}
+          CLIENT_ID: ${{ steps.parse.outputs.client_id }}
+          GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, sys
+
+          intake = json.loads(os.environ["INTAKE_JSON"])
+          client_id = os.environ["CLIENT_ID"]
+          api_key = os.environ.get("GOOGLE_AI_API_KEY", "")
+          display_name = intake.get("display_name", client_id)
+
+          audience = intake.get("audience", {})
+          icp = f"Age: {audience.get('age_range','')}, Situation: {audience.get('situation','')}"
+          pain_points = "\n".join(f"- {p}" for p in audience.get("pain_points", []))
+          desired_outcome = audience.get("desired_outcome", "")
+          differentiators = "\n".join(f"- {d}" for d in intake.get("differentiators", []))
+          pillars = "\n".join(f"- {p}" for p in intake.get("voice", {}).get("messaging_pillars", []))
+          description = intake.get("description", "")
+          tone = ", ".join(intake.get("voice", {}).get("tone_adjectives", ["educational", "transparent"]))
+
+          prompt = f"""You are a content strategist and conversion expert.
+
+          Product: {display_name}
+          Description: {description}
+          ICP: {icp}
+          Pain points:
+          {pain_points}
+          Desired outcome: {desired_outcome}
+          Differentiators:
+          {differentiators}
+          Messaging pillars:
+          {pillars}
+
+          Create a 7-stage belief journey for {display_name}. This maps the 7 beliefs a cold prospect must
+          progressively hold before they become a paying customer.
+
+          The 7 stages must follow this arc:
+          1. Awareness: they recognise they have a costly problem
+          2. Problem depth: the problem is bigger than they thought
+          3. Solution category: a structured solution exists
+          4. Skepticism overcome: not all solutions in this category are risky
+          5. Product differentiation: {display_name} specifically is the right choice
+          6. Proof: they can verify the claims
+          7. Action readiness: they know the first safe step
+
+          RULES:
+          - Never use em-dashes, en-dashes, or double-hyphens as punctuation
+          - Each stage must be specific to {display_name} and its ICP
+          - Tone: {tone}
+
+          For EACH of the 7 stages, write:
+
+          ## Belief Stage N: [Stage Name]
+          **Belief needed:** "Single sentence stating what the prospect must believe."
+          **Starting belief:** "What the cold prospect currently thinks."
+          **Content angle:** One sentence on how to frame content that moves them from starting to needed belief.
+          **Example topic title:** A social media post title (max 80 chars) that serves this stage.
+
+          Return only the markdown content, no preamble."""
+
+          content = ""
+          if api_key:
+              try:
+                  from google import genai
+                  gc = genai.Client(api_key=api_key)
+                  resp = gc.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+                  content = resp.text.strip()
+                  print("Belief journey generated via Gemini.")
+              except Exception as e:
+                  print(f"Warning: Gemini failed ({e}), writing placeholder belief journey")
+          else:
+              print("Warning: GOOGLE_AI_API_KEY not set, writing placeholder belief journey")
+
+          if not content:
+              content = "\n\n".join([
+                  f"## Belief Stage {i}: [Stage {i}]\n**Belief needed:** \"\"\n**Starting belief:** \"\"\n**Content angle:** \"\"\n**Example topic title:** \"\""
+                  for i in range(1, 8)
+              ])
+
+          header = f"# {display_name} — Belief Journey\n\n> Auto-generated from intake data. Edit to refine.\n> Used by the Education content bucket to generate weekly belief-building topics.\n\n---\n\n"
+          output = header + content + "\n"
+
+          path = f"clients/{client_id}/belief-journey.md"
+          with open(path, "w") as f:
+              f.write(output)
+          print(f"belief-journey.md written ({len(output)} chars)")
+          PYEOF
+
       - name: Commit new client directory to main
         run: |
           git config user.name "github-actions[bot]"
@@ -478,8 +597,74 @@ jobs:
           echo "Contact email: ${{ steps.parse.outputs.email }}"
           echo ""
 
-  deploy:
+    outputs:
+      client_id: ${{ steps.parse.outputs.client_id }}
+      display_name: ${{ steps.parse.outputs.display_name }}
+
+  # Run the content pipeline immediately after onboarding.
+  # Generates this week's content so the client has something to see on first login.
+  initial-pipeline:
     needs: onboard
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install requests openpyxl google-genai python-dotenv jinja2 flask pillow
+
+      - name: Create .env from secrets
+        run: |
+          echo "APIFY_API_TOKEN=${{ secrets.APIFY_API_TOKEN }}" >> .env
+          echo "GOOGLE_AI_API_KEY=${{ secrets.GOOGLE_AI_API_KEY }}" >> .env
+          echo "WAVESPEED_API_KEY=${{ secrets.WAVESPEED_API_KEY }}" >> .env
+          echo "AIRTABLE_API_KEY=${{ secrets.AIRTABLE_API_KEY }}" >> .env
+          echo "GH_REGEN_TOKEN=${{ secrets.GH_REGEN_TOKEN }}" >> .env
+
+      - name: Set active client
+        run: echo "${{ needs.onboard.outputs.client_id }}" > .active-client
+
+      - name: Run initial content pipeline
+        run: |
+          python scripts/pipeline_runner.py \
+            --client ${{ needs.onboard.outputs.client_id }} \
+            --skip-deploy
+        continue-on-error: true  # Don't block deploy if pipeline fails on first run
+
+      - name: Upload pipeline outputs as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: initial-pipeline-${{ needs.onboard.outputs.client_id }}-${{ github.run_id }}
+          path: outputs/content/${{ needs.onboard.outputs.client_id }}/
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload Excel workbook as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: initial-content-${{ needs.onboard.outputs.client_id }}-${{ github.run_id }}
+          path: outputs/content/${{ needs.onboard.outputs.client_id }}/*.xlsx
+          retention-days: 30
+          if-no-files-found: warn
+
+  deploy:
+    needs: [onboard, initial-pipeline]
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -510,11 +695,32 @@ jobs:
           echo "AIRTABLE_API_KEY=${{ secrets.AIRTABLE_API_KEY }}" >> .env
           echo "GH_REGEN_TOKEN=${{ secrets.GH_REGEN_TOKEN }}" >> .env
 
+      - name: Download initial pipeline outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: initial-pipeline-${{ needs.onboard.outputs.client_id }}-${{ github.run_id }}
+          path: outputs/content/${{ needs.onboard.outputs.client_id }}/
+        continue-on-error: true  # If pipeline was skipped or failed, build proceeds without content
+
       - name: Build static site (all clients)
         run: |
-          python scripts/build_static.py \
-            --output dist \
-            --include-admin
+          # Build for every onboarded client so login page and dashboards are all current
+          FIRST=true
+          for client_dir in clients/*/; do
+            client_id=$(basename "$client_dir")
+            if [[ "$client_id" == _* ]] || [[ "$client_id" == "intake" ]]; then
+              continue
+            fi
+            if [ -f "clients/$client_id/config.json" ]; then
+              echo "Building for client: $client_id"
+              if [ "$FIRST" = "true" ]; then
+                python scripts/build_static.py --output dist --include-admin --client "$client_id" || true
+                FIRST=false
+              else
+                python scripts/build_static.py --output dist --include-admin --no-clean --client "$client_id" || true
+              fi
+            fi
+          done
 
       - name: Copy admin panel to dist
         run: |
