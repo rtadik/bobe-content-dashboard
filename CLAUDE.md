@@ -34,6 +34,8 @@ This file is the single source of truth for how Claude should understand and ope
 │   └── workflows/
 │       ├── weekly-pipeline.yml        # GH Actions: workflow_dispatch → pipeline_runner.py → deploy
 │       ├── generate-announcement.yml  # GH Actions: client announcement input → 7 content angles → deploy
+│       ├── regenerate-item.yml        # GH Actions: regen single topic item (image/content) → deploy
+│       ├── publish-to-x.yml           # GH Actions: publish Twitter thread to X → commit xlsx → deploy
 │       ├── onboard-client.yml         # GH Actions: workflow_dispatch → create client dir → commit
 │       └── auto-onboard.yml           # GH Actions: intake form submit → create client config → deploy
 ├── .claude/
@@ -139,14 +141,14 @@ Build and deploy the static content dashboard to GitHub Pages. Renders the dashb
 - Example: `/deploy` or `/deploy 2026-02-18`
 
 ### /create-plan [request]
-Create a detailed implementation plan before making structural changes. Produces a dated markdown file in `plans/`.
+Create a detailed implementation plan before making structural changes. Produces a dated markdown file in `plans/`. Once the plan is fully implemented, move it to `plans/implemented/`.
 
 - Example: `/create-plan add a competitor analysis command`
 
 ### /implement [plan-path]
-Execute a plan created by /create-plan, step by step.
+Execute a plan created by /create-plan, step by step. After successful implementation, move the plan file to `plans/implemented/`.
 
-- Example: `/implement plans/2026-02-18-vercel-static-deployment.md`
+- Example: `/implement plans/2026-02-24-scalability-saas-plan.md`
 
 ### /onboard-client [client-name]
 Create a new client configuration from the template. Conducts a full 18-question Q&A, then auto-drafts all four client files (`config.json`, `content-guidelines.md`, `context.md`, `keywords.md`) in one pass — no manual file editing required. Includes Airtable delivery setup as an optional final step.
@@ -196,7 +198,8 @@ This workspace supports multiple clients via a config-driven architecture:
 | `bucket_generators.py` | 3-bucket topic generators dispatched by type | Import only: `generate_bucket(type, config, week_of, ...)`, `BUCKET_DISPLAY_NAMES` |
 | `pipeline_runner.py` | Standalone end-to-end pipeline (Gemini-powered, no Claude required) | `--client`, `--week-of`, `--mock`, `--skip-images`, `--skip-airtable`, `--skip-deploy`, `--mode {full,announcement}`, `--announcement-text`, `--regen-topic INT`, `--regen-type {image_en,image_ru,content,content_ru}` |
 | `airtable_sync.py` | Push weekly content to client's Airtable base (15-col schema) | `--week-of`, `--mock`, `--client` |
-| `web_viewer.py` | Flask dashboard server with EN/RU toggle and bucket tabs | Runs on localhost:5001, `--client`; `/api/generate-announcement` endpoint |
+| `x_publisher.py` | Publish Twitter thread to X via OAuth 1.0a; updates Excel Status + Tweet_URL cols | `--client`, `--week-of`, `--topic-index`, `--mock` |
+| `web_viewer.py` | Flask dashboard server with EN/RU toggle and bucket tabs | Runs on localhost:5001, `--client`; `/api/generate-announcement`, `/api/publish-to-x` endpoints |
 | `build_static.py` | Static site builder with EN/RU toggle, bucket tabs, admin panel | `--output`, `--date`, `--include-admin`, `--client` |
 
 ---
@@ -208,7 +211,7 @@ This workspace supports multiple clients via a config-driven architecture:
   - **Bucket 2: Education** — 7 belief-building topics from `clients/{client_id}/belief-journey.md`
   - **Bucket 3: Announcements** — client inputs ONE text update → Gemini generates 7 content angles
 - Each topic gets Twitter + Telegram in English AND Russian = **42 content rows** in workbook
-- Workbook Content sheet: **15 columns** (Date, Bucket, Day, Topic, Platform, Format, Content, Image Prompt, Image Path, Hashtags, Content_RU, Image_Prompt_RU, Image_Path_RU, Hashtags_RU, Status)
+- Workbook Content sheet: **16 columns** (Date, Bucket, Day, Topic, Platform, Format, Content, Image Prompt, Image Path, Hashtags, Content_RU, Image_Prompt_RU, Image_Path_RU, Hashtags_RU, Status, Tweet_URL). Tweet_URL col (P) written by `x_publisher.py` after publishing; backward-compatible (created on first publish).
 - Interleaved day order: Mon = [Trending#1, Education#1, Announcement#1], Tue = [Trending#2, Education#2, Announcement#2], etc.
 - Per day: topics 1-2 (positions 1 and 2 in the day) get Twitter thread format (5 tweets); topic 3 gets single tweet format
 - Image styles: Pain Point → minimal, Education → tech, Announcement → notification
@@ -239,6 +242,7 @@ This workspace supports multiple clients via a config-driven architecture:
 | Google AI | `GOOGLE_AI_API_KEY` | Gemini text translation (RU content) |
 | WaveSpeed | `WAVESPEED_API_KEY` | GPT-Image-1.5 (EN) + Seedream 4.5 (RU) image generation |
 | Airtable | `AIRTABLE_API_KEY` | Content delivery to client Airtable bases (optional, per client) |
+| X (Twitter) | `{CLIENT_ID_UPPER}_X_API_KEY`, `_X_API_SECRET`, `_X_ACCESS_TOKEN`, `_X_ACCESS_TOKEN_SECRET` | Direct publishing to X (optional, per client). See `reference/x-api-setup.md` |
 | EmailJS | `intake/intake-config.js` | Credential email delivery from intake form (not an env var — stored in gitignored JS file) |
 
 Store in `.env` (never commit). See `reference/api-setup.md` for setup.
@@ -268,10 +272,11 @@ The deployed dashboard has a landing page, login form, and per-client auth. Clie
 
 ### GitHub Actions
 
-Five workflows in `.github/workflows/`:
+Six workflows in `.github/workflows/`:
 - **`weekly-pipeline.yml`**: Triggered via `workflow_dispatch` (admin panel or GitHub UI). Runs `pipeline_runner.py`, builds static site with admin panel, deploys to `gh-pages`, uploads Excel as artifact.
 - **`generate-announcement.yml`**: Triggered from the live dashboard's Announcements tab (or GitHub UI). Accepts `client_id`, `week_of`, `announcement_text`. Runs `pipeline_runner.py --mode announcement`, rebuilds and deploys static site.
 - **`regenerate-item.yml`**: Triggered by the live dashboard's Regen buttons (via GitHub API from the client's browser, using a PAT). Regenerates a single topic item (image_en, image_ru, content, or content_ru), rebuilds and redeploys the static site. Inputs: `client_id`, `week_of`, `topic_index` (0-based), `regen_type`.
+- **`publish-to-x.yml`**: Triggered by the live dashboard's "Publish to X" button (via GitHub API using a PAT). Runs `x_publisher.py`, commits updated xlsx (Status=Published, Tweet_URL col), rebuilds and redeploys static site. Inputs: `client_id`, `week_of`, `topic_index`. Requires `BOBE_X_*` GitHub Secrets.
 - **`onboard-client.yml`**: Creates a new client directory from template inputs and commits it to the repo.
 - **`auto-onboard.yml`**: Triggered by the Cloudflare Worker when a client submits the intake form. Parses the intake JSON, creates all client config files including `belief-journey.md` and `content_types`, commits to main, rebuilds and deploys the static site. Zero manual steps required.
 
@@ -281,21 +286,32 @@ Setup: See `reference/github-actions-setup.md` for GitHub Secrets, permissions, 
 
 ---
 
-## Pending Plans
+## Plans
 
-| Plan | Status | Summary |
-|------|--------|---------|
-| `plans/2026-02-18-bobe-content-automation.md` | Implemented | Core content automation infrastructure |
-| `plans/2026-02-18-vercel-static-deployment.md` | Implemented | Deploy dashboard as static site to Cloudflare Pages/GitHub Pages for client access |
-| Russian language support + remove daily pipeline | Implemented | Bilingual EN/RU content generation, WaveSpeed Seedream 4.5 for RU images, EN/RU dashboard toggle, daily pipeline removed |
-| `plans/2026-02-19-multi-client-platform.md` | Implemented | Multi-client architecture: config-driven client isolation, `/onboard-client`, `/switch-client`, all scripts refactored |
-| `plans/2026-02-23-multi-client-scalability.md` | Implemented | Airtable content delivery, auto-drafted onboarding Q&A, config-driven platforms and image style mapping |
-| `plans/2026-02-23-github-actions-admin-panel.md` | Implemented | Standalone `pipeline_runner.py`, GitHub Actions workflows, admin panel at `/admin/` |
-| `plans/2026-02-23-landing-login-client-dashboard.md` | Implemented | Landing page (placeholder), login form with SHA-256 auth, per-client dashboard routing under `/dashboard/{client_id}/` |
-| `plans/2026-02-23-client-intake-form.md` | Implemented | Self-serve client intake form at `/intake/`, EmailJS credential delivery, `/onboard-from-intake` command, `credentials.json` auto-write |
-| `plans/2026-02-24-regenerate-buttons-live-dashboard.md` | Implemented | Regen buttons (content + images) on local Flask dashboard and live static site; EN approval auto-switches to RU and unlocks RU regen; GitHub Actions `regenerate-item.yml` as backend for live regen |
-| `plans/2026-02-24-auto-onboard-on-intake-submit.md` | Implemented | Cloudflare Worker proxy triggers `auto-onboard.yml` on intake form submit; creates client dir, commits to main, rebuilds and deploys site automatically |
-| `plans/2026-02-26-three-bucket-content-strategy.md` | Implemented | 3-bucket content strategy: Trending (7 scraped), Education (7 from belief-journey.md), Announcements (client input → 7 angles). 15-col workbook, bucket tabs on dashboard, intake content type selection, belief-journey.md auto-generated at onboarding |
+Implemented plans are archived in `plans/implemented/`. Active (pending) plans live in `plans/`. When a plan is fully implemented, move it to `plans/implemented/`.
+
+### Implemented (archived in `plans/implemented/`)
+
+| Plan | Summary |
+|------|---------|
+| `2026-02-18-bobe-content-automation.md` | Core content automation infrastructure |
+| `2026-02-18-vercel-static-deployment.md` | Deploy dashboard as static site to Cloudflare Pages/GitHub Pages for client access |
+| Russian language support + remove daily pipeline | Bilingual EN/RU content generation, WaveSpeed Seedream 4.5 for RU images, EN/RU dashboard toggle, daily pipeline removed |
+| `2026-02-19-multi-client-platform.md` | Multi-client architecture: config-driven client isolation, `/onboard-client`, `/switch-client`, all scripts refactored |
+| `2026-02-23-multi-client-scalability.md` | Airtable content delivery, auto-drafted onboarding Q&A, config-driven platforms and image style mapping |
+| `2026-02-23-github-actions-admin-panel.md` | Standalone `pipeline_runner.py`, GitHub Actions workflows, admin panel at `/admin/` |
+| `2026-02-23-landing-login-client-dashboard.md` | Landing page (placeholder), login form with SHA-256 auth, per-client dashboard routing under `/dashboard/{client_id}/` |
+| `2026-02-23-client-intake-form.md` | Self-serve client intake form at `/intake/`, EmailJS credential delivery, `/onboard-from-intake` command, `credentials.json` auto-write |
+| `2026-02-24-regenerate-buttons-live-dashboard.md` | Regen buttons (content + images) on local Flask dashboard and live static site; EN approval auto-switches to RU and unlocks RU regen; GitHub Actions `regenerate-item.yml` as backend for live regen |
+| `2026-02-24-auto-onboard-on-intake-submit.md` | Cloudflare Worker proxy triggers `auto-onboard.yml` on intake form submit; creates client dir, commits to main, rebuilds and deploys site automatically |
+| `2026-02-26-three-bucket-content-strategy.md` | 3-bucket content strategy: Trending (7 scraped), Education (7 from belief-journey.md), Announcements (client input → 7 angles). 15-col workbook, bucket tabs on dashboard, intake content type selection, belief-journey.md auto-generated at onboarding |
+| Direct X (Twitter) publishing | One-click publish from dashboard (local Flask + live static site via GitHub Actions). Per-client OAuth 1.0a credentials. Duplicate prevention. Excel Status + Tweet_URL cols (16). See `reference/x-api-setup.md` |
+
+### Pending (active plans in `plans/`)
+
+| Plan | Summary |
+|------|---------|
+| `2026-02-24-scalability-saas-plan.md` | Scale platform from 1 client to 5-10 active clients: resource isolation, deployment serialization, per-client API key management |
 
 ---
 

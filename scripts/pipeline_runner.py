@@ -848,6 +848,42 @@ def run_regen_item(client_id, week_of, topic_index, regen_type, mock=False):
         return False
 
 
+def cleanup_old_images(images_dir, keep_weeks):
+    """Delete image dirs older than keep_weeks weeks.
+
+    Only removes dirs matching the pattern YYYY-MM-DD-weekly.
+    Dirs that don't match the pattern are left untouched.
+    """
+    images_path = PROJECT_ROOT / images_dir if not Path(images_dir).is_absolute() else Path(images_dir)
+    if not images_path.exists():
+        return
+
+    cutoff = datetime.now() - timedelta(weeks=keep_weeks)
+    pattern = re.compile(r"^(\d{4}-\d{2}-\d{2})-weekly$")
+
+    deleted = 0
+    kept = 0
+    for d in sorted(images_path.iterdir()):
+        if not d.is_dir():
+            continue
+        m = pattern.match(d.name)
+        if not m:
+            continue  # skip dirs with unexpected names
+        try:
+            dir_date = datetime.strptime(m.group(1), "%Y-%m-%d")
+        except ValueError:
+            continue
+        if dir_date < cutoff:
+            import shutil as _shutil
+            _shutil.rmtree(str(d))
+            print(f"  Removed old image dir: {d.name}")
+            deleted += 1
+        else:
+            kept += 1
+
+    print(f"  Image cleanup: removed {deleted} old dir(s), kept {kept}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Standalone end-to-end pipeline runner (Gemini-powered)"
@@ -895,6 +931,10 @@ def main():
         "--announcement-text", default=None,
         help="Announcement text for --mode announcement (used by generate-announcement.yml workflow)",
     )
+    parser.add_argument(
+        "--purge-older-than", type=int, default=12,
+        help="Delete image dirs older than N weeks from outputs/content/{client}/images/ (0 = skip, default 12)",
+    )
     args = parser.parse_args()
 
     client_id = args.client or client_config.get_active_client()
@@ -930,7 +970,8 @@ def main():
 
         # Generate full content + images for each announcement topic
         # (Reuse the same per-topic content generation as Phase 4)
-        xlsx_path = out_dir / f"{week_of}-weekly-content.xlsx"
+        xlsx_suffix = "mock-weekly-content" if args.mock else "weekly-content"
+        xlsx_path = out_dir / f"{week_of}-{xlsx_suffix}.xlsx"
         if not xlsx_path.exists():
             print(f"  Error: workbook not found at {xlsx_path}. Run full pipeline first.")
             sys.exit(1)
@@ -1078,6 +1119,10 @@ def main():
         skip_airtable=args.skip_airtable,
         skip_deploy=args.skip_deploy,
     )
+
+    if success and args.mode == "full" and args.purge_older_than > 0:
+        output_dir = client_config.get_output_dir(client_id)
+        cleanup_old_images(output_dir / "images", args.purge_older_than)
 
     sys.exit(0 if success else 1)
 

@@ -445,6 +445,29 @@ STATIC_HTML = """<!DOCTYPE html>
   .copy-btn:active { transform: scale(0.97); }
   .copy-btn.copied { background: var(--green); color: #0D1526; }
 
+  .publish-x-btn {
+    padding: 5px 13px;
+    border-radius: 7px;
+    border: 1px solid rgba(29,161,242,0.4);
+    background: rgba(29,161,242,0.1);
+    color: #1DA1F2;
+    font-size: 0.77rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .publish-x-btn:hover:not(:disabled) {
+    background: rgba(29,161,242,0.25);
+    border-color: rgba(29,161,242,0.6);
+  }
+  .publish-x-btn.published {
+    color: var(--green);
+    border-color: rgba(91,214,159,0.4);
+    background: rgba(91,214,159,0.1);
+    cursor: default;
+  }
+  .publish-x-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+
   /* Hashtags */
   .hashtags { display: flex; flex-wrap: wrap; gap: 5px; padding-top: 2px; }
   .tag {
@@ -923,6 +946,13 @@ STATIC_HTML = """<!DOCTYPE html>
           <div class="content-actions">
             <span class="char-count">{{ t.twitter|length }} chars</span>
             <button class="copy-btn" data-raw="{{ t.twitter | e }}">Copy</button>
+            {% if x_publishing_enabled %}
+              {% if t.status == 'Published' %}
+              <button class="publish-x-btn published" id="publish-x-{{ loop.index }}" disabled>&#10003; Published</button>
+              {% else %}
+              <button class="publish-x-btn" id="publish-x-{{ loop.index }}" onclick="triggerPublishToX({{ loop.index }})">&#120143; Publish</button>
+              {% endif %}
+            {% endif %}
           </div>
           {% else %}
           <div class="content-box" style="color:var(--muted);font-style:italic;">No Twitter content</div>
@@ -1011,12 +1041,14 @@ STATIC_HTML = """<!DOCTYPE html>
 
 <script>
 // ── Constants (injected at build time) ────────────────────────────────────────
-const GH_REPO      = '{{ gh_repo }}';
-const GH_WORKFLOW  = 'regenerate-item.yml';
-const WEEK_OF      = '{{ week_of }}';
-const CLIENT_ID    = '{{ client_id }}';
-const TOPIC_COUNT  = {{ topics|length }};
-const GH_REGEN_TOKEN = '{{ github_regen_token }}';
+const GH_REPO           = '{{ gh_repo }}';
+const GH_WORKFLOW       = 'regenerate-item.yml';
+const GH_PUBLISH_WORKFLOW = 'publish-to-x.yml';
+const WEEK_OF           = '{{ week_of }}';
+const CLIENT_ID         = '{{ client_id }}';
+const TOPIC_COUNT       = {{ topics|length }};
+const GH_REGEN_TOKEN    = '{{ github_regen_token }}';
+const REGEN_WORKER_URL  = '{{ regen_worker_url }}';
 
 // ── Logout ────────────────────────────────────────────────────────────────────
 function logout() {
@@ -1201,6 +1233,85 @@ function approveImage(idx) {
   }
 })();
 
+// ── Cloudflare Worker dispatch helpers (Phase 4a) ─────────────────────────────
+
+async function _dispatchViaWorker(workflow, extraInputs, btnIdx, regenType) {
+  // Build button reference
+  let btn = null;
+  if (btnIdx !== null) {
+    const btnId =
+      regenType === 'image_en'   ? `regen-${btnIdx}` :
+      regenType === 'image_ru'   ? `regen-ru-${btnIdx}` :
+      regenType === 'content'    ? `content-regen-${btnIdx}` :
+      regenType === 'content_ru' ? `ru-content-regen-${btnIdx}` :
+      regenType === 'publish'    ? `publish-x-${btnIdx}` : null;
+    btn = btnId ? document.getElementById(btnId) : null;
+  }
+  const origText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Triggering...'; btn.disabled = true; btn.classList.add('triggering'); }
+
+  const label = regenType === 'announce' ? 'announcement pipeline' : `${regenType} regeneration`;
+  showRegenStatus(`Triggering ${label}...`);
+
+  try {
+    const resp = await fetch(REGEN_WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workflow,
+        client_id: CLIENT_ID,
+        week_of:   WEEK_OF,
+        ...extraInputs,
+      }),
+    });
+
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data.ok) {
+      showRegenStatus('Workflow started! This takes 2-5 min. Page will reload when done.');
+      if (btn) { btn.textContent = 'Queued \u2713'; btn.classList.remove('triggering'); }
+      _pollViaWorker(workflow + '.yml');
+    } else if (resp.status === 401 || resp.status === 403) {
+      showToast('Worker auth error. Contact admin.');
+      if (btn) { btn.textContent = origText; btn.disabled = false; btn.classList.remove('triggering'); }
+      dismissRegenStatus();
+    } else {
+      showToast('Worker error: ' + (data.error || resp.status));
+      if (btn) { btn.textContent = origText; btn.disabled = false; btn.classList.remove('triggering'); }
+      dismissRegenStatus();
+    }
+  } catch(e) {
+    showToast('Network error: ' + e.message);
+    if (btn) { btn.textContent = origText; btn.disabled = false; btn.classList.remove('triggering'); }
+    dismissRegenStatus();
+  }
+}
+
+async function _pollViaWorker(workflowFile) {
+  const deadline = Date.now() + 10 * 60 * 1000; // 10 min
+  await new Promise(r => setTimeout(r, 20000)); // wait 20s before first poll
+
+  while (Date.now() < deadline) {
+    try {
+      const resp = await fetch(`${REGEN_WORKER_URL}/status?workflow=${encodeURIComponent(workflowFile)}`);
+      const data = await resp.json().catch(() => ({}));
+      if (data.status === 'completed') {
+        if (data.conclusion === 'success') {
+          showRegenStatus('Complete! Reloading page...');
+          setTimeout(() => location.reload(), 2500);
+        } else {
+          showRegenStatus('Workflow finished with status: ' + data.conclusion + '. Check GitHub Actions for details.');
+        }
+        return;
+      }
+      if (data.status) {
+        showRegenStatus('Workflow running... (' + data.status + ')');
+      }
+    } catch(e) { /* continue polling */ }
+    await new Promise(r => setTimeout(r, 15000));
+  }
+  showRegenStatus('Workflow is taking longer than expected. Refresh manually when done.');
+}
+
 // ── GitHub token modal ────────────────────────────────────────────────────────
 let _pendingRegenCb = null;
 
@@ -1256,6 +1367,12 @@ function triggerRegen(idx, regenType) {
 
   if (!GH_REPO || GH_REPO === '') {
     showToast('GitHub repo not configured — contact admin');
+    return;
+  }
+
+  // Worker path: no PAT needed
+  if (REGEN_WORKER_URL) {
+    _dispatchViaWorker('regenerate-item', { topic_index: String(idx - 1), regen_type: regenType }, idx, regenType);
     return;
   }
 
@@ -1317,7 +1434,73 @@ function triggerRegen(idx, regenType) {
   });
 }
 
+// ── Trigger X publish via GitHub Actions API ──────────────────────────────────
+function triggerPublishToX(idx) {
+  if (!GH_REPO || GH_REPO === '') {
+    showToast('GitHub repo not configured — contact admin');
+    return;
+  }
+
+  // Worker path: no PAT needed
+  if (REGEN_WORKER_URL) {
+    _dispatchViaWorker('publish-to-x', { topic_index: String(idx - 1) }, idx, 'publish');
+    return;
+  }
+
+  getGhToken(async function(token) {
+    const btn = document.getElementById(`publish-x-${idx}`);
+    const origText = btn ? btn.textContent : '';
+    if (btn) { btn.textContent = 'Publishing...'; btn.disabled = true; btn.classList.add('triggering'); }
+
+    showRegenStatus('Triggering X publish workflow...');
+
+    try {
+      const resp = await fetch(
+        `https://api.github.com/repos/${GH_REPO}/actions/workflows/${GH_PUBLISH_WORKFLOW}/dispatches`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ref: 'main',
+            inputs: {
+              client_id:   CLIENT_ID,
+              week_of:     WEEK_OF,
+              topic_index: String(idx - 1),
+            },
+          }),
+        }
+      );
+
+      if (resp.status === 204) {
+        showRegenStatus('Publish workflow started! This takes 2-3 min. Refresh to see Published status.');
+        if (btn) { btn.textContent = 'Queued ✓'; btn.classList.remove('triggering'); }
+        pollRegenCompletion(token);
+      } else if (resp.status === 401 || resp.status === 403) {
+        sessionStorage.removeItem('gh_pat');
+        showToast('Token invalid or expired. Please try again.', true);
+        if (btn) { btn.textContent = origText; btn.disabled = false; btn.classList.remove('triggering'); }
+        dismissRegenStatus();
+      } else {
+        const err = await resp.text();
+        showToast('GitHub API error: ' + resp.status);
+        if (btn) { btn.textContent = origText; btn.disabled = false; btn.classList.remove('triggering'); }
+        dismissRegenStatus();
+        console.error('GH API error', resp.status, err);
+      }
+    } catch(e) {
+      showToast('Network error: ' + e.message);
+      if (btn) { btn.textContent = origText; btn.disabled = false; btn.classList.remove('triggering'); }
+      dismissRegenStatus();
+    }
+  });
+}
+
 async function pollRegenCompletion(token) {
+  if (REGEN_WORKER_URL) { _pollViaWorker(GH_WORKFLOW); return; }
   const deadline = Date.now() + 10 * 60 * 1000; // 10 min
   await new Promise(r => setTimeout(r, 20000)); // wait 20s before first poll
 
@@ -1389,6 +1572,14 @@ async function submitAnnouncement() {
   if (!GH_REPO || GH_REPO === '') {
     if (statusEl) statusEl.textContent = 'GitHub repo not configured. Contact admin.';
     if (btn) { btn.disabled = false; btn.textContent = 'Generate 7 Content Angles'; }
+    return;
+  }
+
+  // Worker path: no PAT needed
+  if (REGEN_WORKER_URL) {
+    if (statusEl) statusEl.textContent = 'Triggering announcement pipeline...';
+    _dispatchViaWorker('generate-announcement', { bucket: 'announcements', announcement_text: text.trim() }, null, 'announce');
+    if (btn) { btn.textContent = 'Queued \u2713'; }
     return;
   }
 
@@ -2094,6 +2285,8 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
             except Exception:
                 pass
 
+        regen_worker_url = os.environ.get("REGEN_WORKER_URL", "")
+
         # Render the dashboard page (with auth guard)
         html = dashboard_template.render(
             topics=topics,
@@ -2106,7 +2299,9 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
             client_id=active_client,
             gh_repo=gh_repo,
             github_regen_token=github_regen_token,
+            regen_worker_url=regen_worker_url,
             client_logo_url=client_logo_url,
+            x_publishing_enabled=client_config.is_x_publishing_enabled(active_client),
         )
 
         page_path = client_dash_dir / f"{safe_name}.html"

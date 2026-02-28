@@ -1,4 +1,4 @@
-name: Weekly Content Pipeline
+name: Publish to X (Twitter)
 
 on:
   workflow_dispatch:
@@ -8,36 +8,27 @@ on:
         required: true
         default: 'bobe'
       week_of:
-        description: 'Week start date YYYY-MM-DD (optional, defaults to current Monday)'
-        required: false
-        default: ''
-      skip_images:
-        description: 'Skip image generation'
-        type: boolean
-        default: false
-      skip_airtable:
-        description: 'Skip Airtable sync'
-        type: boolean
-        default: false
-      mock:
-        description: 'Dry run — no API calls (for testing)'
-        type: boolean
-        default: false
+        description: 'Week start date YYYY-MM-DD'
+        required: true
+      topic_index:
+        description: 'Topic index (0-based, 0-20)'
+        required: true
+        default: '0'
 
 concurrency:
   group: gh-pages-deploy
   cancel-in-progress: false
 
 jobs:
-  generate:
+  publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 110
+    timeout-minutes: 15
 
     permissions:
       contents: write
 
     steps:
-      - name: Checkout working branch
+      - name: Checkout main
         uses: actions/checkout@v4
         with:
           ref: main
@@ -52,7 +43,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests openpyxl google-genai python-dotenv jinja2 flask pillow
+          pip install requests openpyxl google-genai python-dotenv jinja2 flask pillow tweepy
 
       - name: Create .env from secrets
         run: |
@@ -62,48 +53,33 @@ jobs:
           echo "AIRTABLE_API_KEY=${{ secrets.AIRTABLE_API_KEY }}" >> .env
           echo "GH_REGEN_TOKEN=${{ secrets.GH_REGEN_TOKEN }}" >> .env
           echo "REGEN_WORKER_URL=${{ secrets.REGEN_WORKER_URL }}" >> .env
+          echo "BOBE_X_API_KEY=${{ secrets.BOBE_X_API_KEY }}" >> .env
+          echo "BOBE_X_API_SECRET=${{ secrets.BOBE_X_API_SECRET }}" >> .env
+          echo "BOBE_X_ACCESS_TOKEN=${{ secrets.BOBE_X_ACCESS_TOKEN }}" >> .env
+          echo "BOBE_X_ACCESS_TOKEN_SECRET=${{ secrets.BOBE_X_ACCESS_TOKEN_SECRET }}" >> .env
 
       - name: Set active client
         run: echo "${{ github.event.inputs.client_id }}" > .active-client
 
-      - name: Run pipeline
+      - name: Publish thread to X
         run: |
-          ARGS="--client ${{ github.event.inputs.client_id }}"
-          if [ -n "${{ github.event.inputs.week_of }}" ]; then
-            ARGS="$ARGS --week-of ${{ github.event.inputs.week_of }}"
-          fi
-          if [ "${{ github.event.inputs.skip_images }}" = "true" ]; then
-            ARGS="$ARGS --skip-images"
-          fi
-          if [ "${{ github.event.inputs.skip_airtable }}" = "true" ]; then
-            ARGS="$ARGS --skip-airtable"
-          fi
-          if [ "${{ github.event.inputs.mock }}" = "true" ]; then
-            ARGS="$ARGS --mock"
-          fi
-          python scripts/pipeline_runner.py $ARGS --skip-deploy
+          python scripts/x_publisher.py \
+            --client ${{ github.event.inputs.client_id }} \
+            --week-of ${{ github.event.inputs.week_of }} \
+            --topic-index ${{ github.event.inputs.topic_index }}
 
-      - name: Upload pipeline outputs as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: pipeline-outputs-${{ github.event.inputs.client_id }}-${{ github.run_id }}
-          path: outputs/content/${{ github.event.inputs.client_id }}/
-          retention-days: 1
-          if-no-files-found: warn
-
-      - name: Upload Excel workbook as artifact
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: weekly-content-${{ github.event.inputs.client_id }}-${{ github.run_id }}
-          path: outputs/content/${{ github.event.inputs.client_id }}/*.xlsx
-          retention-days: 30
-          if-no-files-found: warn
+      - name: Commit updated workbook
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add outputs/content/${{ github.event.inputs.client_id }}/
+          git diff --cached --quiet || git commit -m "Publish topic ${{ github.event.inputs.topic_index }} to X: client=${{ github.event.inputs.client_id }}, week=${{ github.event.inputs.week_of }}"
+          git push
 
   deploy:
-    needs: generate
+    needs: publish
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     concurrency:
       group: gh-pages-deploy
@@ -113,7 +89,7 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout working branch
+      - name: Checkout main
         uses: actions/checkout@v4
         with:
           ref: main
@@ -128,7 +104,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests openpyxl google-genai python-dotenv jinja2 flask pillow
+          pip install requests openpyxl google-genai python-dotenv jinja2 flask pillow tweepy
 
       - name: Create .env from secrets
         run: |
@@ -138,15 +114,13 @@ jobs:
           echo "AIRTABLE_API_KEY=${{ secrets.AIRTABLE_API_KEY }}" >> .env
           echo "GH_REGEN_TOKEN=${{ secrets.GH_REGEN_TOKEN }}" >> .env
           echo "REGEN_WORKER_URL=${{ secrets.REGEN_WORKER_URL }}" >> .env
+          echo "BOBE_X_API_KEY=${{ secrets.BOBE_X_API_KEY }}" >> .env
+          echo "BOBE_X_API_SECRET=${{ secrets.BOBE_X_API_SECRET }}" >> .env
+          echo "BOBE_X_ACCESS_TOKEN=${{ secrets.BOBE_X_ACCESS_TOKEN }}" >> .env
+          echo "BOBE_X_ACCESS_TOKEN_SECRET=${{ secrets.BOBE_X_ACCESS_TOKEN_SECRET }}" >> .env
 
       - name: Set active client
         run: echo "${{ github.event.inputs.client_id }}" > .active-client
-
-      - name: Download pipeline outputs
-        uses: actions/download-artifact@v4
-        with:
-          name: pipeline-outputs-${{ github.event.inputs.client_id }}-${{ github.run_id }}
-          path: outputs/content/${{ github.event.inputs.client_id }}/
 
       - name: Build static site
         run: |
@@ -162,13 +136,13 @@ jobs:
           cp admin/admin.css dist/admin/admin.css
           cp admin/admin.js dist/admin/admin.js
 
-      - name: Deploy to GitHub Pages (gh-pages branch)
+      - name: Deploy to GitHub Pages
         run: |
           cd dist
           git init
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Deploy content dashboard $(date +%Y-%m-%d)"
+          git commit -m "Publish to X: client=${{ github.event.inputs.client_id }} topic=${{ github.event.inputs.topic_index }}"
           git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/rtadik/bobe-content-dashboard.git HEAD:gh-pages
           cd ..

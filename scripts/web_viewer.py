@@ -69,6 +69,12 @@ try:
 except Exception:
     HAS_RU_GENERATOR = False
 
+try:
+    import tweepy as _tweepy_check  # noqa: F401
+    HAS_X_PUBLISHER = True
+except ImportError:
+    HAS_X_PUBLISHER = False
+
 app = Flask(__name__)
 
 # ── Async job tracking ────────────────────────────────────────────────────────
@@ -226,6 +232,8 @@ def load_content(xlsx_path):
             image_path_ru_raw = row[11] if len(row) > 11 else ""
             hashtags_ru = row[12] if len(row) > 12 else ""
             date = row[0] if len(row) > 0 else None
+            row_status = "Draft"
+            row_tweet_url = ""
         else:
             # New 15-column schema: Bucket is in col B, Day in col C
             bucket = col1 or "trending"
@@ -241,6 +249,8 @@ def load_content(xlsx_path):
             image_path_ru_raw = row[12] if len(row) > 12 else ""
             hashtags_ru = row[13] if len(row) > 13 else ""
             date = row[0] if len(row) > 0 else None
+            row_status = row[14] if len(row) > 14 else "Draft"
+            row_tweet_url = row[15] if len(row) > 15 else ""
 
         if not topic_name:
             continue
@@ -265,6 +275,8 @@ def load_content(xlsx_path):
                 "telegram_ru":      None,
                 "hashtags":         hashtags or "",
                 "hashtags_ru":      hashtags_ru or "",
+                "status":           "Draft",
+                "tweet_url":        "",
             }
             topic_order.append(topic)
 
@@ -273,6 +285,9 @@ def load_content(xlsx_path):
             topics[topic]["twitter"] = content or ""
             if content_ru:
                 topics[topic]["twitter_ru"] = content_ru or ""
+            # Capture publish status from twitter row
+            topics[topic]["status"] = row_status or "Draft"
+            topics[topic]["tweet_url"] = row_tweet_url or ""
         elif "telegram" in platform_lower:
             topics[topic]["telegram"] = content or ""
             if hashtags:
@@ -779,6 +794,29 @@ HTML = """<!DOCTYPE html>
   .copy-btn:active { transform: scale(0.97); }
   .copy-btn.copied { background: var(--green); color: #0D1526; }
 
+  .publish-x-btn {
+    padding: 5px 13px;
+    border-radius: 7px;
+    border: 1px solid rgba(29,161,242,0.4);
+    background: rgba(29,161,242,0.1);
+    color: #1DA1F2;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .publish-x-btn:hover:not(:disabled) {
+    background: rgba(29,161,242,0.25);
+    border-color: rgba(29,161,242,0.6);
+  }
+  .publish-x-btn.published {
+    color: var(--green);
+    border-color: rgba(91,214,159,0.4);
+    background: rgba(91,214,159,0.1);
+    cursor: default;
+  }
+  .publish-x-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+
   /* ── Hashtags ── */
   .hashtags {
     display: flex;
@@ -1186,6 +1224,13 @@ HTML = """<!DOCTYPE html>
           <div class="content-actions">
             <span class="char-count">{{ t.twitter|length }} chars</span>
             <button class="copy-btn" data-raw="{{ t.twitter | e }}">Copy</button>
+            {% if x_publishing_enabled %}
+              {% if t.status == 'Published' %}
+              <button class="publish-x-btn published" id="publish-x-{{ loop.index }}" disabled>&#10003; Published</button>
+              {% else %}
+              <button class="publish-x-btn" id="publish-x-{{ loop.index }}" onclick="publishToX({{ loop.index }})">&#120143; Publish</button>
+              {% endif %}
+            {% endif %}
           </div>
           {% else %}
           <div class="content-box" style="color:var(--muted);font-style:italic;">No Twitter content</div>
@@ -1917,6 +1962,47 @@ function pollAnnouncementJob(jobId, btn, statusEl) {
     .catch(function() {
       setTimeout(function() { pollAnnouncementJob(jobId, btn, statusEl); }, 5000);
     });
+}
+
+// ── Publish to X ─────────────────────────────────────────────────────────────
+async function publishToX(idx) {
+  const btn = document.getElementById(`publish-x-${idx}`);
+  if (!btn) return;
+  const origText = btn.textContent;
+  btn.textContent = 'Publishing...';
+  btn.disabled = true;
+
+  try {
+    const resp = await fetch('/api/publish-to-x', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        date: CURRENT_DATE,
+        topic_index: idx - 1,
+      }),
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      btn.textContent = '✓ Published';
+      btn.classList.add('published');
+      if (data.already_published) {
+        showToast('Already published to X');
+      } else if (data.tweet_urls && data.tweet_urls.length > 0) {
+        showToast('Published to X: ' + data.tweet_urls[0]);
+      } else {
+        showToast('Published to X successfully!');
+      }
+    } else {
+      btn.textContent = origText;
+      btn.disabled = false;
+      showToast('Publish failed: ' + (data.error || 'Unknown error'), true);
+    }
+  } catch(e) {
+    btn.textContent = origText;
+    btn.disabled = false;
+    showToast('Network error: ' + e.message, true);
+  }
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
@@ -3275,16 +3361,13 @@ def api_generate_announcement():
     if not text:
         return jsonify({"success": False, "error": "text is required"}), 400
 
-    # Resolve week_of from date_id
-    if date_id.startswith("week:"):
-        week_of = date_id[5:]
-    elif date_id and len(date_id) >= 10:
-        week_of = date_id[:10]
-    else:
-        week_of = None
+    # Resolve week_of from date_id — strip any prefix like "week:" or "mock:"
+    import re as _re
+    m = _re.search(r'(\d{4}-\d{2}-\d{2})', date_id)
+    week_of = m.group(1) if m else None
 
     if not week_of:
-        return jsonify({"success": False, "error": "valid date required (pass date as 'week:YYYY-MM-DD')"}), 400
+        return jsonify({"success": False, "error": "valid date required"}), 400
 
     import uuid as _uuid
     job_id = str(_uuid.uuid4())
@@ -3294,23 +3377,38 @@ def api_generate_announcement():
             import sys as _sys
             _sys.path.insert(0, str(Path(__file__).parent))
             import client_config as _cc
-            from datetime import datetime as _dt, timedelta as _td
+            import subprocess as _sp
 
             active_client = _cc.get_active_client()
-            config = _cc.load_config(active_client)
             output_dir = _cc.get_output_dir(active_client)
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Save input text
-            inputs_file = output_dir / f"{week_of}-bucket-inputs.json"
-            inputs = {}
-            if inputs_file.exists():
-                try:
-                    inputs = json.loads(inputs_file.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
-            inputs["announcements"] = {"text": text, "submitted_at": _dt.now().isoformat()}
-            inputs_file.write_text(json.dumps(inputs, indent=2, ensure_ascii=False))
+            # Find the workbook for this week (may be normal or mock)
+            xlsx_normal = output_dir / f"{week_of}-weekly-content.xlsx"
+            xlsx_mock   = output_dir / f"{week_of}-mock-weekly-content.xlsx"
+            if not xlsx_normal.exists() and not xlsx_mock.exists():
+                with _jobs_lock:
+                    _jobs[job_id] = {"status": "error", "error": f"No workbook found for {week_of}. Run the pipeline first."}
+                return
+
+            # Run pipeline_runner in announcement mode
+            cmd = [
+                _sys.executable,
+                str(Path(__file__).parent / "pipeline_runner.py"),
+                "--client", active_client,
+                "--week-of", week_of,
+                "--mode", "announcement",
+                "--announcement-text", text,
+                "--skip-images",
+                "--skip-airtable",
+                "--skip-deploy",
+            ]
+            if xlsx_mock.exists() and not xlsx_normal.exists():
+                cmd.append("--mock")
+
+            result = _sp.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr[-500:] if result.stderr else "Pipeline failed")
 
             with _jobs_lock:
                 _jobs[job_id] = {"status": "done", "topics": 7}
@@ -3324,6 +3422,71 @@ def api_generate_announcement():
     import threading as _threading
     _threading.Thread(target=_run, daemon=True).start()
     return jsonify({"success": True, "job_id": job_id})
+
+
+# ── Publish to X API ───────────────────────────────────────────────────────────
+
+@app.route("/api/publish-to-x", methods=["POST"])
+def api_publish_to_x():
+    """Publish a Twitter thread for a topic to X (Twitter)."""
+    if not HAS_X_PUBLISHER:
+        return jsonify({
+            "success": False,
+            "error": "tweepy not installed. Run: venv/bin/pip install tweepy"
+        }), 503
+
+    if not client_config.is_x_publishing_enabled(_active_client):
+        return jsonify({
+            "success": False,
+            "error": f"X publishing not enabled for client '{_active_client}'. Set x_publishing.enabled = true in config.json."
+        }), 400
+
+    data = request.get_json(force=True)
+    date_id = data.get("date", "")
+    topic_index = int(data.get("topic_index", 0))
+    mock = bool(data.get("mock", False))
+
+    import re as _re
+    m = _re.search(r'(\d{4}-\d{2}-\d{2})', date_id)
+    week_of = m.group(1) if m else None
+
+    if not week_of:
+        return jsonify({"success": False, "error": "valid date required"}), 400
+
+    import subprocess as _sp
+    cmd = [
+        sys.executable,
+        str(Path(__file__).parent / "x_publisher.py"),
+        "--client", _active_client,
+        "--week-of", week_of,
+        "--topic-index", str(topic_index),
+    ]
+    if mock:
+        cmd.append("--mock")
+
+    result = _sp.run(cmd, capture_output=True, text=True, cwd=str(PROJECT_ROOT))
+
+    if result.returncode != 0:
+        stderr = result.stderr[-500:] if result.stderr else ""
+        stdout = result.stdout[-300:] if result.stdout else ""
+        return jsonify({"success": False, "error": stderr or stdout}), 500
+
+    # Parse TWEET_URLS from stdout
+    tweet_urls = []
+    for line in result.stdout.splitlines():
+        if line.startswith("TWEET_URLS:"):
+            try:
+                import json as _json
+                tweet_urls = _json.loads(line[len("TWEET_URLS:"):])
+            except Exception:
+                pass
+
+    already_published = "Already published" in result.stdout
+    return jsonify({
+        "success": True,
+        "already_published": already_published,
+        "tweet_urls": tweet_urls,
+    })
 
 
 # ── Admin routes ───────────────────────────────────────────────────────────────
@@ -3703,6 +3866,8 @@ def index():
             return "Mock-up"
         return d
 
+    x_publishing_enabled = client_config.is_x_publishing_enabled(_active_client)
+
     if not available_dates:
         return render_template_string(
             HTML,
@@ -3714,6 +3879,7 @@ def index():
             client_logo_url=client_logo_url,
             date_label=date_label,
             error=f"No weekly content Excel files found for {_display_name}",
+            x_publishing_enabled=x_publishing_enabled,
         )
 
     selected = date_param if date_param in available_dates else available_dates[0]
@@ -3760,6 +3926,7 @@ def index():
         client_logo_url=client_logo_url,
         date_label=date_label,
         error=error,
+        x_publishing_enabled=x_publishing_enabled,
     )
 
 

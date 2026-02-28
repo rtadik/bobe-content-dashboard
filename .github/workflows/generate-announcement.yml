@@ -54,6 +54,7 @@ jobs:
           echo "WAVESPEED_API_KEY=${{ secrets.WAVESPEED_API_KEY }}" >> .env
           echo "AIRTABLE_API_KEY=${{ secrets.AIRTABLE_API_KEY }}" >> .env
           echo "GH_REGEN_TOKEN=${{ secrets.GH_REGEN_TOKEN }}" >> .env
+          echo "REGEN_WORKER_URL=${{ secrets.REGEN_WORKER_URL }}" >> .env
 
       - name: Set active client
         run: echo "${{ github.event.inputs.client_id }}" > .active-client

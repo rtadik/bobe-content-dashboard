@@ -181,6 +181,49 @@ def get_belief_journey_path(client_id: str = None) -> Path:
     return get_client_dir(client_id) / "belief-journey.md"
 
 
+def get_x_publishing_config(client_id: str = None) -> dict:
+    """Return x_publishing config for the specified (or active) client. Returns {} if not configured."""
+    config = load_config(client_id)
+    return config.get("x_publishing", {})
+
+
+def is_x_publishing_enabled(client_id: str = None) -> bool:
+    """Return True if X publishing is configured and enabled for the client."""
+    x_config = get_x_publishing_config(client_id)
+    return bool(x_config.get("enabled"))
+
+
+def get_x_credentials(client_id: str) -> dict:
+    """
+    Return X (Twitter) OAuth 1.0a credentials for the given client from environment variables.
+    Reads {CLIENT_ID_UPPER}_X_API_KEY, _X_API_SECRET, _X_ACCESS_TOKEN, _X_ACCESS_TOKEN_SECRET.
+    Raises ValueError with a clear message listing missing variables if any are absent.
+    """
+    prefix = client_id.upper()
+    keys = {
+        "api_key":            f"{prefix}_X_API_KEY",
+        "api_secret":         f"{prefix}_X_API_SECRET",
+        "access_token":       f"{prefix}_X_ACCESS_TOKEN",
+        "access_token_secret": f"{prefix}_X_ACCESS_TOKEN_SECRET",
+    }
+    credentials = {}
+    missing = []
+    for field, env_var in keys.items():
+        value = os.environ.get(env_var, "")
+        if not value:
+            missing.append(env_var)
+        credentials[field] = value
+
+    if missing:
+        raise ValueError(
+            f"Missing X credentials for client '{client_id}'. "
+            f"Add these to .env (local) and GitHub Secrets (remote):\n"
+            + "\n".join(f"  {v}=..." for v in missing)
+        )
+
+    return credentials
+
+
 def get_api_key(client_id: str, service: str) -> str:
     """Return client-specific API key, falling back to global env var."""
     config = load_config(client_id)

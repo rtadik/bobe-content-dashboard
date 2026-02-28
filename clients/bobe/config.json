@@ -136,6 +136,10 @@
     "api_key_env": "AIRTABLE_API_KEY",
     "images_base_url": "https://rtadik.github.io/bobe-content-dashboard"
   },
+  "x_publishing": {
+    "enabled": false,
+    "x_handle": "@bobe_app"
+  },
   "api_keys": {
     "gemini": "",
     "wavespeed_en": "",
