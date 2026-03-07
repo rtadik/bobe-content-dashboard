@@ -96,6 +96,11 @@
     "api_key_env": "AIRTABLE_API_KEY",
     "images_base_url": ""
   },
+  "r2": {
+    "enabled": false,
+    "bucket_name": "",
+    "public_url": ""
+  },
   "x_publishing": {
     "enabled": false,
     "x_handle": "@brand_handle"

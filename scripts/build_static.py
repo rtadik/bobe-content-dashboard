@@ -35,8 +35,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 import client_config
 
 from web_viewer import (
-    load_content, resolve_image, list_available_dates, find_excel,
-    CONTENT_DIR, IMAGES_DIR,
+    load_content, load_content_from_airtable, resolve_image,
+    list_available_dates, find_excel,
+    CONTENT_DIR, IMAGES_DIR, HAS_AIRTABLE_WRITER,
 )
 
 try:
@@ -49,7 +50,6 @@ except ImportError:
 def sanitize_date_id(date_id):
     """Convert date identifier to a safe filename.
     'week:2026-02-16' -> 'week-2026-02-16'
-    'mock:2026-02-23' -> 'mock-2026-02-23'
     """
     return date_id.replace(":", "-")
 
@@ -58,8 +58,6 @@ def date_display_label(date_id):
     """Human-readable label for a date identifier."""
     if date_id.startswith("week:"):
         return f"Week of {date_id[5:]}"
-    if date_id.startswith("mock:"):
-        return "Mock-up"
     return date_id
 
 
@@ -209,6 +207,127 @@ STATIC_HTML = """<!DOCTYPE html>
     border-color: rgba(0,85,255,0.5);
     color: var(--blue);
   }
+  .week-tab.placeholder-tab {
+    border-style: dashed;
+    color: var(--muted);
+  }
+  .week-tab.placeholder-tab.active {
+    border-style: solid;
+    color: var(--blue);
+  }
+  .week-add-btn {
+    background: none;
+    border: 1px dashed rgba(0,85,255,0.4);
+    color: rgba(0,85,255,0.7);
+    padding: 4px 11px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .week-add-btn:hover { background: var(--blue-dim); border-color: var(--blue); color: var(--blue); }
+
+  /* Placeholder week */
+  .placeholder-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 24px;
+    padding: 40px 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .placeholder-card {
+    background: var(--surface);
+    border: 1px dashed rgba(255,255,255,0.1);
+    border-radius: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 56px 32px;
+    gap: 12px;
+    text-align: center;
+    min-height: 300px;
+    transition: border-color 0.2s;
+  }
+  .placeholder-card:hover { border-color: rgba(0,85,255,0.25); }
+  .placeholder-icon { font-size: 2.2rem; opacity: 0.2; }
+  .placeholder-label { font-size: 1rem; font-weight: 700; color: var(--muted); }
+  .placeholder-hint { font-size: 0.82rem; color: var(--muted); opacity: 0.6; max-width: 260px; line-height: 1.5; }
+  .generate-bucket-btn {
+    background: var(--blue);
+    border: none;
+    color: #fff;
+    padding: 9px 26px;
+    border-radius: 10px;
+    font-size: 0.86rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s;
+    margin-top: 4px;
+  }
+  .generate-bucket-btn:hover { background: var(--blue-hover); }
+  .generate-bucket-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  /* Add-week modal */
+  .add-week-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(4px);
+    z-index: 900;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .add-week-overlay.open { display: flex; }
+  .add-week-box {
+    background: #0d1a36;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    padding: 32px;
+    width: 360px;
+    max-width: 92vw;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .add-week-box h3 { font-size: 1.05rem; font-weight: 700; }
+  .add-week-box p { font-size: 0.84rem; color: var(--muted); line-height: 1.55; }
+  .add-week-box input[type=date] {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--white);
+    padding: 9px 12px;
+    border-radius: 9px;
+    font-size: 0.88rem;
+    font-family: inherit;
+    color-scheme: dark;
+  }
+  .add-week-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+  .add-week-actions button {
+    padding: 8px 18px;
+    border-radius: 9px;
+    border: 1px solid var(--border);
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.84rem;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  .add-week-actions .btn-confirm {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: #fff;
+    font-weight: 600;
+  }
+  .add-week-actions .btn-confirm:hover { background: var(--blue-hover); }
 
   /* Language toggle */
   .lang-toggle {
@@ -688,6 +807,52 @@ STATIC_HTML = """<!DOCTYPE html>
   .btn-primary:hover { background: #0044cc; }
   .btn-secondary { background: none; border: 1px solid rgba(255,255,255,0.12); color: var(--muted); padding: 8px 14px; border-radius: 22px; cursor: pointer; font-size: 0.83rem; transition: all 0.2s ease; }
 
+  /* RU loading modal */
+  .ru-loading-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px);
+    z-index: 3000;
+    align-items: center;
+    justify-content: center;
+  }
+  .ru-loading-overlay.open { display: flex; }
+  .ru-loading-box {
+    background: #0d1a36;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 20px;
+    padding: 36px 40px;
+    max-width: 380px;
+    width: 90%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    text-align: center;
+  }
+  .ru-loading-box p { font-size: 0.95rem; color: rgba(255,255,255,0.85); margin: 0; line-height: 1.5; }
+  .ru-spinner {
+    width: 40px; height: 40px;
+    border: 3px solid rgba(255,255,255,0.12);
+    border-top-color: #1589DC;
+    border-radius: 50%;
+    animation: ru-spin 0.8s linear infinite;
+  }
+  @keyframes ru-spin { to { transform: rotate(360deg); } }
+  .ru-loading-box .btn-go-en {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.65);
+    padding: 8px 18px;
+    border-radius: 22px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: all 0.2s;
+  }
+  .ru-loading-box .btn-go-en:hover { background: rgba(255,255,255,0.08); color: #fff; }
+
   /* Regen status bar */
   #regen-status-bar {
     display: none;
@@ -810,11 +975,13 @@ STATIC_HTML = """<!DOCTYPE html>
   {% if topics %}
   <span class="header-count">{{ topics|length }} topic{{ 's' if topics|length != 1 else '' }}</span>
   {% endif %}
-  {% if date_options|length > 1 %}
+  {% set visible_tabs = date_options | selectattr('is_mock', 'equalto', false) | list %}
+  {% if visible_tabs|length > 0 %}
   <div class="week-tabs">
-    {% for opt in date_options %}
-    <a class="week-tab{% if opt.date_id == current_date_id %} active{% endif %}" href="{{ opt.filename }}">{{ opt.label }}</a>
+    {% for opt in visible_tabs %}
+    <a class="week-tab{% if opt.is_placeholder %} placeholder-tab{% endif %}{% if opt.date_id == current_date_id %} active{% endif %}" href="{{ opt.filename }}">{{ opt.label }}</a>
     {% endfor %}
+    {% if gh_repo %}<button class="week-add-btn" onclick="openAddWeekModal()" title="Add new week">+</button>{% endif %}
   </div>
   {% endif %}
   <div class="spacer"></div>
@@ -841,16 +1008,39 @@ STATIC_HTML = """<!DOCTYPE html>
   <div id="announcement-status"></div>
 </div>
 
+{% if is_placeholder %}
+<!-- Placeholder week — no content yet -->
+<div class="placeholder-grid" id="placeholder-grid">
+  <div class="placeholder-card" data-bucket="trending" id="ph-trending">
+    <span class="placeholder-icon">&#128200;</span>
+    <div class="placeholder-label">Trending Content</div>
+    <div class="placeholder-hint">7 topics scraped from X and Reddit, tailored to this week's trends.</div>
+    <button class="generate-bucket-btn" id="gen-btn-trending" onclick="generateWeek()">Generate</button>
+  </div>
+  <div class="placeholder-card" data-bucket="education" id="ph-education">
+    <span class="placeholder-icon">&#127891;</span>
+    <div class="placeholder-label">Education Content</div>
+    <div class="placeholder-hint">7 belief-building posts from the buyer journey, generated for this week.</div>
+    <button class="generate-bucket-btn" id="gen-btn-education" onclick="generateWeek()">Generate</button>
+  </div>
+  <div class="placeholder-card" data-bucket="announcements" id="ph-announcements">
+    <span class="placeholder-icon">&#128227;</span>
+    <div class="placeholder-label">Announcements</div>
+    <div class="placeholder-hint">Add your weekly update above, then generate 7 content angles from it.</div>
+    <button class="generate-bucket-btn" id="gen-btn-announcements" onclick="generateWeek()">Generate</button>
+  </div>
+</div>
+{% else %}
 <main class="grid">
 {% if topics %}
   {% for t in topics %}
   <div class="card" id="card-{{ loop.index }}" data-bucket="{{ t.bucket or 'trending' }}">
 
     <!-- EN Image -->
-    <div class="card-img en-only" {% if t.image_filename %}data-src="images/{{ t.image_filename }}"{% endif %}
-         title="{% if t.image_filename %}Click to enlarge{% endif %}">
-      {% if t.image_filename %}
-      <img src="images/{{ t.image_filename }}" alt="{{ t.topic }}" loading="lazy">
+    <div class="card-img en-only" {% if t.image_src %}data-src="{{ t.image_src }}"{% endif %}
+         title="{% if t.image_src %}Click to enlarge{% endif %}">
+      {% if t.image_src %}
+      <img src="{{ t.image_src }}" alt="{{ t.topic }}" loading="lazy">
       <div class="img-overlay"></div>
       {% else %}
       <div class="no-img">
@@ -874,10 +1064,10 @@ STATIC_HTML = """<!DOCTYPE html>
     </div>
 
     <!-- RU Image -->
-    <div class="card-img ru-only" {% if t.image_filename_ru %}data-src="images/{{ t.image_filename_ru }}"{% endif %}
-         title="{% if t.image_filename_ru %}Click to enlarge{% endif %}">
-      {% if t.image_filename_ru %}
-      <img src="images/{{ t.image_filename_ru }}" alt="{{ t.topic }}" loading="lazy">
+    <div class="card-img ru-only" {% if t.image_src_ru %}data-src="{{ t.image_src_ru }}"{% endif %}
+         title="{% if t.image_src_ru %}Click to enlarge{% endif %}">
+      {% if t.image_src_ru %}
+      <img src="{{ t.image_src_ru }}" alt="{{ t.topic }}" loading="lazy">
       <div class="img-overlay"></div>
       {% else %}
       <div class="no-img">
@@ -1036,8 +1226,31 @@ STATIC_HTML = """<!DOCTYPE html>
   </div>
 {% endif %}
 </main>
+{% endif %}
 
 <footer class="site-footer">Generated by {{ brand_name }} Content Pipeline</footer>
+
+<!-- Add Week modal -->
+<div class="add-week-overlay" id="add-week-modal">
+  <div class="add-week-box">
+    <h3>Create New Week</h3>
+    <p>Select the Monday start date for the new week. The pipeline will generate all 3 content buckets and deploy when complete.</p>
+    <input type="date" id="add-week-date">
+    <div class="add-week-actions">
+      <button onclick="cancelAddWeekModal()">Cancel</button>
+      <button class="btn-confirm" onclick="confirmAddWeek()">Start Pipeline</button>
+    </div>
+  </div>
+</div>
+
+<!-- RU loading modal -->
+<div class="ru-loading-overlay" id="ru-loading-modal">
+  <div class="ru-loading-box">
+    <div class="ru-spinner"></div>
+    <p>Generating Russian content...<br><small style="opacity:0.6;font-size:0.8rem">This may take a few minutes.</small></p>
+    <button class="btn-go-en" onclick="dismissRuModal()">Go back to English</button>
+  </div>
+</div>
 
 <script>
 // ── Constants (injected at build time) ────────────────────────────────────────
@@ -1062,8 +1275,24 @@ function setLang(lang) {
   document.getElementById('btn-en').classList.toggle('active', lang === 'en');
   document.getElementById('btn-ru').classList.toggle('active', lang === 'ru');
   localStorage.setItem('content-dash-lang', lang);
+  // Dismiss RU loading modal when switching back to English
+  if (lang === 'en') {
+    var m = document.getElementById('ru-loading-modal');
+    if (m) m.classList.remove('open');
+  }
 }
 (function(){ if(localStorage.getItem('content-dash-lang')==='ru') setLang('ru'); })();
+
+// ── RU loading modal ──────────────────────────────────────────────────────────
+function showRuModal() {
+  var m = document.getElementById('ru-loading-modal');
+  if (m) m.classList.add('open');
+}
+function dismissRuModal() {
+  var m = document.getElementById('ru-loading-modal');
+  if (m) m.classList.remove('open');
+  setLang('en');
+}
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 let toastTimer;
@@ -1370,6 +1599,11 @@ function triggerRegen(idx, regenType) {
     return;
   }
 
+  // Show RU loading modal for RU regen types
+  if (regenType === 'image_ru' || regenType === 'content_ru') {
+    showRuModal();
+  }
+
   // Worker path: no PAT needed
   if (REGEN_WORKER_URL) {
     _dispatchViaWorker('regenerate-item', { topic_index: String(idx - 1), regen_type: regenType }, idx, regenType);
@@ -1419,17 +1653,23 @@ function triggerRegen(idx, regenType) {
         showToast('Token invalid or expired. Please try again.', true);
         if (btn) { btn.textContent = origText; btn.disabled = false; btn.classList.remove('triggering'); }
         dismissRegenStatus();
+        var ruModal = document.getElementById('ru-loading-modal');
+        if (ruModal) ruModal.classList.remove('open');
       } else {
         const err = await resp.text();
         showToast('GitHub API error: ' + resp.status);
         if (btn) { btn.textContent = origText; btn.disabled = false; btn.classList.remove('triggering'); }
         dismissRegenStatus();
+        var ruModal = document.getElementById('ru-loading-modal');
+        if (ruModal) ruModal.classList.remove('open');
         console.error('GH API error', resp.status, err);
       }
     } catch(e) {
       showToast('Network error: ' + e.message);
       if (btn) { btn.textContent = origText; btn.disabled = false; btn.classList.remove('triggering'); }
       dismissRegenStatus();
+      var ruModal = document.getElementById('ru-loading-modal');
+      if (ruModal) ruModal.classList.remove('open');
     }
   });
 }
@@ -1539,6 +1779,11 @@ function switchBucket(bucket) {
     var cardBucket = card.dataset.bucket || 'trending';
     card.style.display = cardBucket === bucket ? '' : 'none';
   });
+  // Show/hide placeholder cards
+  document.querySelectorAll('.placeholder-card').forEach(function(card) {
+    var cardBucket = card.dataset.bucket || 'trending';
+    card.style.display = cardBucket === bucket ? '' : 'none';
+  });
   var inputPanel = document.getElementById('announcement-input-panel');
   if (inputPanel) {
     inputPanel.style.display = bucket === 'announcements' ? 'block' : 'none';
@@ -1551,11 +1796,83 @@ function switchBucket(bucket) {
   var saved = '';
   try { saved = localStorage.getItem('active-bucket') || ''; } catch(e) {}
   var firstBucket = 'trending';
-  var allBuckets = new Set();
+  var allBuckets = new Set(['trending','education','announcements']);
   document.querySelectorAll('.card').forEach(function(c) { if(c.dataset.bucket) allBuckets.add(c.dataset.bucket); });
-  if (allBuckets.size > 0) firstBucket = allBuckets.values().next().value;
   switchBucket(saved && allBuckets.has(saved) ? saved : firstBucket);
 })();
+
+// ── Add week / placeholder generate ───────────────────────────────────────────
+function openAddWeekModal() {
+  const modal = document.getElementById('add-week-modal');
+  if (!modal) return;
+  // Default to next Monday after current WEEK_OF
+  try {
+    const base = WEEK_OF ? new Date(WEEK_OF + 'T00:00:00') : new Date();
+    base.setDate(base.getDate() + 7);
+    document.getElementById('add-week-date').value = base.toISOString().slice(0, 10);
+  } catch(e) {}
+  modal.classList.add('open');
+}
+
+function cancelAddWeekModal() {
+  const modal = document.getElementById('add-week-modal');
+  if (modal) modal.classList.remove('open');
+}
+
+function confirmAddWeek() {
+  const d = document.getElementById('add-week-date').value;
+  if (!d) { showToast('Please select a week start date.'); return; }
+  cancelAddWeekModal();
+  _triggerWeeklyPipeline(d);
+}
+
+function generateWeek() {
+  if (!GH_REPO) { showToast('GitHub repo not configured'); return; }
+  // Disable all generate buttons to prevent double-trigger
+  document.querySelectorAll('.generate-bucket-btn').forEach(b => {
+    b.disabled = true; b.textContent = 'Queued \u2713';
+  });
+  _triggerWeeklyPipeline(WEEK_OF);
+}
+
+function _triggerWeeklyPipeline(weekOf) {
+  if (!GH_REPO) { showToast('GitHub repo not configured'); return; }
+  if (REGEN_WORKER_URL) {
+    _dispatchViaWorker('weekly-pipeline', { week_of: weekOf }, null, 'pipeline');
+    showRegenStatus('Weekly pipeline started. New content will appear when complete (~5-10 min).');
+    return;
+  }
+  getGhToken(async function(token) {
+    try {
+      const resp = await fetch(
+        `https://api.github.com/repos/${GH_REPO}/actions/workflows/weekly-pipeline.yml/dispatches`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ref: 'main', inputs: { client_id: CLIENT_ID, week_of: weekOf } }),
+        }
+      );
+      if (resp.status === 204) {
+        showRegenStatus('Weekly pipeline started. New content will appear when complete (~5-10 min).');
+        pollRegenCompletion(token);
+      } else if (resp.status === 401 || resp.status === 403) {
+        sessionStorage.removeItem('gh_pat');
+        showToast('Token invalid or expired. Please try again.');
+        document.querySelectorAll('.generate-bucket-btn').forEach(b => { b.disabled = false; b.textContent = 'Generate'; });
+      } else {
+        showToast('GitHub API error: ' + resp.status);
+        document.querySelectorAll('.generate-bucket-btn').forEach(b => { b.disabled = false; b.textContent = 'Generate'; });
+      }
+    } catch(e) {
+      showToast('Network error: ' + e.message);
+      document.querySelectorAll('.generate-bucket-btn').forEach(b => { b.disabled = false; b.textContent = 'Generate'; });
+    }
+  });
+}
 
 // ── Announcement generation (via GitHub Actions) ───────────────────────────────
 async function submitAnnouncement() {
@@ -2215,14 +2532,39 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
     # Images go inside the client dashboard dir
     images_out = client_dash_dir / "images"
 
-    # Build date-to-filename mapping for the date picker (across ALL available dates)
-    # Filenames are relative within the client dashboard dir
+    # Build date-to-filename mapping (Week N labels; newest real week = Week 1)
+    from datetime import datetime, timedelta
     date_options = []
+    week_num = 1
     for d in all_dates:
+        if d.startswith("week:"):
+            date_str = datetime.strptime(d[5:], "%Y-%m-%d").strftime("%d/%m/%y")
+            label = f"Week {week_num} - {date_str}"
+            week_num += 1
+        else:
+            label = d
         date_options.append({
-            "date_id":  d,
-            "filename": sanitize_date_id(d) + ".html",
-            "label":    date_display_label(d),
+            "date_id":       d,
+            "filename":      sanitize_date_id(d) + ".html",
+            "label":         label,
+            "is_mock":       False,
+            "is_placeholder": False,
+        })
+
+    # Append a placeholder tab for the upcoming week (latest real week + 7 days)
+    latest_week = next((d for d in all_dates if d.startswith("week:")), None)
+    placeholder_date_id = None
+    if latest_week:
+        latest_date_str = latest_week[5:]
+        next_week_date = (datetime.strptime(latest_date_str, "%Y-%m-%d") + timedelta(days=7)).strftime("%Y-%m-%d")
+        placeholder_date_id = f"week:{next_week_date}"
+        placeholder_filename = f"week-{next_week_date}.html"
+        date_options.append({
+            "date_id":       placeholder_date_id,
+            "filename":      placeholder_filename,
+            "label":         f"Week {week_num}",
+            "is_mock":       False,
+            "is_placeholder": True,
         })
 
     # Set up Jinja2 environments
@@ -2237,20 +2579,35 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
     pages_built = 0
 
     for date_id in build_dates:
-        xlsx = find_excel(date_id)
-        if not xlsx:
-            print(f"  Warning: no Excel file for '{date_id}', skipping")
-            continue
+        topics = []
+        # Try Airtable first for week: dates
+        if date_id.startswith("week:") and HAS_AIRTABLE_WRITER:
+            at_cfg = _client_cfg.get("airtable", {})
+            if at_cfg.get("enabled"):
+                topics = load_content_from_airtable(date_id, active_client)
 
-        topics = load_content(xlsx)
+        if not topics:
+            # Fall back to local Excel
+            xlsx = find_excel(date_id)
+            if not xlsx:
+                print(f"  Warning: no content for '{date_id}' (no Airtable data and no Excel file), skipping")
+                continue
+            topics = load_content(xlsx)
+
         safe_name = sanitize_date_id(date_id)
 
-        # Copy EN and RU images for this date's topics
+        # Copy EN and RU images for topics with local file paths (skip R2 URLs)
         for t in topics:
+            # Ensure image_src is set for static build (relative prefix, not /images/)
+            fn = t.get("image_filename")
+            fn_ru = t.get("image_filename_ru")
+            t["image_src"] = fn if (fn and fn.startswith("http")) else (f"images/{fn}" if fn else "")
+            t["image_src_ru"] = fn_ru if (fn_ru and fn_ru.startswith("http")) else (f"images/{fn_ru}" if fn_ru else "")
+
             for img_key in ("image_filename", "image_filename_ru"):
                 img_rel = t.get(img_key)
-                if not img_rel:
-                    continue
+                if not img_rel or img_rel.startswith("http"):
+                    continue  # Skip R2 URLs — they load directly in the browser
 
                 src = IMAGES_DIR / img_rel
                 if not src.exists():
@@ -2302,12 +2659,37 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
             regen_worker_url=regen_worker_url,
             client_logo_url=client_logo_url,
             x_publishing_enabled=client_config.is_x_publishing_enabled(active_client),
+            is_placeholder=False,
         )
 
         page_path = client_dash_dir / f"{safe_name}.html"
         page_path.write_text(html, encoding="utf-8")
         pages_built += 1
         print(f"  Built: dashboard/{active_client}/{page_path.name} ({len(topics)} topics)")
+
+    # Build placeholder week page (upcoming week with Generate buttons per bucket)
+    if placeholder_date_id and latest_week:
+        ph_week_of = placeholder_date_id[5:]
+        ph_html = dashboard_template.render(
+            topics=[],
+            date_label=date_options[-1]["label"],
+            current_date_id=placeholder_date_id,
+            date_options=date_options,
+            brand_name=_display_name,
+            expected_client_id=active_client,
+            week_of=ph_week_of,
+            client_id=active_client,
+            gh_repo=gh_repo,
+            github_regen_token=github_regen_token,
+            regen_worker_url=regen_worker_url,
+            client_logo_url=client_logo_url,
+            x_publishing_enabled=client_config.is_x_publishing_enabled(active_client),
+            is_placeholder=True,
+        )
+        ph_page_path = client_dash_dir / f"week-{ph_week_of}.html"
+        ph_page_path.write_text(ph_html, encoding="utf-8")
+        pages_built += 1
+        print(f"  Built: dashboard/{active_client}/{ph_page_path.name} (placeholder)")
 
     # Copy favicon if available
     favicon_src = Path(__file__).parent.parent / "reference" / "favicon.jpg"

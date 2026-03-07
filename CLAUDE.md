@@ -192,12 +192,14 @@ This workspace supports multiple clients via a config-driven architecture:
 | `client_config.py` | Multi-client config loader (central module) | Import only: `load_config()`, `get_output_dir()`, `get_keywords()`, `get_content_types()`, `get_bucket_size()`, `get_belief_journey_path()`, `is_airtable_enabled()` |
 | `apify_scraper.py` | Scrape Twitter/Reddit via Apify for trending topics | `--platform`, `--keywords`, `--count`, `--days`, `--top`, `--output`, `--mock`, `--client` |
 | `excel_manager.py` | Excel styling library (no CLI) | Import only: `style_header_cell`, `style_data_cell`, color constants |
-| `nano_banana.py` | Generate EN branded images via WaveSpeed GPT-Image-1.5 | `--prompt`, `--output`, `--style`, `--mock`, `--no-reference`, `--client` |
-| `wavespeed_img.py` | Generate RU branded images via WaveSpeed Seedream 4.5 | `--prompt`, `--topic`, `--headline`, `--style`, `--output`, `--mock`, `--client` |
+| `nano_banana.py` | Generate EN branded images via WaveSpeed GPT-Image-1.5; uploads to R2 if configured | `--prompt`, `--output`, `--style`, `--mock`, `--no-reference`, `--no-r2`, `--client` |
+| `wavespeed_img.py` | Generate RU branded images via WaveSpeed Seedream 4.5; uploads to R2 if configured | `--prompt`, `--topic`, `--headline`, `--style`, `--output`, `--mock`, `--no-r2`, `--client` |
 | `weekly_pipeline.py` | Weekly pipeline orchestrator (15-col bilingual workbook, 3-bucket) | `--action` (scrape, create-workbook, save-content, finalize, sync-airtable), `--week-of`, `--mock`, `--client` |
 | `bucket_generators.py` | 3-bucket topic generators dispatched by type | Import only: `generate_bucket(type, config, week_of, ...)`, `BUCKET_DISPLAY_NAMES` |
-| `pipeline_runner.py` | Standalone end-to-end pipeline (Gemini-powered, no Claude required) | `--client`, `--week-of`, `--mock`, `--skip-images`, `--skip-airtable`, `--skip-deploy`, `--mode {full,announcement}`, `--announcement-text`, `--regen-topic INT`, `--regen-type {image_en,image_ru,content,content_ru}` |
-| `airtable_sync.py` | Push weekly content to client's Airtable base (15-col schema) | `--week-of`, `--mock`, `--client` |
+| `pipeline_runner.py` | Standalone end-to-end pipeline (Gemini-powered); writes directly to Airtable + R2; Excel is opt-in | `--client`, `--week-of`, `--mock`, `--skip-images`, `--skip-airtable`, `--skip-deploy`, `--export-excel`, `--mode {full,announcement}`, `--announcement-text`, `--regen-topic INT`, `--regen-type {image_en,image_ru,content,content_ru}` |
+| `airtable_sync.py` | Push weekly Excel content to client's Airtable base (batch; legacy — pipeline_runner writes inline) | `--week-of`, `--mock`, `--client` |
+| `airtable_writer.py` | Inline Airtable write/update module used by pipeline_runner (18-field schema, per-item writes) | Import only: `get_or_create_table()`, `write_record()`, `update_image_urls()`, `load_records()`, `list_week_tables()`, `records_to_topics()` |
+| `r2_uploader.py` | Cloudflare R2 image upload module (S3-compatible, boto3) | Import only: `upload_bytes()`, `upload_file()`, `make_key()`, `is_configured()`; CLI `--test` mode |
 | `x_publisher.py` | Publish Twitter thread to X via OAuth 1.0a; updates Excel Status + Tweet_URL cols | `--client`, `--week-of`, `--topic-index`, `--mock` |
 | `web_viewer.py` | Flask dashboard server with EN/RU toggle and bucket tabs | Runs on localhost:5001, `--client`; `/api/generate-announcement`, `/api/publish-to-x` endpoints |
 | `build_static.py` | Static site builder with EN/RU toggle, bucket tabs, admin panel | `--output`, `--date`, `--include-admin`, `--client` |
@@ -210,8 +212,10 @@ This workspace supports multiple clients via a config-driven architecture:
   - **Bucket 1: Trending** — 7 scraped/relevant topics from X and Reddit
   - **Bucket 2: Education** — 7 belief-building topics from `clients/{client_id}/belief-journey.md`
   - **Bucket 3: Announcements** — client inputs ONE text update → Gemini generates 7 content angles
-- Each topic gets Twitter + Telegram in English AND Russian = **42 content rows** in workbook
-- Workbook Content sheet: **16 columns** (Date, Bucket, Day, Topic, Platform, Format, Content, Image Prompt, Image Path, Hashtags, Content_RU, Image_Prompt_RU, Image_Path_RU, Hashtags_RU, Status, Tweet_URL). Tweet_URL col (P) written by `x_publisher.py` after publishing; backward-compatible (created on first publish).
+- Each topic gets Twitter + Telegram in English AND Russian = **42 content items**
+- **Primary storage**: Airtable (18-field schema: Date, Bucket, Day, Topic, Platform, Format, Content, Image_Prompt, Image_URL_EN, Hashtags, Content_RU, Image_Prompt_RU, Image_URL_RU, Hashtags_RU, Status, Tweet_URL, Week, Client). Written inline per item during Phase 4.
+- **Image storage**: Cloudflare R2 (S3-compatible). R2 URLs stored in `Image_URL_EN`/`Image_URL_RU` Airtable fields.
+- **Excel workbook** (opt-in via `--export-excel`): 16 columns (Date, Bucket, Day, Topic, Platform, Format, Content, Image Prompt, Image Path, Hashtags, Content_RU, Image_Prompt_RU, Image_Path_RU, Hashtags_RU, Status, Tweet_URL). Tweet_URL col (P) written by `x_publisher.py`; backward-compatible.
 - Interleaved day order: Mon = [Trending#1, Education#1, Announcement#1], Tue = [Trending#2, Education#2, Announcement#2], etc.
 - Per day: topics 1-2 (positions 1 and 2 in the day) get Twitter thread format (5 tweets); topic 3 gets single tweet format
 - Image styles: Pain Point → minimal, Education → tech, Announcement → notification
@@ -241,13 +245,14 @@ This workspace supports multiple clients via a config-driven architecture:
 | Apify | `APIFY_API_TOKEN` | Twitter + Reddit scraping |
 | Google AI | `GOOGLE_AI_API_KEY` | Gemini text translation (RU content) |
 | WaveSpeed | `WAVESPEED_API_KEY` | GPT-Image-1.5 (EN) + Seedream 4.5 (RU) image generation |
-| Airtable | `AIRTABLE_API_KEY` | Content delivery to client Airtable bases (optional, per client) |
+| Airtable | `AIRTABLE_API_KEY` | Primary content store — written inline per item (optional, per client) |
+| Cloudflare R2 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL` | Image cloud storage (S3-compatible, 10GB free, zero egress). See `reference/r2-setup.md` |
 | X (Twitter) | `{CLIENT_ID_UPPER}_X_API_KEY`, `_X_API_SECRET`, `_X_ACCESS_TOKEN`, `_X_ACCESS_TOKEN_SECRET` | Direct publishing to X (optional, per client). See `reference/x-api-setup.md` |
 | EmailJS | `intake/intake-config.js` | Credential email delivery from intake form (not an env var — stored in gitignored JS file) |
 
 Store in `.env` (never commit). See `reference/api-setup.md` for setup.
 
-**Python environment:** `venv/` with dependencies: `requests`, `openpyxl`, `google-genai`, `python-dotenv`, `flask`
+**Python environment:** `venv/` with dependencies: `requests`, `openpyxl`, `google-genai`, `python-dotenv`, `flask`, `boto3`
 
 ---
 
@@ -257,7 +262,7 @@ The content dashboard can be deployed as a static site for client access:
 
 - **Local viewing**: `/view-content` runs Flask on localhost:5001
 - **Client access**: `/deploy` builds static HTML + admin panel and deploys to GitHub Pages (`gh-pages` branch of `rtadik/bobe-content-dashboard`)
-- **Remote pipeline**: `pipeline_runner.py` runs the full pipeline autonomously via GitHub Actions (Gemini-powered)
+- **Remote pipeline**: `pipeline_runner.py` runs the full pipeline autonomously via GitHub Actions (Gemini-powered); writes content to Airtable and images to Cloudflare R2
 
 The deployed dashboard has a landing page, login form, and per-client auth. Clients log in with their credentials and see only their own content. The admin panel (`/admin/`) is write-capable via GitHub API.
 
@@ -273,7 +278,7 @@ The deployed dashboard has a landing page, login form, and per-client auth. Clie
 ### GitHub Actions
 
 Six workflows in `.github/workflows/`:
-- **`weekly-pipeline.yml`**: Triggered via `workflow_dispatch` (admin panel or GitHub UI). Runs `pipeline_runner.py`, builds static site with admin panel, deploys to `gh-pages`, uploads Excel as artifact.
+- **`weekly-pipeline.yml`**: Triggered via `workflow_dispatch` (admin panel or GitHub UI). Runs `pipeline_runner.py` (writes to Airtable + R2), builds static site with admin panel, deploys to `gh-pages`, uploads pipeline outputs as artifact.
 - **`generate-announcement.yml`**: Triggered from the live dashboard's Announcements tab (or GitHub UI). Accepts `client_id`, `week_of`, `announcement_text`. Runs `pipeline_runner.py --mode announcement`, rebuilds and deploys static site.
 - **`regenerate-item.yml`**: Triggered by the live dashboard's Regen buttons (via GitHub API from the client's browser, using a PAT). Regenerates a single topic item (image_en, image_ru, content, or content_ru), rebuilds and redeploys the static site. Inputs: `client_id`, `week_of`, `topic_index` (0-based), `regen_type`.
 - **`publish-to-x.yml`**: Triggered by the live dashboard's "Publish to X" button (via GitHub API using a PAT). Runs `x_publisher.py`, commits updated xlsx (Status=Published, Tweet_URL col), rebuilds and redeploys static site. Inputs: `client_id`, `week_of`, `topic_index`. Requires `BOBE_X_*` GitHub Secrets.
@@ -306,6 +311,7 @@ Implemented plans are archived in `plans/implemented/`. Active (pending) plans l
 | `2026-02-24-auto-onboard-on-intake-submit.md` | Cloudflare Worker proxy triggers `auto-onboard.yml` on intake form submit; creates client dir, commits to main, rebuilds and deploys site automatically |
 | `2026-02-26-three-bucket-content-strategy.md` | 3-bucket content strategy: Trending (7 scraped), Education (7 from belief-journey.md), Announcements (client input → 7 angles). 15-col workbook, bucket tabs on dashboard, intake content type selection, belief-journey.md auto-generated at onboarding |
 | Direct X (Twitter) publishing | One-click publish from dashboard (local Flask + live static site via GitHub Actions). Per-client OAuth 1.0a credentials. Duplicate prevention. Excel Status + Tweet_URL cols (16). See `reference/x-api-setup.md` |
+| `2026-03-05-cloudflare-r2-airtable-primary-store.md` | Cloudflare R2 for image storage + Airtable as primary content store. pipeline_runner writes inline per item. Excel demoted to opt-in (`--export-excel`). Dashboard and static build read from Airtable first, fall back to Excel. |
 
 ### Pending (active plans in `plans/`)
 

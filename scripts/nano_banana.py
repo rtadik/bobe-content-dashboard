@@ -36,6 +36,12 @@ sys.path.insert(0, str(Path(__file__).parent))
 import client_config
 from client_config import get_api_key
 
+try:
+    import r2_uploader
+    HAS_R2 = True
+except ImportError:
+    HAS_R2 = False
+
 
 API_BASE = "https://api.wavespeed.ai/api/v3"
 EDIT_ENDPOINT = f"{API_BASE}/openai/gpt-image-1.5/edit"
@@ -137,11 +143,12 @@ def _poll_result(request_id, headers, timeout=180):
     raise TimeoutError(f"Image generation timed out after {timeout}s")
 
 
-def generate_image(prompt: str, output_path: str, reference_paths: list = None, client_id: str = None) -> str:
+def generate_image(prompt: str, output_path: str, reference_paths: list = None, client_id: str = None, upload_r2: bool = True) -> tuple:
     """Generate an image using WaveSpeed GPT-Image-1.5 with reference images for brand fidelity.
 
     If reference_paths are provided, uses the Edit endpoint (supports up to 10 reference images).
     If no references, falls back to the Text-to-Image endpoint.
+    Returns (local_path, r2_url) tuple. r2_url is None if R2 not configured or upload_r2=False.
     """
     api_key = get_api_key(client_id or "bobe", "wavespeed_en")
     if not api_key:
@@ -198,7 +205,21 @@ def generate_image(prompt: str, output_path: str, reference_paths: list = None, 
     # Download and save
     img_resp = requests.get(image_url)
     img_resp.raise_for_status()
-    return save_image(img_resp.content, output_path)
+    local_path = save_image(img_resp.content, output_path)
+
+    r2_url = None
+    if upload_r2 and HAS_R2:
+        try:
+            if r2_uploader.is_configured():
+                filename = Path(output_path).name
+                week_of = filename.split("_")[0] if "_" in filename else "unknown"
+                key = r2_uploader.make_key(client_id or "bobe", week_of, filename)
+                r2_url = r2_uploader.upload_bytes(img_resp.content, key)
+                print(f"  Uploaded to R2: {r2_url}")
+        except Exception as e:
+            print(f"  R2 upload failed (image saved locally): {e}")
+
+    return local_path, r2_url
 
 
 def save_image(image_data: bytes, path: str) -> str:
@@ -227,7 +248,7 @@ def mock_generate(output_path: str) -> str:
         f.write(minimal_png)
 
     print(f"  [MOCK] Placeholder created: {placeholder_path}")
-    return placeholder_path
+    return placeholder_path, None
 
 
 def generate_for_content(topic: str, content_text: str, date: str, platform: str, style: str = "tech", client_id: str = None) -> dict:
@@ -267,6 +288,8 @@ def main():
                         help="Disable reference images, text-only prompt")
     parser.add_argument("--mock", action="store_true",
                         help="Mock mode, no API call")
+    parser.add_argument("--no-r2", action="store_true",
+                        help="Skip R2 upload even if configured")
     parser.add_argument("--show-prompt", action="store_true",
                         help="Print full text prompt and exit without generating")
     client_config.add_client_arg(parser)
@@ -318,9 +341,14 @@ def main():
 
     if args.mock:
         print("Running in MOCK mode, no API call made.")
-        result_path = mock_generate(output_path)
+        result_path, _ = mock_generate(output_path)
     else:
-        result_path = generate_image(prompt, output_path, reference_paths, client_id=active_client)
+        result_path, r2_url = generate_image(
+            prompt, output_path, reference_paths,
+            upload_r2=not args.no_r2, client_id=active_client
+        )
+        if r2_url:
+            print(f"  R2: {r2_url}")
 
     print(f"\nDone: {result_path}")
     return result_path

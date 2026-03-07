@@ -19,6 +19,8 @@ import json
 import sys
 import time
 import argparse
+import urllib.request
+import urllib.parse
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
@@ -90,6 +92,7 @@ def run_apify_actor(actor_id: str, run_input: dict, timeout: int = 120) -> List[
 
 def scrape_twitter(keywords: List[str], count: int = 50, since_date: Optional[str] = None) -> List[Dict]:
     """Scrape Twitter for posts matching keywords using Twitter Tweets Scraper actor."""
+    # Build search queries and pass as Twitter search URLs (more reliable than searchTerms)
     search_queries = [
         f"{kw} crypto" if i < 3 else kw
         for i, kw in enumerate(keywords[:5])
@@ -97,8 +100,13 @@ def scrape_twitter(keywords: List[str], count: int = 50, since_date: Optional[st
     if since_date:
         search_queries = [f"{q} since:{since_date}" for q in search_queries]
 
+    # Try startUrls format first (Twitter search result pages), fall back to searchTerms
+    search_urls = [
+        {"url": f"https://twitter.com/search?q={urllib.parse.quote(q)}&f=live&lang=en"}
+        for q in search_queries
+    ]
     run_input = {
-        "searchTerms": search_queries,
+        "startUrls": search_urls,
         "maxItems": count,
         "lang": "en",
     }
@@ -135,34 +143,57 @@ def scrape_twitter(keywords: List[str], count: int = 50, since_date: Optional[st
 
 
 def scrape_reddit(subreddits: List[str], keywords: List[str], count: int = 50) -> List[Dict]:
-    """Scrape Reddit for posts from specified subreddits matching keywords."""
-    run_input = {
-        "startUrls": [
-            {"url": f"https://www.reddit.com/r/{sub}/search/?q={'+'.join(keywords)}&sort=hot&t=day"}
-            for sub in subreddits
-        ],
-        "maxPostCount": count,
-        "includeComments": False,
-    }
+    """Scrape Reddit using the native JSON API (no Apify required)."""
+    headers = {"User-Agent": "ContentBot/1.0 (social media research)"}
+    all_posts = []
+    seen_ids = set()
 
-    raw_items = run_apify_actor(REDDIT_ACTOR_ID, run_input)
+    # Search each subreddit with top keywords (cap at 4 keywords to avoid rate limits)
+    for sub in subreddits:
+        for kw in keywords[:4]:
+            url = (
+                f"https://www.reddit.com/r/{sub}/search.json"
+                f"?q={urllib.parse.quote(kw)}&restrict_sr=1&sort=hot&t=month&limit=10"
+            )
+            req = urllib.request.Request(url, headers=headers)
+            try:
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    data = json.loads(resp.read())
+                children = data.get("data", {}).get("children", [])
+                for child in children:
+                    pd = child.get("data", {})
+                    post_id = pd.get("id", "")
+                    if not post_id or post_id in seen_ids:
+                        continue
+                    seen_ids.add(post_id)
+                    title = pd.get("title", "").strip()
+                    selftext = (pd.get("selftext") or "").strip()
+                    # Combine title + body excerpt as the post text
+                    text = title + (f"\n{selftext[:400]}" if selftext and selftext != "[removed]" else "")
+                    score = pd.get("score", 0)
+                    num_comments = pd.get("num_comments", 0)
+                    all_posts.append({
+                        "platform": "reddit",
+                        "id": post_id,
+                        "text": text,
+                        "title": title,
+                        "author": pd.get("author", ""),
+                        "url": "https://reddit.com" + pd.get("permalink", ""),
+                        "likes": score,
+                        "retweets": 0,
+                        "replies": num_comments,
+                        "views": 0,
+                        "subreddit": pd.get("subreddit", sub),
+                        "engagement": score + num_comments * 2,
+                        "date": datetime.fromtimestamp(pd.get("created_utc", 0)).isoformat() if pd.get("created_utc") else "",
+                    })
+            except Exception as e:
+                print(f"  Reddit r/{sub} '{kw}': {e}")
 
-    posts = []
-    for item in raw_items:
-        posts.append({
-            "platform": "reddit",
-            "id": item.get("id", ""),
-            "text": f"{item.get('title', '')} {item.get('selftext', '')}".strip(),
-            "author": item.get("author", ""),
-            "url": item.get("url", ""),
-            "subreddit": item.get("subreddit", ""),
-            "upvotes": item.get("score", 0),
-            "comments": item.get("numComments", 0),
-            "date": item.get("createdAt", ""),
-            "engagement": item.get("score", 0) + item.get("numComments", 0) * 2,
-        })
+        if len(all_posts) >= count:
+            break
 
-    return posts
+    return all_posts[:count]
 
 
 def filter_by_relevance(posts: List[Dict], keywords: List[str], client_id: str = None) -> List[Dict]:
@@ -340,10 +371,7 @@ def main():
                 print(f"  Got {len(reddit_posts)} Reddit posts")
                 all_posts.extend(reddit_posts)
             except Exception as e:
-                if "403" in str(e):
-                    print(f"  Reddit returned 403 Forbidden, the Reddit actor may require a paid Apify plan. Skipping.")
-                else:
-                    print(f"  Reddit scraping failed: {e}")
+                print(f"  Reddit scraping failed: {e}")
 
     # Filter and rank
     print(f"\nFiltering {len(all_posts)} posts by relevance...")

@@ -33,14 +33,22 @@ sys.path.insert(0, str(Path(__file__).parent))
 import client_config
 from client_config import get_api_key
 
+try:
+    import r2_uploader
+    HAS_R2 = True
+except ImportError:
+    HAS_R2 = False
+
 API_BASE = "https://api.wavespeed.ai/api/v3"
 MODEL_ENDPOINT = f"{API_BASE}/bytedance/seedream-v4.5"
 EDIT_ENDPOINT = f"{API_BASE}/bytedance/seedream-v4.5/edit"
 POLL_ENDPOINT = f"{API_BASE}/predictions"
 
 
-def generate_image(prompt, output_path, size="2560*1440", timeout=120, client_id=None):
-    """Submit image generation, poll for completion, download result."""
+def generate_image(prompt, output_path, size="2560*1440", timeout=120, client_id=None, upload_r2=True):
+    """Submit image generation, poll for completion, download result.
+    Returns (local_path, r2_url) tuple. r2_url is None if R2 not configured or upload_r2=False.
+    """
     api_key = get_api_key(client_id or "bobe", "wavespeed_ru")
     if not api_key:
         raise RuntimeError("WAVESPEED_API_KEY not set in .env")
@@ -72,7 +80,20 @@ def generate_image(prompt, output_path, size="2560*1440", timeout=120, client_id
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
             Path(output_path).write_bytes(img_resp.content)
             print(f"  Saved: {output_path}")
-            return str(output_path)
+
+            r2_url = None
+            if upload_r2 and HAS_R2:
+                try:
+                    if r2_uploader.is_configured():
+                        filename = Path(output_path).name
+                        week_of = filename.split("_")[0] if "_" in filename else "unknown"
+                        key = r2_uploader.make_key(client_id or "bobe", week_of, filename)
+                        r2_url = r2_uploader.upload_bytes(img_resp.content, key)
+                        print(f"  Uploaded to R2: {r2_url}")
+                except Exception as e:
+                    print(f"  R2 upload failed (image saved locally): {e}")
+
+            return str(output_path), r2_url
         elif status == "failed":
             raise RuntimeError(f"Image generation failed: {result['data'].get('error')}")
         time.sleep(2)
@@ -97,19 +118,21 @@ def build_prompt_ru(topic, headline_ru, style="tech", client_id=None):
 
 Background: {bg_style}, {style_desc}
 
-Character: {mascot_desc}. Place the mascot on the right side of the image.
+Character (REQUIRED): {mascot_desc}. Place the mascot prominently on the right side of the image. The mascot must be clearly visible and match this exact description.
 
 Text: Include bold white Cyrillic headline text: "{headline_ru}"
 Place the headline on the left side, large and readable.
 
-Top-left corner: {logo_desc}.
+Logo (REQUIRED): Top-left corner — {logo_desc}. The logo must be clearly visible and placed exactly in the top-left corner.
 
 Style: Cinematic 3D render, professional aesthetic.
 Topic context: {topic}"""
 
 
-def translate_image(source_path, output_path, size="2560*1440", timeout=120, client_id=None):
-    """Translate an existing English image to Russian using Seedream 4.5 Edit."""
+def translate_image(source_path, output_path, size="2560*1440", timeout=120, client_id=None, upload_r2=True):
+    """Translate an existing English image to Russian using Seedream 4.5 Edit.
+    Returns (local_path, r2_url) tuple. r2_url is None if R2 not configured or upload_r2=False.
+    """
     api_key = get_api_key(client_id or "bobe", "wavespeed_ru")
     if not api_key:
         raise RuntimeError("WAVESPEED_API_KEY not set in .env")
@@ -125,8 +148,10 @@ def translate_image(source_path, output_path, size="2560*1440", timeout=120, cli
     payload = {
         "prompt": (
             "Translate all English text in this image to Russian (Cyrillic). "
-            "Keep the same layout, mascot, colors, and design. "
-            f"Keep the brand name '{display_name}' unchanged in the logo."
+            "Keep the same layout, colors, and overall design unchanged. "
+            "Keep the mascot character exactly as-is — same pose, outfit, expression, and style. "
+            f"Keep the '{display_name}' logo exactly as-is in the top-left corner. "
+            "Only translate the text; do not alter any visual elements."
         ),
         "images": [f"data:image/png;base64,{b64}"],
         "size": size,
@@ -150,7 +175,20 @@ def translate_image(source_path, output_path, size="2560*1440", timeout=120, cli
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
             Path(output_path).write_bytes(img_resp.content)
             print(f"  Saved: {output_path}")
-            return str(output_path)
+
+            r2_url = None
+            if upload_r2 and HAS_R2:
+                try:
+                    if r2_uploader.is_configured():
+                        filename = Path(output_path).name
+                        week_of = filename.split("_")[0] if "_" in filename else "unknown"
+                        key = r2_uploader.make_key(client_id or "bobe", week_of, filename)
+                        r2_url = r2_uploader.upload_bytes(img_resp.content, key)
+                        print(f"  Uploaded to R2: {r2_url}")
+                except Exception as e:
+                    print(f"  R2 upload failed (image saved locally): {e}")
+
+            return str(output_path), r2_url
         elif status == "failed":
             raise RuntimeError(f"Image edit failed: {result['data'].get('error')}")
         time.sleep(2)
@@ -170,7 +208,7 @@ def mock_generate(output_path):
     )
     Path(output_path).write_bytes(png_bytes)
     print(f"  [MOCK] Placeholder created: {output_path}")
-    return str(output_path)
+    return str(output_path), None
 
 
 def main():
@@ -194,6 +232,8 @@ def main():
                         help="Image size in WaveSpeed format (default: 2560*1440)")
     parser.add_argument("--mock", action="store_true",
                         help="Create placeholder without calling API")
+    parser.add_argument("--no-r2", action="store_true",
+                        help="Skip R2 upload even if configured")
     client_config.add_client_arg(parser)
     args = parser.parse_args()
 
@@ -203,13 +243,23 @@ def main():
         mock_generate(args.output)
         return
 
+    upload_r2 = not args.no_r2
     if args.edit_image:
-        translate_image(args.edit_image, args.output, size=args.size, client_id=active_client)
+        path, r2_url = translate_image(args.edit_image, args.output, size=args.size,
+                                       upload_r2=upload_r2, client_id=active_client)
+        if r2_url:
+            print(f"  R2: {r2_url}")
     elif args.prompt:
-        generate_image(args.prompt, args.output, size=args.size, client_id=active_client)
+        path, r2_url = generate_image(args.prompt, args.output, size=args.size,
+                                      upload_r2=upload_r2, client_id=active_client)
+        if r2_url:
+            print(f"  R2: {r2_url}")
     elif args.topic and args.headline:
         prompt = build_prompt_ru(args.topic, args.headline, args.style, client_id=active_client)
-        generate_image(prompt, args.output, size=args.size, client_id=active_client)
+        path, r2_url = generate_image(prompt, args.output, size=args.size,
+                                      upload_r2=upload_r2, client_id=active_client)
+        if r2_url:
+            print(f"  R2: {r2_url}")
     else:
         parser.error("Provide --edit-image, --prompt, or both --topic and --headline")
 

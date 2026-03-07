@@ -142,8 +142,16 @@ def generate_trending_topics(config: dict, week_of: str, day_dates: dict,
         ]
 
     scraped_posts = scraped_posts or []
+    # Rich summary: include platform, engagement, and full text snippet
+    def _post_summary(p):
+        platform = p.get("platform", "").upper()
+        sub = f" r/{p['subreddit']}" if p.get("subreddit") else ""
+        engagement = p.get("engagement", 0)
+        text = p.get("text", p.get("topic", ""))[:120]
+        return f"  [{platform}{sub} | {engagement} eng] {text}"
+
     scraped_summary = (
-        "\n".join(f"  - {p.get('text', p.get('topic', ''))[:100]}" for p in scraped_posts[:20])
+        "\n".join(_post_summary(p) for p in scraped_posts[:20])
         or "  (none — use 100% evergreen)"
     )
 
@@ -170,6 +178,24 @@ def generate_trending_topics(config: dict, week_of: str, day_dates: dict,
             t["topic_num"] = i + 1
             if not t.get("date"):
                 t["date"] = day_dates.get(t.get("day", "Mon"), week_of)
+            # Attach best-matching scraped post so content generation can reference it
+            if scraped_posts:
+                topic_words = set(t["topic"].lower().split())
+                best, best_score = None, 0
+                for p in scraped_posts:
+                    post_text = p.get("text", "").lower()
+                    score = sum(1 for w in topic_words if len(w) > 4 and w in post_text)
+                    score += p.get("engagement", 0) / 500  # slight engagement boost
+                    if score > best_score:
+                        best, best_score = p, score
+                if best and best_score > 0:
+                    t["source_post"] = {
+                        "platform": best.get("platform", ""),
+                        "text": best.get("text", "")[:500],
+                        "url": best.get("url", ""),
+                        "engagement": best.get("engagement", 0),
+                        "subreddit": best.get("subreddit", ""),
+                    }
         return topics[:7]
     except Exception as e:
         print(f"  Warning: trending topic generation failed ({e}), using placeholders")

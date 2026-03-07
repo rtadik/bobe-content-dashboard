@@ -23,6 +23,12 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 import client_config
 
+try:
+    import airtable_writer as _airtable_writer
+    HAS_AIRTABLE_WRITER = True
+except ImportError:
+    HAS_AIRTABLE_WRITER = False
+
 # Resolve active client for this session
 _active_client = client_config.get_active_client()
 _client_config = client_config.load_config(_active_client)
@@ -87,16 +93,34 @@ _jobs_lock = threading.Lock()
 
 def list_available_dates():
     dates = []
-    # Real weekly files: YYYY-MM-DD-weekly-content.xlsx — prefix with "week:"
+    seen = set()
+
+    # First: check Airtable for Week-* tables (cloud-primary weeks)
+    if HAS_AIRTABLE_WRITER:
+        try:
+            cfg = client_config.load_config(_active_client)
+            at_cfg = cfg.get("airtable", {})
+            if at_cfg.get("enabled"):
+                base_id = at_cfg.get("base_id", "")
+                api_key = _airtable_writer.get_api_key(_active_client)
+                if base_id and api_key:
+                    at_weeks = _airtable_writer.list_week_tables(base_id, api_key)
+                    for w in at_weeks:
+                        date_id = f"week:{w}"
+                        if date_id not in seen:
+                            dates.append(date_id)
+                            seen.add(date_id)
+        except Exception:
+            pass
+
+    # Also check local Excel files (backward compat / offline fallback)
     for f in sorted(CONTENT_DIR.glob("*-weekly-content.xlsx"), reverse=True):
         m = re.match(r"(\d{4}-\d{2}-\d{2})-weekly-content\.xlsx", f.name)
         if m:
-            dates.append(f"week:{m.group(1)}")
-    # Mock files: YYYY-MM-DD-mock-weekly-content.xlsx — prefix with "mock:"
-    for f in sorted(CONTENT_DIR.glob("*-mock-weekly-content.xlsx"), reverse=True):
-        m = re.match(r"(\d{4}-\d{2}-\d{2})-mock-weekly-content\.xlsx", f.name)
-        if m:
-            dates.append(f"mock:{m.group(1)}")
+            date_id = f"week:{m.group(1)}"
+            if date_id not in seen:
+                dates.append(date_id)
+                seen.add(date_id)
     return dates
 
 
@@ -105,10 +129,6 @@ def find_excel(date=None):
         week_of = date[len("week:"):]
         p = CONTENT_DIR / f"{week_of}-weekly-content.xlsx"
         return p if p.exists() else None
-    if date and date.startswith("mock:"):
-        week_of = date[len("mock:"):]
-        p = CONTENT_DIR / f"{week_of}-mock-weekly-content.xlsx"
-        return p if p.exists() else None
     # Default: most recent weekly workbook
     dates = list_available_dates()
     if not dates:
@@ -116,8 +136,6 @@ def find_excel(date=None):
     first = dates[0]
     if first.startswith("week:"):
         return CONTENT_DIR / f"{first[5:]}-weekly-content.xlsx"
-    if first.startswith("mock:"):
-        return CONTENT_DIR / f"{first[5:]}-mock-weekly-content.xlsx"
     return None
 
 
@@ -236,7 +254,7 @@ def load_content(xlsx_path):
             row_tweet_url = ""
         else:
             # New 15-column schema: Bucket is in col B, Day in col C
-            bucket = col1 or "trending"
+            bucket = (col1 or "trending").strip().lower()
             day = row[2] if len(row) > 2 else ""
             topic_name = row[3] if len(row) > 3 else None
             platform = (row[4] or "").lower() if len(row) > 4 else ""
@@ -308,9 +326,44 @@ def load_content(xlsx_path):
         t["hashtag_list"] = [h.strip() for h in str(raw).split(",") if h.strip()] if raw else []
         raw_ru = t["hashtags_ru"]
         t["hashtag_list_ru"] = [h.strip() for h in str(raw_ru).split(",") if h.strip()] if raw_ru else []
+        # Compute display src (handles both local relative paths and absolute R2 URLs)
+        fn = t.get("image_filename")
+        fn_ru = t.get("image_filename_ru")
+        t["image_src"] = fn if (fn and fn.startswith("http")) else (f"/images/{fn}" if fn else "")
+        t["image_src_ru"] = fn_ru if (fn_ru and fn_ru.startswith("http")) else (f"/images/{fn_ru}" if fn_ru else "")
         result.append(t)
 
     return result
+
+
+def load_content_from_airtable(date_key: str, client_id: str = None) -> list:
+    """Load content topics from Airtable for the given week. Returns same format as load_content()."""
+    if not HAS_AIRTABLE_WRITER:
+        return []
+    client_id = client_id or _active_client
+    cfg = client_config.load_config(client_id)
+    at_cfg = cfg.get("airtable", {})
+    if not at_cfg.get("enabled"):
+        return []
+    base_id = at_cfg.get("base_id", "")
+    api_key = _airtable_writer.get_api_key(client_id)
+    if not base_id or not api_key:
+        return []
+    week_of = date_key.replace("week:", "").replace("mock:", "")
+    try:
+        table_id = _airtable_writer.get_or_create_table(base_id, week_of, api_key)
+        records = _airtable_writer.load_records(base_id, table_id, api_key)
+        topics = _airtable_writer.records_to_topics(records)
+        # Ensure image_src fields are set (records_to_topics already sets image_filename as URL)
+        for t in topics:
+            fn = t.get("image_filename")
+            fn_ru = t.get("image_filename_ru")
+            t["image_src"] = fn if (fn and fn.startswith("http")) else (f"/images/{fn}" if fn else "")
+            t["image_src_ru"] = fn_ru if (fn_ru and fn_ru.startswith("http")) else (f"/images/{fn_ru}" if fn_ru else "")
+        return topics
+    except Exception as e:
+        print(f"Warning: Airtable load failed: {e}")
+        return []
 
 
 # ── HTML template ─────────────────────────────────────────────────────────────
@@ -901,6 +954,52 @@ HTML = """<!DOCTYPE html>
     color: #FF9EED;
   }
 
+  /* ── RU loading modal ── */
+  .ru-loading-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px);
+    z-index: 3000;
+    align-items: center;
+    justify-content: center;
+  }
+  .ru-loading-overlay.open { display: flex; }
+  .ru-loading-box {
+    background: #0d1a36;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 20px;
+    padding: 36px 40px;
+    max-width: 380px;
+    width: 90%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    text-align: center;
+  }
+  .ru-loading-box p { font-size: 0.95rem; color: rgba(255,255,255,0.85); margin: 0; line-height: 1.5; }
+  .ru-spinner {
+    width: 40px; height: 40px;
+    border: 3px solid rgba(255,255,255,0.12);
+    border-top-color: #1589DC;
+    border-radius: 50%;
+    animation: ru-spin 0.8s linear infinite;
+  }
+  @keyframes ru-spin { to { transform: rotate(360deg); } }
+  .ru-loading-box .btn-go-en {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.65);
+    padding: 8px 18px;
+    border-radius: 22px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: all 0.2s;
+  }
+  .ru-loading-box .btn-go-en:hover { background: rgba(255,255,255,0.08); color: #fff; }
+
   /* ── Empty state ── */
   .empty {
     grid-column: 1 / -1;
@@ -1125,10 +1224,10 @@ HTML = """<!DOCTYPE html>
   <div class="card" id="card-{{ loop.index }}" data-bucket="{{ t.bucket or 'trending' }}">
 
     <!-- EN Image -->
-    <div class="card-img en-only" {% if t.image_filename %}data-src="/images/{{ t.image_filename }}"{% endif %}
-         title="{% if t.image_filename %}Click to enlarge{% endif %}">
-      {% if t.image_filename %}
-      <img id="img-{{ loop.index }}" src="/images/{{ t.image_filename }}" alt="{{ t.topic }}" loading="lazy">
+    <div class="card-img en-only" {% if t.image_src %}data-src="{{ t.image_src }}"{% endif %}
+         title="{% if t.image_src %}Click to enlarge{% endif %}">
+      {% if t.image_src %}
+      <img id="img-{{ loop.index }}" src="{{ t.image_src }}" alt="{{ t.topic }}" loading="lazy">
       <div class="img-overlay"></div>
       {% else %}
       <div class="no-img">
@@ -1143,10 +1242,10 @@ HTML = """<!DOCTYPE html>
     </div>
 
     <!-- RU Image -->
-    <div class="card-img ru-only" {% if t.image_filename_ru %}data-src="/images/{{ t.image_filename_ru }}"{% endif %}
-         title="{% if t.image_filename_ru %}Click to enlarge{% endif %}">
-      {% if t.image_filename_ru %}
-      <img id="img-ru-{{ loop.index }}" src="/images/{{ t.image_filename_ru }}" alt="{{ t.topic }}" loading="lazy">
+    <div class="card-img ru-only" {% if t.image_src_ru %}data-src="{{ t.image_src_ru }}"{% endif %}
+         title="{% if t.image_src_ru %}Click to enlarge{% endif %}">
+      {% if t.image_src_ru %}
+      <img id="img-ru-{{ loop.index }}" src="{{ t.image_src_ru }}" alt="{{ t.topic }}" loading="lazy">
       <div class="img-overlay"></div>
       {% else %}
       <div class="no-img" id="no-img-ru-{{ loop.index }}">
@@ -1338,6 +1437,11 @@ function setLang(lang) {
   document.getElementById('btn-en').classList.toggle('active', lang === 'en');
   document.getElementById('btn-ru').classList.toggle('active', lang === 'ru');
   localStorage.setItem('content-dash-lang', lang);
+  // Dismiss RU loading modal when switching back to English
+  if (lang === 'en') {
+    var m = document.getElementById('ru-loading-modal');
+    if (m) m.classList.remove('open');
+  }
 }
 // Restore language preference on load
 (function(){ if(localStorage.getItem('content-dash-lang')==='ru') setLang('ru'); })();
@@ -1705,6 +1809,17 @@ async function pollRuJob(jobId, idx, btn, label) {
   return { status: 'error', error: 'Timed out' };
 }
 
+// ── RU loading modal ──────────────────────────────────────────────────────────
+function showRuModal() {
+  var m = document.getElementById('ru-loading-modal');
+  if (m) m.classList.add('open');
+}
+function dismissRuModal() {
+  var m = document.getElementById('ru-loading-modal');
+  if (m) m.classList.remove('open');
+  setLang('en');
+}
+
 // ── RU image regeneration ─────────────────────────────────────────────────────
 async function regenRuImage(idx) {
   if (!HAS_RU_GENERATOR) {
@@ -1720,6 +1835,7 @@ async function regenRuImage(idx) {
 
   if (overlay) overlay.classList.add('active');
   if (regenBtn) regenBtn.disabled = true;
+  showRuModal();
 
   try {
     const startRes = await fetch('/api/regenerate-ru', {
@@ -1767,6 +1883,7 @@ async function regenRuImage(idx) {
   } finally {
     if (overlay) overlay.classList.remove('active');
     if (regenBtn) regenBtn.disabled = false;
+    dismissRuModal();
   }
 }
 
@@ -1841,6 +1958,7 @@ async function regenRuContent(idx) {
 
   if (btn) { btn.textContent = 'Regenerating...'; btn.disabled = true; btn.classList.add('regenerating'); }
   if (label) label.textContent = 'Retranslating to Russian...';
+  showRuModal();
 
   try {
     const startRes = await fetch('/api/regenerate-ru-content', {
@@ -1880,6 +1998,7 @@ async function regenRuContent(idx) {
     if (btn) { btn.textContent = orig; btn.disabled = false; btn.classList.remove('regenerating'); }
     if (label) label.textContent = 'Error — try again';
     showToast('RU content regen failed: ' + e.message, true);
+    dismissRuModal();
   }
 }
 
@@ -2008,6 +2127,16 @@ async function publishToX(idx) {
 // ── Init ─────────────────────────────────────────────────────────────────────
 loadApprovals();
 </script>
+
+<!-- RU loading modal -->
+<div class="ru-loading-overlay" id="ru-loading-modal">
+  <div class="ru-loading-box">
+    <div class="ru-spinner"></div>
+    <p>Generating Russian content...<br><small style="opacity:0.6;font-size:0.8rem">This may take a minute.</small></p>
+    <button class="btn-go-en" onclick="dismissRuModal()">Go back to English</button>
+  </div>
+</div>
+
 </body>
 </html>"""
 
@@ -3859,12 +3988,19 @@ def index():
     logo_path = brand_dir / "logo.png"
     client_logo_url = "/client-logo" if logo_path.exists() else None
 
+    _week_num = 1
+    _date_labels = {}
+    for _d in available_dates:
+        if _d.startswith("week:"):
+            from datetime import datetime as _dt
+            _fmt = _dt.strptime(_d[5:], "%Y-%m-%d").strftime("%d/%m/%y")
+            _date_labels[_d] = f"Week {_week_num} - {_fmt}"
+            _week_num += 1
+        else:
+            _date_labels[_d] = _d
+
     def date_label(d):
-        if d.startswith("week:"):
-            return f"Week of {d[5:]}"
-        if d.startswith("mock:"):
-            return "Mock-up"
-        return d
+        return _date_labels.get(d, d)
 
     x_publishing_enabled = client_config.is_x_publishing_enabled(_active_client)
 
@@ -3883,13 +4019,21 @@ def index():
         )
 
     selected = date_param if date_param in available_dates else available_dates[0]
-    xlsx     = find_excel(selected)
 
-    if not xlsx:
-        error  = f"No Excel file found for {selected}"
-        topics = []
-    else:
-        topics = load_content(xlsx)
+    # Try Airtable first (for week: dates when Airtable is configured)
+    topics = []
+    error = None
+    if selected.startswith("week:") and HAS_AIRTABLE_WRITER:
+        cfg_at = client_config.load_config(_active_client).get("airtable", {})
+        if cfg_at.get("enabled"):
+            topics = load_content_from_airtable(selected, _active_client)
+    if not topics:
+        # Fall back to local Excel
+        xlsx = find_excel(selected)
+        if not xlsx:
+            error = f"No content found for {selected} (no Airtable data and no Excel file)"
+        else:
+            topics = load_content(xlsx)
 
     # Load approvals to embed ru_status in topic data
     current_approvals = load_approvals(selected)

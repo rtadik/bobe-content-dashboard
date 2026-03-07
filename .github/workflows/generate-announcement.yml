@@ -45,7 +45,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install requests openpyxl google-genai python-dotenv jinja2 flask pillow
+        run: pip install requests openpyxl google-genai python-dotenv jinja2 flask pillow boto3
 
       - name: Create .env from secrets
         run: |
@@ -55,6 +55,11 @@ jobs:
           echo "AIRTABLE_API_KEY=${{ secrets.AIRTABLE_API_KEY }}" >> .env
           echo "GH_REGEN_TOKEN=${{ secrets.GH_REGEN_TOKEN }}" >> .env
           echo "REGEN_WORKER_URL=${{ secrets.REGEN_WORKER_URL }}" >> .env
+          echo "R2_ACCOUNT_ID=${{ secrets.R2_ACCOUNT_ID }}" >> .env
+          echo "R2_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}" >> .env
+          echo "R2_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}" >> .env
+          echo "R2_BUCKET_NAME=${{ secrets.R2_BUCKET_NAME }}" >> .env
+          echo "R2_PUBLIC_URL=${{ secrets.R2_PUBLIC_URL }}" >> .env
 
       - name: Set active client
         run: echo "${{ github.event.inputs.client_id }}" > .active-client

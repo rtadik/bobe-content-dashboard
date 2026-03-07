@@ -28,6 +28,7 @@ import os
 import sys
 import json
 import re
+import time
 import subprocess
 import argparse
 from datetime import datetime, timedelta
@@ -40,6 +41,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 import client_config
 import bucket_generators
 from client_config import get_api_key
+
+try:
+    import airtable_writer
+    import r2_uploader
+    HAS_CLOUD_MODULES = True
+except ImportError:
+    HAS_CLOUD_MODULES = False
 
 # Use the same Python interpreter that launched this script (works on macOS + Linux + GH Actions)
 # Quoted to handle paths with spaces (e.g. "Claude Code" directory on macOS)
@@ -196,7 +204,7 @@ Day: {day}, Date: {date}
 Platform: {platform}
 Format: {format_desc}
 
-{platform_rules}
+{source_context}{platform_rules}
 
 Generate content in BOTH English and Russian.
 
@@ -291,7 +299,7 @@ MOCK_CONTENT = {
 # ── Main pipeline ──────────────────────────────────────────────────────────────
 
 def run_pipeline(client_id, week_of, mock=False, skip_images=False,
-                 skip_airtable=False, skip_deploy=False):
+                 skip_airtable=False, skip_deploy=False, export_excel=False):
     """Run the full autonomous content pipeline."""
 
     config = client_config.load_config(client_id)
@@ -397,6 +405,26 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
     for i, t in enumerate(topics):
         t["topic_num"] = i + 1
 
+    # ── Airtable + R2 setup ───────────────────────────────────────────────────
+    at_api_key = None
+    at_base_id = None
+    at_table_id = None
+    use_airtable = False
+    if HAS_CLOUD_MODULES and not skip_airtable and client_config.is_airtable_enabled(client_id):
+        at_api_key = airtable_writer.get_api_key(client_id)
+        at_base_id = config.get("airtable", {}).get("base_id", "")
+        if at_api_key and at_base_id and not mock:
+            print("  Setting up Airtable table...")
+            try:
+                at_table_id = airtable_writer.get_or_create_table(at_base_id, week_of, at_api_key)
+                use_airtable = True
+                print(f"  Airtable table: Week-{week_of} ({at_table_id})")
+            except Exception as e:
+                print(f"  Warning: Airtable setup failed: {e}")
+        elif mock:
+            print("  [mock] Skipping Airtable setup")
+    topic_at_records = {}  # topic_num -> {"twitter": rec_id, "telegram": rec_id}
+
     # Print topic schedule
     print(f"\n  {'#':<4} {'Bucket':<16} {'Day':<5} {'Date':<12} {'Angle':<18} Topic")
     print(f"  {'-'*80}")
@@ -408,19 +436,22 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
         )
     print()
 
-    # ── Phase 3: Create Workbook ──────────────────────────────────────────────
-    print("Phase 3: Creating workbook...")
+    # ── Phase 3: Create Workbook (opt-in via --export-excel) ──────────────────
     workbook_suffix = "mock-weekly-content" if mock else "weekly-content"
     mock_flag = " --mock" if mock else ""
-    try:
-        run_cmd(
-            f"{PY} scripts/weekly_pipeline.py "
-            f"--action create-workbook --week-of {week_of} --client {client_id}{mock_flag}"
-        )
-        print(f"  Workbook: outputs/content/{client_id}/{week_of}-{workbook_suffix}.xlsx")
-    except Exception as e:
-        print(f"  Error creating workbook: {e}")
-        raise
+    if export_excel:
+        print("Phase 3: Creating workbook...")
+        try:
+            run_cmd(
+                f"{PY} scripts/weekly_pipeline.py "
+                f"--action create-workbook --week-of {week_of} --client {client_id}{mock_flag}"
+            )
+            print(f"  Workbook: outputs/content/{client_id}/{week_of}-{workbook_suffix}.xlsx")
+        except Exception as e:
+            print(f"  Error creating workbook: {e}")
+            raise
+    else:
+        print("Phase 3: Skipped (Airtable-primary mode; use --export-excel to generate Excel)")
 
     # ── Phase 4: Content Generation Loop ─────────────────────────────────────
     print(f"\nPhase 4: Generating 42 content items (21 topics x 2 platforms)...")
@@ -457,6 +488,24 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                 format_desc = fmt + (" (5 tweets separated by ---)" if fmt == "thread" else "")
                 platform_rules = get_platform_rules(config, platform, fmt)
 
+                # Build source context from scraped post (trending bucket only)
+                source_post = topic_data.get("source_post")
+                if source_post:
+                    sp_platform = source_post.get("platform", "social media").upper()
+                    sp_sub = f" r/{source_post['subreddit']}" if source_post.get("subreddit") else ""
+                    sp_eng = source_post.get("engagement", 0)
+                    sp_text = source_post.get("text", "")[:400]
+                    sp_url = source_post.get("url", "")
+                    source_context = (
+                        f"Source post from {sp_platform}{sp_sub} ({sp_eng} engagement):\n"
+                        f"\"{sp_text}\"\n"
+                        f"URL: {sp_url}\n\n"
+                        f"Use this real community discussion as context and inspiration. "
+                        f"Reference the sentiment, concerns, or angle discussed — but write original content for {display_name}.\n\n"
+                    )
+                else:
+                    source_context = ""
+
                 prompt = CONTENT_GEN_PROMPT.format(
                     display_name=display_name,
                     tone=tone,
@@ -472,6 +521,7 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                     date=date,
                     platform=platform,
                     format_desc=format_desc,
+                    source_context=source_context,
                     platform_rules=platform_rules,
                     mascot=mascot,
                     bg_style=bg_style,
@@ -498,26 +548,44 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                 "content": c.get("content", ""),
                 "image_prompt": c.get("image_prompt", f"{display_name} branded image: {topic}"),
                 "image_path": en_path,
+                "image_url_en": None,  # filled in Phase 5 after R2 upload
                 "hashtags": c.get("hashtags", []),
                 "content_ru": c.get("content_ru", ""),
                 "image_prompt_ru": c.get("image_prompt_ru", f"{display_name} изображение: {topic}"),
                 "image_path_ru": ru_path,
+                "image_url_ru": None,  # filled in Phase 5 after R2 upload
                 "hashtags_ru": c.get("hashtags_ru", []),
                 "status": "Draft",
             }
 
-            tmp_file = f"/tmp/pipeline_content_{item_num}.json"
-            with open(tmp_file, "w", encoding="utf-8") as f:
-                json.dump(content_json, f, ensure_ascii=False, indent=2)
+            # Write to Airtable inline (both Twitter and Telegram rows)
+            if use_airtable and at_table_id:
+                try:
+                    at_rec_id = airtable_writer.write_record(
+                        at_base_id, at_table_id, content_json, week_of, client_id, at_api_key
+                    )
+                    if topic_num not in topic_at_records:
+                        topic_at_records[topic_num] = {}
+                    topic_at_records[topic_num][platform.lower()] = at_rec_id
+                    print(f"    AT: {at_rec_id}")
+                    time.sleep(0.2)  # Airtable rate limit
+                except Exception as e:
+                    print(f"    Warning: Airtable write failed: {e}")
+                    errors.append(f"AT write item {item_num}: {e}")
 
-            try:
-                run_cmd(
-                    f"{PY} scripts/weekly_pipeline.py --action save-content "
-                    f"--week-of {week_of} --content-file {tmp_file} --client {client_id}{mock_flag}"
-                )
-            except Exception as e:
-                print(f"    Warning: failed to save item {item_num}: {e}")
-                errors.append(f"Save item {item_num}: {e}")
+            # Write to Excel (only if --export-excel)
+            if export_excel:
+                tmp_file = f"/tmp/pipeline_content_{item_num}.json"
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    json.dump(content_json, f, ensure_ascii=False, indent=2)
+                try:
+                    run_cmd(
+                        f"{PY} scripts/weekly_pipeline.py --action save-content "
+                        f"--week-of {week_of} --content-file {tmp_file} --client {client_id}{mock_flag}"
+                    )
+                except Exception as e:
+                    print(f"    Warning: failed to save item {item_num} to Excel: {e}")
+                    errors.append(f"Excel save item {item_num}: {e}")
 
             content_items.append(content_json)
 
@@ -568,9 +636,28 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                         f'--prompt "{en_prompt}" '
                         f'--output "{en_img}" '
                         f'--style {style_key} '
+                        f'--no-r2 '
                         f'--client {client_id}'
                     )
                     print(f"    EN: {Path(en_img).name}")
+                    # Upload EN image to R2 and patch Airtable
+                    if use_airtable and HAS_CLOUD_MODULES and r2_uploader.is_configured():
+                        try:
+                            en_img_abs = str(PROJECT_ROOT / en_img)
+                            if Path(en_img_abs).exists():
+                                r2_key_en = r2_uploader.make_key(client_id, week_of, Path(en_img).name)
+                                r2_url_en = r2_uploader.upload_file(en_img_abs, r2_key_en)
+                                print(f"    R2 EN: {r2_url_en}")
+                                for plat_key in ["twitter", "telegram"]:
+                                    rec_id = topic_at_records.get(topic_num, {}).get(plat_key)
+                                    if rec_id:
+                                        airtable_writer.update_image_urls(
+                                            at_base_id, at_table_id, rec_id,
+                                            image_url_en=r2_url_en, api_key=at_api_key
+                                        )
+                        except Exception as e:
+                            print(f"    Warning: R2/AT EN image update failed: {e}")
+                            errors.append(f"R2/AT EN image topic {topic_num}: {e}")
                 except Exception as e:
                     print(f"    Warning: EN image failed for topic {topic_num}: {e}")
                     errors.append(f"EN image topic {topic_num}: {e}")
@@ -581,9 +668,28 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                         f'{PY} scripts/wavespeed_img.py '
                         f'--prompt "{ru_prompt}" '
                         f'--output "{ru_img}" '
+                        f'--no-r2 '
                         f'--client {client_id}'
                     )
                     print(f"    RU: {Path(ru_img).name}")
+                    # Upload RU image to R2 and patch Airtable
+                    if use_airtable and HAS_CLOUD_MODULES and r2_uploader.is_configured():
+                        try:
+                            ru_img_abs = str(PROJECT_ROOT / ru_img)
+                            if Path(ru_img_abs).exists():
+                                r2_key_ru = r2_uploader.make_key(client_id, week_of, Path(ru_img).name)
+                                r2_url_ru = r2_uploader.upload_file(ru_img_abs, r2_key_ru)
+                                print(f"    R2 RU: {r2_url_ru}")
+                                for plat_key in ["twitter", "telegram"]:
+                                    rec_id = topic_at_records.get(topic_num, {}).get(plat_key)
+                                    if rec_id:
+                                        airtable_writer.update_image_urls(
+                                            at_base_id, at_table_id, rec_id,
+                                            image_url_ru=r2_url_ru, api_key=at_api_key
+                                        )
+                        except Exception as e:
+                            print(f"    Warning: R2/AT RU image update failed: {e}")
+                            errors.append(f"R2/AT RU image topic {topic_num}: {e}")
                 except Exception as e:
                     print(f"    Warning: RU image failed for topic {topic_num}: {e}")
                     errors.append(f"RU image topic {topic_num}: {e}")
@@ -592,38 +698,28 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
     else:
         print("\nPhase 5: Skipping image generation (--skip-images)")
 
-    # ── Phase 6: Finalize Workbook ────────────────────────────────────────────
-    print("\nPhase 6: Finalizing workbook...")
-    try:
-        run_cmd(
-            f"{PY} scripts/weekly_pipeline.py "
-            f"--action finalize --week-of {week_of} --client {client_id}{mock_flag}"
-        )
-        print("  Workbook finalized")
-    except Exception as e:
-        print(f"  Warning: finalize failed: {e}")
-        errors.append(f"Finalize: {e}")
-
-    # ── Phase 6.5: Airtable Sync ──────────────────────────────────────────────
-    airtable_enabled = client_config.is_airtable_enabled(client_id)
-    if not skip_airtable and airtable_enabled:
-        print("\nPhase 6.5: Syncing to Airtable...")
-        if mock:
-            print("  [mock] Skipping Airtable sync")
-        else:
-            try:
-                run_cmd(
-                    f"{PY} scripts/airtable_sync.py "
-                    f"--week-of {week_of} --client {client_id}"
-                )
-                print("  Airtable sync complete")
-            except Exception as e:
-                print(f"  Warning: Airtable sync failed: {e}")
-                errors.append(f"Airtable sync: {e}")
-    elif skip_airtable:
-        print("\nPhase 6.5: Skipping Airtable sync (--skip-airtable)")
+    # ── Phase 6: Finalize Workbook (only if --export-excel) ───────────────────
+    if export_excel:
+        print("\nPhase 6: Finalizing workbook...")
+        try:
+            run_cmd(
+                f"{PY} scripts/weekly_pipeline.py "
+                f"--action finalize --week-of {week_of} --client {client_id}{mock_flag}"
+            )
+            print("  Workbook finalized")
+        except Exception as e:
+            print(f"  Warning: finalize failed: {e}")
+            errors.append(f"Finalize: {e}")
     else:
-        print("\nPhase 6.5: Airtable not enabled for this client, skipping")
+        print("\nPhase 6: Skipped (use --export-excel to generate Excel workbook)")
+
+    # Phase 6.5 removed: Airtable writes now happen inline in Phase 4
+    if use_airtable:
+        print(f"\nPhase 6.5: Airtable inline writes complete ({len(topic_at_records)} topics written)")
+    elif skip_airtable:
+        print("\nPhase 6.5: Skipped (--skip-airtable)")
+    else:
+        print("\nPhase 6.5: Skipped (Airtable not enabled for this client)")
 
     # ── Phase 7: Build Static Site ────────────────────────────────────────────
     if not skip_deploy:
@@ -653,7 +749,10 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
         print(f"\n  Error log (first 10):")
         for err in errors[:10]:
             print(f"    - {err}")
-    print(f"\n  Excel:  outputs/content/{client_id}/{week_of}-{workbook_suffix}.xlsx")
+    if export_excel:
+        print(f"\n  Excel:  outputs/content/{client_id}/{week_of}-{workbook_suffix}.xlsx")
+    if use_airtable:
+        print(f"  Airtable: Week-{week_of} table updated ({at_base_id})")
     print(f"  Images: outputs/content/{client_id}/images/{week_of}-weekly/")
     print(f"{'='*60}\n")
 
@@ -913,6 +1012,10 @@ def main():
         help="Skip static site build (GH Actions handles deploy as a separate step)",
     )
     parser.add_argument(
+        "--export-excel", action="store_true",
+        help="Also generate local Excel workbook (in addition to Airtable)",
+    )
+    parser.add_argument(
         "--regen-topic", type=int, default=None,
         help="Regenerate a single topic item (0-based index). Skips full pipeline.",
     )
@@ -1028,6 +1131,7 @@ def main():
                         angle=topic_data.get("angle", "Announcement"),
                         day=topic_data["day"], date=topic_data["date"],
                         platform=platform, format_desc=format_desc,
+                        source_context="",
                         platform_rules=platform_rules, mascot=mascot, bg_style=bg_style,
                         style_preset=style_desc,
                     )
@@ -1118,6 +1222,7 @@ def main():
         skip_images=args.skip_images,
         skip_airtable=args.skip_airtable,
         skip_deploy=args.skip_deploy,
+        export_excel=args.export_excel,
     )
 
     if success and args.mode == "full" and args.purge_older_than > 0:
