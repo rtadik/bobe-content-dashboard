@@ -1,0 +1,54 @@
+name: Redeploy Static Dashboard
+
+on:
+  workflow_dispatch:
+    inputs:
+      client_id:
+        description: 'Client ID (e.g. bobe)'
+        required: true
+        default: 'bobe'
+
+concurrency:
+  group: gh-pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests openpyxl google-genai python-dotenv flask boto3 jinja2
+
+      - name: Set active client
+        run: echo "${{ github.event.inputs.client_id }}" > .active-client
+
+      - name: Build static site
+        run: python scripts/build_static.py --output dist --include-admin --client ${{ github.event.inputs.client_id }}
+
+      - name: Deploy to GitHub Pages (gh-pages branch)
+        run: |
+          cd dist
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Redeploy static dashboard $(date +%Y-%m-%d)"
+          git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:gh-pages
+          cd ..
