@@ -261,6 +261,7 @@ function buildIntakeJSON() {
       primary_color: document.getElementById('primary_color')?.value || '#1a1a2e',
       accent_color:  document.getElementById('accent_color')?.value  || '#1589DC',
       text_color:    document.getElementById('text_color')?.value    || '#ffffff',
+      logo_url: getValue('logo_url'),
       mascot: getValue('mascot')
     },
     airtable: {

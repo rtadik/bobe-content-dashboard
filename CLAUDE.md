@@ -314,12 +314,12 @@ Implemented plans are archived in `plans/implemented/`. Active (pending) plans l
 | `2026-02-26-three-bucket-content-strategy.md` | 3-bucket content strategy: Trending (7 scraped), Education (7 from belief-journey.md), Announcements (client input → 7 angles). 15-col workbook, bucket tabs on dashboard, intake content type selection, belief-journey.md auto-generated at onboarding |
 | Direct X (Twitter) publishing | One-click publish from dashboard (local Flask + live static site via GitHub Actions). Per-client OAuth 1.0a credentials. Duplicate prevention. Excel Status + Tweet_URL cols (16). See `reference/x-api-setup.md` |
 | `2026-03-05-cloudflare-r2-airtable-primary-store.md` | Cloudflare R2 for image storage + Airtable as primary content store. pipeline_runner writes inline per item. Excel demoted to opt-in (`--export-excel`). Dashboard and static build read from Airtable first, fall back to Excel. |
+| `2026-02-24-scalability-saas-plan.md` | Per-client API key isolation (`get_api_key()` in client_config.py), deployment serialization (concurrency groups in workflows, split generate/deploy jobs), per-client login pages, Cloudflare Worker proxy for regen buttons. |
+| Logo fix + client logo upload | Strengthened EN image prompts to enforce logo fidelity. Added `logo_url` field to intake form + auto-onboard workflow (downloads logo to brand/ on onboarding). `nano_banana.py` falls back to `logo_url` if local file missing. |
 
 ### Pending (active plans in `plans/`)
 
-| Plan | Summary |
-|------|---------|
-| `2026-02-24-scalability-saas-plan.md` | Scale platform from 1 client to 5-10 active clients: resource isolation, deployment serialization, per-client API key management |
+_No active plans._
 
 ---
 

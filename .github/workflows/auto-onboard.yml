@@ -120,6 +120,8 @@ jobs:
           config["brand"]["text_color"]    = brand.get("text_color",    "#ffffff")
           if brand.get("mascot"):
               config["brand"]["mascot_description"] = brand["mascot"]
+          if brand.get("logo_url"):
+              config["brand"]["logo_url"] = brand["logo_url"]
 
           # Content settings
           voice = intake.get("voice", {})
@@ -158,6 +160,38 @@ jobs:
           print(f"  Platforms: {platforms}")
           print(f"  Languages: {config['languages']}")
           print(f"  Keywords: {len(scraping.get('keywords', []))} entries")
+          PYEOF
+
+      - name: Download client logo if URL provided
+        env:
+          INTAKE_JSON: ${{ github.event.inputs.intake_json }}
+          CLIENT_ID: ${{ steps.parse.outputs.client_id }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, sys, requests
+          from pathlib import Path
+
+          raw = os.environ["INTAKE_JSON"]
+          intake = json.loads(raw)
+          client_id = os.environ["CLIENT_ID"]
+
+          logo_url = intake.get("brand", {}).get("logo_url", "").strip()
+          if not logo_url:
+              print("No logo_url provided, skipping logo download.")
+              sys.exit(0)
+
+          brand_dir = Path(f"clients/{client_id}/brand")
+          brand_dir.mkdir(parents=True, exist_ok=True)
+          dest = brand_dir / "logo.png"
+
+          print(f"Downloading logo from: {logo_url}")
+          try:
+              resp = requests.get(logo_url, timeout=30)
+              resp.raise_for_status()
+              dest.write_bytes(resp.content)
+              print(f"Logo saved: {dest} ({len(resp.content)} bytes)")
+          except Exception as e:
+              print(f"WARNING: Could not download logo: {e}. Continuing without logo.")
           PYEOF
 
       - name: Write content-guidelines.md from intake data

@@ -64,18 +64,38 @@ def get_style_presets(client_id=None):
     })
 
 
-def load_reference_images(paths: list) -> list:
-    """Load reference images as base64 data URIs for the WaveSpeed API."""
+def load_reference_images(paths: list, client_id: str = None) -> list:
+    """Load reference images as base64 data URIs for the WaveSpeed API.
+    For the first image (logo), falls back to logo_url in config if local file is missing.
+    """
     images = []
-    for path in paths:
+    for i, path in enumerate(paths):
         p = Path(path)
-        if not p.exists():
+        if p.exists():
+            mime = "image/jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else "image/png"
+            b64 = base64.b64encode(p.read_bytes()).decode()
+            images.append(f"data:{mime};base64,{b64}")
+            print(f"  Reference loaded: {p.name}")
+        elif i == 0 and client_id:
+            # First image is always the logo — try logo_url from config as fallback
+            config = client_config.load_config(client_id)
+            logo_url = config.get("brand", {}).get("logo_url", "").strip()
+            if logo_url:
+                print(f"  Local logo not found, fetching from logo_url: {logo_url}")
+                try:
+                    resp = requests.get(logo_url, timeout=20)
+                    resp.raise_for_status()
+                    ext = logo_url.split("?")[0].split(".")[-1].lower()
+                    mime = "image/jpeg" if ext in ("jpg", "jpeg") else "image/png"
+                    b64 = base64.b64encode(resp.content).decode()
+                    images.append(f"data:{mime};base64,{b64}")
+                    print(f"  Logo fetched from URL ({len(resp.content)} bytes)")
+                except Exception as e:
+                    print(f"  Warning: could not fetch logo from URL: {e}")
+            else:
+                print(f"  Warning: reference image not found, skipping: {p}")
+        else:
             print(f"  Warning: reference image not found, skipping: {p}")
-            continue
-        mime = "image/jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else "image/png"
-        b64 = base64.b64encode(p.read_bytes()).decode()
-        images.append(f"data:{mime};base64,{b64}")
-        print(f"  Reference loaded: {p.name}")
     return images
 
 
@@ -102,19 +122,27 @@ def build_prompt(
 
     # Build reference image instructions dynamically
     ref_images = brand.get("reference_images", [])
-    ref_instructions = []
-    if ref_images:
-        ref_instructions.append(f"- Image 1: The exact {display_name} logo, reproduce it exactly in the top-left corner")
-        if len(ref_images) > 1:
-            ref_instructions.append(f"- Images 2-{len(ref_images)}: The {display_name} mascot/brand character: {mascot_desc}. Replicate this character exactly.")
 
-    ref_block = "\n".join(ref_instructions)
-    if ref_block:
-        ref_block = f"You are given reference images:\n{ref_block}\n\n"
+    if ref_images:
+        mascot_ref_note = (
+            f"\n- Reference Images 2-{len(ref_images)}: The {display_name} mascot character. "
+            f"Replicate this character exactly: same face, proportions, clothing, style. DO NOT create a different character."
+            if len(ref_images) > 1 else ""
+        )
+        ref_block = f"""=== REFERENCE IMAGE INSTRUCTIONS (MANDATORY) ===
+You have been given {len(ref_images)} reference image(s). Follow these exactly:
+- Reference Image 1: This is the real {display_name} logo. You MUST copy it with 100% fidelity. DO NOT redesign it, recreate it from text, or invent a new logo. Place it in the top-left corner exactly as it appears in the reference.{mascot_ref_note}
+
+Ignoring these reference images is not acceptable. The logo and mascot must match the references precisely.
+=================================================
+
+"""
+    else:
+        ref_block = ""
 
     prompt = f"""{ref_block}Generate a new high-quality 16:9 social media banner image with these requirements:
-- MASCOT: Use the exact same character shown in the reference images ({mascot_desc})
-- LOGO: {logo_desc}
+- LOGO: Copy the exact {display_name} logo from Reference Image 1 — place it top-left. DO NOT invent or redesign the logo.
+- MASCOT: Replicate the exact character from the reference images ({mascot_desc}). Same face, same proportions, same style.
 - SCENE: {topic}
 - STYLE: {style_desc}
 - BACKGROUND: {bg_style}
@@ -143,6 +171,28 @@ def _poll_result(request_id, headers, timeout=180):
     raise TimeoutError(f"Image generation timed out after {timeout}s")
 
 
+def _inject_reference_header(prompt: str, ref_count: int, client_id: str = None) -> str:
+    """Prepend mandatory reference image instructions to any prompt when references are present.
+    This ensures logo/mascot fidelity even when the prompt was generated externally (e.g. by Gemini).
+    """
+    if ref_count == 0:
+        return prompt
+    config = client_config.load_config(client_id)
+    display_name = config.get("display_name", "Brand")
+    mascot_desc = config.get("brand", {}).get("mascot_description", "brand mascot character")
+    mascot_note = (
+        f"\n- Reference Images 2-{ref_count}: Mascot character ({mascot_desc}). Copy exactly — same face, proportions, clothing. DO NOT create a different character."
+        if ref_count > 1 else ""
+    )
+    header = f"""=== MANDATORY REFERENCE INSTRUCTIONS ===
+You have {ref_count} reference image(s). You MUST follow these:
+- Reference Image 1: The REAL {display_name} logo. Copy it with 100% fidelity into the top-left corner. DO NOT redesign, reinvent, or create a new logo from text. Use ONLY what is shown in the reference.{mascot_note}
+=========================================
+
+"""
+    return header + prompt
+
+
 def generate_image(prompt: str, output_path: str, reference_paths: list = None, client_id: str = None, upload_r2: bool = True) -> tuple:
     """Generate an image using WaveSpeed GPT-Image-1.5 with reference images for brand fidelity.
 
@@ -164,7 +214,10 @@ def generate_image(prompt: str, output_path: str, reference_paths: list = None, 
 
     # Load reference images
     print(f"  Loading {len(reference_paths)} reference images...")
-    ref_images = load_reference_images(reference_paths)
+    ref_images = load_reference_images(reference_paths, client_id=client_id)
+
+    # Always inject reference header when references are present (even for externally-built prompts)
+    prompt = _inject_reference_header(prompt, len(ref_images), client_id)
 
     if ref_images:
         # Use Edit endpoint with reference images + input_fidelity
@@ -314,12 +367,14 @@ def main():
         prompt = build_prompt(topic=args.topic, headline=args.headline, style=args.style, client_id=active_client)
 
     if args.show_prompt:
+        loaded = load_reference_images(reference_paths, client_id=active_client)
+        final_prompt = _inject_reference_header(prompt, len(loaded), active_client)
         print("\n--- REFERENCE IMAGES ---")
         for r in reference_paths:
             exists = "\u2713" if Path(r).exists() else "\u2717 missing"
             print(f"  {exists}  {r}")
-        print("\n--- TEXT PROMPT ---")
-        print(prompt)
+        print("\n--- FINAL PROMPT (as sent to API) ---")
+        print(final_prompt)
         return
 
     # Determine output path

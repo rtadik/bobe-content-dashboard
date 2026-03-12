@@ -383,6 +383,15 @@
       </div>
 
       <div class="field-wrapper">
+        <label class="field-label" for="logo_url">Logo URL</label>
+        <p class="field-hint">Paste a direct link to your logo file (PNG or JPG). This will be placed in every generated image. Host it on Google Drive, Dropbox, or any public URL.</p>
+        <input class="input" type="url" id="logo_url" name="logo_url"
+               placeholder="https://example.com/your-logo.png"
+               data-tip="Your logo will be placed in the top-left corner of every generated image. Use a clean version on a transparent or white background if possible. Must be a direct download link.">
+        <div class="tip-box">Your logo will be placed in the top-left corner of every generated image. Use a clean version with transparent or white background. Must be a direct-download public URL (not a preview page).</div>
+      </div>
+
+      <div class="field-wrapper">
         <label class="field-label" for="mascot">Mascot or brand character</label>
         <p class="field-hint">Describe in detail, or write "none" for clean banner style</p>
         <textarea class="input" id="mascot" name="mascot" rows="3"
