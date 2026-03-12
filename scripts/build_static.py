@@ -2532,7 +2532,7 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
     # Images go inside the client dashboard dir
     images_out = client_dash_dir / "images"
 
-    # Build date-to-filename mapping (Week N labels; newest real week = Week 1)
+    # Build date-to-filename mapping (Week N labels; oldest real week = Week 1)
     from datetime import datetime, timedelta
     date_options = []
     week_num = 1
@@ -2552,7 +2552,7 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
         })
 
     # Append a placeholder tab for the upcoming week (latest real week + 7 days)
-    latest_week = next((d for d in all_dates if d.startswith("week:")), None)
+    latest_week = next((d for d in reversed(all_dates) if d.startswith("week:")), None)
     placeholder_date_id = None
     if latest_week:
         latest_date_str = latest_week[5:]
@@ -2593,6 +2593,21 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
                 print(f"  Warning: no content for '{date_id}' (no Airtable data and no Excel file), skipping")
                 continue
             topics = load_content(xlsx)
+        elif not any(t.get("image_filename") for t in topics):
+            # Airtable loaded content but has no image URLs (e.g. R2 not configured).
+            # Supplement image filenames from local Excel if available.
+            xlsx = find_excel(date_id)
+            if xlsx:
+                try:
+                    excel_topics = load_content(xlsx)
+                    img_map = {et["topic"]: et for et in excel_topics}
+                    for t in topics:
+                        if t["topic"] in img_map:
+                            et = img_map[t["topic"]]
+                            t["image_filename"]    = et.get("image_filename")
+                            t["image_filename_ru"] = et.get("image_filename_ru")
+                except Exception as _img_e:
+                    print(f"  Warning: could not merge Excel image paths: {_img_e}")
 
         safe_name = sanitize_date_id(date_id)
 
@@ -2696,8 +2711,8 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
     if favicon_src.exists():
         shutil.copy2(str(favicon_src), str(output / "favicon.jpg"))
 
-    # Generate dist/dashboard/{client_id}/index.html — redirect to latest date
-    latest_page = sanitize_date_id(build_dates[0]) + ".html"
+    # Generate dist/dashboard/{client_id}/index.html — redirect to latest (newest) date
+    latest_page = sanitize_date_id(build_dates[-1]) + ".html"
     client_index_html = f"""<!DOCTYPE html>
 <html>
 <head>

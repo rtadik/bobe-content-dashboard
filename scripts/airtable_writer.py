@@ -277,7 +277,7 @@ def records_to_topics(records: list) -> list:
                 "topic":          topic_name,
                 "date":           str(f.get("Date", "")),
                 "day":            f.get("Day", ""),
-                "bucket":         f.get("Bucket", "trending"),
+                "bucket":         (f.get("Bucket") or "trending").strip().lower(),
                 "img_prompt":     f.get("Image_Prompt", ""),
                 "image_url_en":   f.get("Image_URL_EN", "") or "",
                 "img_prompt_ru":  f.get("Image_Prompt_RU", ""),

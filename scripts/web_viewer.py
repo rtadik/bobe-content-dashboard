@@ -114,13 +114,15 @@ def list_available_dates():
             pass
 
     # Also check local Excel files (backward compat / offline fallback)
-    for f in sorted(CONTENT_DIR.glob("*-weekly-content.xlsx"), reverse=True):
+    for f in sorted(CONTENT_DIR.glob("*-weekly-content.xlsx"), reverse=False):
         m = re.match(r"(\d{4}-\d{2}-\d{2})-weekly-content\.xlsx", f.name)
         if m:
             date_id = f"week:{m.group(1)}"
             if date_id not in seen:
                 dates.append(date_id)
                 seen.add(date_id)
+    # Sort all dates ascending (oldest = Week 1, newest = last)
+    dates.sort(key=lambda d: d.replace("week:", "").replace("mock:", ""))
     return dates
 
 
@@ -4018,7 +4020,7 @@ def index():
             x_publishing_enabled=x_publishing_enabled,
         )
 
-    selected = date_param if date_param in available_dates else available_dates[0]
+    selected = date_param if date_param in available_dates else available_dates[-1]
 
     # Try Airtable first (for week: dates when Airtable is configured)
     topics = []
@@ -4034,6 +4036,23 @@ def index():
             error = f"No content found for {selected} (no Airtable data and no Excel file)"
         else:
             topics = load_content(xlsx)
+    elif not any(t.get("image_src") for t in topics):
+        # Airtable loaded content but has no image URLs (e.g. R2 not configured).
+        # Supplement image paths from local Excel if available.
+        xlsx = find_excel(selected)
+        if xlsx:
+            try:
+                excel_topics = load_content(xlsx)
+                img_map = {et["topic"]: et for et in excel_topics}
+                for t in topics:
+                    if t["topic"] in img_map:
+                        et = img_map[t["topic"]]
+                        t["image_src"]        = et.get("image_src", "")
+                        t["image_src_ru"]     = et.get("image_src_ru", "")
+                        t["image_filename"]   = et.get("image_filename")
+                        t["image_filename_ru"] = et.get("image_filename_ru")
+            except Exception as _img_e:
+                print(f"Warning: could not merge Excel image paths: {_img_e}")
 
     # Load approvals to embed ru_status in topic data
     current_approvals = load_approvals(selected)
