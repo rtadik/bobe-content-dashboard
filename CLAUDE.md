@@ -266,12 +266,14 @@ The content dashboard can be deployed as a static site for client access:
 
 The deployed dashboard has a landing page, login form, and per-client auth. Clients log in with their credentials and see only their own content. The admin panel (`/admin/`) is write-capable via GitHub API.
 
-**Hosting**: GitHub Pages (free, 100 GB/month bandwidth, no credit card required)
+**Hosting**: Cloudflare Pages (free tier — unlimited requests, 500 builds/month, no credit card required)
 **Landing page**: https://content.rejiglabs.com/
 **Login page**: https://content.rejiglabs.com/login.html
 **BoBe dashboard**: https://content.rejiglabs.com/dashboard/bobe/
 **Admin panel URL**: https://content.rejiglabs.com/admin/
+**Fallback URL**: https://bobe-content-dashboard.pages.dev (no DNS needed)
 **Cost**: $0/month
+**Note**: Migrated from GitHub Pages on 2026-03-12 (GitHub Actions disabled on rtadik account). Deploy via `npx wrangler pages deploy dist --project-name bobe-content-dashboard`.
 
 **Credentials**: Auto-generated from client IDs — no manual config or secrets required. Username: `admin`, password: `{client_id}123` (e.g. `bobe123`). New clients get credentials automatically on next deploy.
 
