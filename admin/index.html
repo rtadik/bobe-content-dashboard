@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Content Pipeline Admin</title>
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="brand">
+    <span class="brand-name">Content Pipeline</span>
+    <span class="brand-tag">Admin</span>
+  </div>
+  <div class="header-right">
+    <div id="auth-status" class="auth-badge disconnected">Not connected</div>
+    <button id="disconnect-btn" class="btn btn-ghost btn-sm" style="display:none">Disconnect</button>
+  </div>
+</header>
+
+<main class="container">
+
+  <!-- ── Auth Section ──────────────────────────────────────── -->
+  <section id="section-auth" class="card">
+    <h2 class="card-title">
+      <span class="icon">&#128273;</span> Connect GitHub
+    </h2>
+    <p class="hint">
+      Enter a GitHub Personal Access Token with <code>actions:write</code> scope to trigger pipeline runs.
+    </p>
+    <div class="security-note">
+      <span class="icon-sm">&#128274;</span>
+      Your PAT is stored only in this browser tab's session memory. It is sent directly to
+      <code>api.github.com</code> and nowhere else. Close this tab to clear it.
+    </div>
+    <div class="form-row">
+      <input
+        type="password"
+        id="pat-input"
+        class="input"
+        placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+        autocomplete="off"
+        spellcheck="false"
+      >
+      <button id="connect-btn" class="btn btn-primary">Connect</button>
+    </div>
+    <p id="auth-error" class="error-msg" style="display:none"></p>
+
+    <details class="pat-help">
+      <summary>How to create a GitHub PAT</summary>
+      <ol>
+        <li>Go to <strong>GitHub → Settings → Developer Settings → Personal access tokens → Fine-grained tokens</strong></li>
+        <li>Click <strong>Generate new token</strong></li>
+        <li>Set expiration (90 days recommended)</li>
+        <li>Under <strong>Repository access</strong>, select <strong>Only select repositories</strong> and choose <code>bobe-content-dashboard</code></li>
+        <li>Under <strong>Permissions → Repository permissions</strong>, set <strong>Actions</strong> to <strong>Read and write</strong></li>
+        <li>Click <strong>Generate token</strong> and copy it</li>
+      </ol>
+    </details>
+  </section>
+
+  <!-- ── Intake Form Link ──────────────────────────────────── -->
+  <section id="section-intake" class="card">
+    <h2 class="card-title">
+      <span class="icon">&#128203;</span> Client Intake Form
+    </h2>
+    <p class="hint">
+      Send this link to a new client. They fill out the 9-section intake form and you receive their
+      answers by email + a JSON download to run <code>/onboard-from-intake</code>.
+    </p>
+    <div class="intake-link-row">
+      <code id="intake-url" class="intake-url">https://content.rejiglabs.com/intake/</code>
+      <button id="copy-intake-btn" class="btn btn-ghost btn-sm" onclick="copyIntakeLink()">
+        &#128203; Copy Link
+      </button>
+    </div>
+  </section>
+
+  <!-- ── Weekly Pipeline Section ──────────────────────────── -->
+  <section id="section-pipeline" class="card" style="display:none">
+    <h2 class="card-title">
+      <span class="icon">&#9881;</span> Weekly Content Pipeline
+    </h2>
+    <p class="hint">
+      Triggers a full pipeline run on GitHub Actions: scrape topics, generate 42 content items
+      (EN + RU), generate 42 images, finalize workbook, sync Airtable, and deploy the dashboard.
+    </p>
+
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="pipeline-client">Client ID</label>
+        <input type="text" id="pipeline-client" class="input" value="bobe" placeholder="bobe">
+      </div>
+      <div class="form-group">
+        <label for="pipeline-week">Week Of <span class="label-hint">(optional)</span></label>
+        <input type="text" id="pipeline-week" class="input" placeholder="YYYY-MM-DD (defaults to current Monday)">
+      </div>
+    </div>
+
+    <div class="form-checks">
+      <label class="check-label">
+        <input type="checkbox" id="pipeline-skip-images">
+        <span>Skip image generation</span>
+        <span class="check-hint">Faster run, content only</span>
+      </label>
+      <label class="check-label">
+        <input type="checkbox" id="pipeline-skip-airtable">
+        <span>Skip Airtable sync</span>
+      </label>
+      <label class="check-label">
+        <input type="checkbox" id="pipeline-mock">
+        <span>Mock run (no API calls)</span>
+        <span class="check-hint">For testing only</span>
+      </label>
+    </div>
+
+    <div class="form-actions">
+      <button id="pipeline-run-btn" class="btn btn-primary">
+        <span class="btn-icon">&#9654;</span> Run Pipeline
+      </button>
+    </div>
+
+    <p id="pipeline-msg" class="success-msg" style="display:none"></p>
+    <p id="pipeline-error" class="error-msg" style="display:none"></p>
+  </section>
+
+  <!-- ── Onboard Client Section ────────────────────────────── -->
+  <section id="section-onboard" class="card" style="display:none">
+    <h2 class="card-title">
+      <span class="icon">&#10133;</span> Onboard New Client
+    </h2>
+    <p class="hint">
+      Creates a new client directory from the template and commits it to the repo.
+      Run <code>/onboard-client {id}</code> in Claude Code afterwards to AI-draft the content guidelines.
+    </p>
+
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="onboard-id">Client ID <span class="label-required">*</span></label>
+        <input type="text" id="onboard-id" class="input" placeholder="acmecorp (lowercase, no spaces)">
+      </div>
+      <div class="form-group">
+        <label for="onboard-name">Display Name <span class="label-required">*</span></label>
+        <input type="text" id="onboard-name" class="input" placeholder="Acme Corp">
+      </div>
+      <div class="form-group">
+        <label for="onboard-tagline">Tagline <span class="label-required">*</span></label>
+        <input type="text" id="onboard-tagline" class="input" placeholder="One-line brand tagline">
+      </div>
+      <div class="form-group">
+        <label for="onboard-website">Website <span class="label-required">*</span></label>
+        <input type="text" id="onboard-website" class="input" placeholder="acmecorp.com">
+      </div>
+      <div class="form-group form-group-full">
+        <label for="onboard-industry">Industry <span class="label-required">*</span></label>
+        <input type="text" id="onboard-industry" class="input" placeholder="DeFi, SaaS, ecommerce...">
+      </div>
+      <div class="form-group form-group-full">
+        <label for="onboard-airtable">Airtable Base ID <span class="label-hint">(optional)</span></label>
+        <input type="text" id="onboard-airtable" class="input" placeholder="appXXXXXXXXXX (leave blank to skip)">
+      </div>
+    </div>
+
+    <!-- Hidden fields with defaults -->
+    <input type="hidden" id="onboard-platforms" value="twitter,telegram">
+    <input type="hidden" id="onboard-primary" value="#1a1a2e">
+    <input type="hidden" id="onboard-accent" value="#00aaff">
+
+    <div class="form-actions">
+      <button id="onboard-run-btn" class="btn btn-primary">
+        <span class="btn-icon">&#10133;</span> Create Client
+      </button>
+    </div>
+
+    <p id="onboard-msg" class="success-msg" style="display:none"></p>
+    <p id="onboard-error" class="error-msg" style="display:none"></p>
+
+    <div id="onboard-next" class="next-steps" style="display:none">
+      <strong>Client created.</strong> Next step: run
+      <code id="onboard-next-cmd">/onboard-client {id}</code> in Claude Code to
+      AI-draft the content guidelines, keywords, and context files.
+    </div>
+  </section>
+
+  <!-- ── Run Status Section ────────────────────────────────── -->
+  <section id="section-status" class="card" style="display:none">
+    <div class="status-header">
+      <h2 class="card-title">
+        <span class="icon">&#128202;</span> Run Status
+      </h2>
+      <div class="status-controls">
+        <span id="auto-refresh-indicator" class="refresh-badge" style="display:none">
+          <span class="pulse"></span> Auto-refreshing
+        </span>
+        <button id="refresh-btn" class="btn btn-ghost btn-sm">
+          <span>&#8635;</span> Refresh
+        </button>
+      </div>
+    </div>
+
+    <div class="runs-grid">
+      <div class="runs-col">
+        <h3 class="runs-heading">Weekly Pipeline Runs</h3>
+        <div id="pipeline-runs" class="runs-list">
+          <div class="runs-empty">Loading...</div>
+        </div>
+      </div>
+      <div class="runs-col">
+        <h3 class="runs-heading">Onboard Runs</h3>
+        <div id="onboard-runs" class="runs-list">
+          <div class="runs-empty">Loading...</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  Content Pipeline Admin &mdash; triggers run on GitHub Actions &mdash;
+  <a href="https://rtadik.github.io/bobe-content-dashboard" target="_blank" rel="noopener">
+    View Dashboard
+  </a>
+</footer>
+
+<script src="admin.js"></script>
+</body>
+</html>

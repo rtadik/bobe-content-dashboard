@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log In — BoBe</title>
+<link rel="icon" type="image/jpeg" href="../../favicon.jpg">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #000e2b;
+    --surface: rgba(255,255,255,0.04);
+    --surface2: rgba(255,255,255,0.07);
+    --border: rgba(255,255,255,0.08);
+    --blue: #0055ff;
+    --blue-hover: #0044cc;
+    --blue-link: #0099ff;
+    --blue-dim: rgba(0,85,255,0.1);
+    --white: #ffffff;
+    --muted: #999999;
+    --text: rgba(255,255,255,0.7);
+    --red: #FF6B6B;
+  }
+  html, body {
+    background: var(--bg); color: #fff;
+    font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 24px;
+  }
+  .bg-orb {
+    position: fixed;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+    filter: blur(80px);
+  }
+  .bg-orb-1 {
+    width: 700px; height: 700px;
+    background: radial-gradient(circle, rgba(0,85,255,0.12) 0%, transparent 70%);
+    top: -200px; left: 50%; transform: translateX(-50%);
+  }
+  .bg-orb-2 {
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(0,153,255,0.08) 0%, transparent 70%);
+    bottom: 0; right: -100px;
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 24px; padding: 36px 32px; width: 100%; max-width: 380px;
+    display: flex; flex-direction: column; gap: 24px;
+    backdrop-filter: blur(8px);
+    position: relative; z-index: 1;
+  }
+  .card-header { display: flex; flex-direction: column; gap: 6px; }
+  .back-link {
+    font-size: 0.75rem; color: var(--muted); text-decoration: none;
+    display: flex; align-items: center; gap: 4px; margin-bottom: 8px;
+    transition: color 0.2s ease;
+  }
+  .back-link:hover { color: var(--text); }
+  .card-title { font-size: 1.35rem; font-weight: 700; }
+  .card-subtitle { font-size: 0.8rem; color: var(--muted); }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 0.78rem; font-weight: 600; color: var(--text); letter-spacing: 0.2px; }
+  .field input {
+    background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+    color: #fff; padding: 10px 14px; border-radius: 10px; font-size: 0.9rem;
+    outline: none; transition: border-color 0.2s ease;
+    font-family: inherit;
+  }
+  .field input:focus { border-color: #0099ff; }
+  .error-msg {
+    background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.3);
+    color: var(--red); font-size: 0.78rem; padding: 9px 13px; border-radius: 8px;
+    display: none;
+  }
+  .error-msg.show { display: block; }
+  .submit-btn {
+    background: #0055ff; color: #fff; border: none;
+    padding: 12px; border-radius: 22px; font-size: 0.92rem;
+    font-weight: 600; cursor: pointer; width: 100%;
+    transition: background 0.2s ease; font-family: inherit;
+  }
+  .submit-btn:hover { background: #0044cc; }
+  .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .site-footer {
+    margin-top: 28px; font-size: 0.68rem; color: var(--muted);
+    position: relative; z-index: 1;
+  }
+</style>
+</head>
+<body>
+<div class="bg-orb bg-orb-1"></div>
+<div class="bg-orb bg-orb-2"></div>
+<div class="card">
+  <div class="card-header">
+    <a href="../../index.html" class="back-link">&#8592; Back</a>
+    <h1 class="card-title">Welcome back</h1>
+    <p class="card-subtitle">Log in to access your content dashboard</p>
+  </div>
+  <div class="field">
+    <label for="username">Username</label>
+    <input type="text" id="username" placeholder="Enter username" autocomplete="username" autocapitalize="none">
+  </div>
+  <div class="field">
+    <label for="password">Password</label>
+    <input type="password" id="password" placeholder="Enter password" autocomplete="current-password">
+  </div>
+  <div class="error-msg" id="error-msg">Incorrect username or password.</div>
+  <button class="submit-btn" id="login-btn" onclick="handleLogin()">Log In</button>
+</div>
+<footer class="site-footer">BoBe Content Platform</footer>
+
+<script>
+// Credentials: only this client's credential is baked in (credential isolation)
+const CREDENTIALS = [{"username": "admin", "password_hash": "860d0233191a29895fa58c7a793d1911bfd9f20a0b195b20e5c5a8cc157119c5", "client_id": "bobe", "role": "client", "display_name": "BoBe"}];
+
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function handleLogin() {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const btn = document.getElementById('login-btn');
+  const errEl = document.getElementById('error-msg');
+
+  if (!username || !password) {
+    errEl.textContent = 'Please enter both username and password.';
+    errEl.classList.add('show');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Checking...';
+  errEl.classList.remove('show');
+
+  try {
+    const hash = await sha256(password);
+    const match = CREDENTIALS.find(c => c.username === username && c.password_hash === hash);
+
+    if (!match) {
+      errEl.textContent = 'Incorrect username or password.';
+      errEl.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = 'Log In';
+      return;
+    }
+
+    // Store session
+    sessionStorage.setItem('dash_auth', JSON.stringify({
+      clientId: match.client_id,
+      username: match.username,
+      role: match.role,
+      display_name: match.display_name
+    }));
+
+    // Redirect to this client's dashboard (same directory)
+    window.location.href = './';
+  } catch (err) {
+    errEl.textContent = 'Login error. Please try again.';
+    errEl.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = 'Log In';
+  }
+}
+
+// Allow Enter key to submit
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') handleLogin();
+});
+</script>
+</body>
+</html>
