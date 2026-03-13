@@ -3555,6 +3555,74 @@ def api_generate_announcement():
     return jsonify({"success": True, "job_id": job_id})
 
 
+@app.route("/api/test-announcement", methods=["POST"])
+def api_test_announcement():
+    """Test announcement generation by phase: content, images, or translation. Generates 1 post."""
+    data = request.get_json(force=True)
+    text = (data.get("text") or "").strip()
+    phase = data.get("phase", "content")
+    mock = data.get("mock", False)
+    client_id = data.get("client_id", "")
+
+    if not text:
+        return jsonify({"success": False, "error": "text is required"}), 400
+    if phase not in ("content", "images", "translation"):
+        return jsonify({"success": False, "error": "phase must be content, images, or translation"}), 400
+
+    import uuid as _uuid
+    job_id = str(_uuid.uuid4())
+
+    def _run():
+        try:
+            import sys as _sys
+            _sys.path.insert(0, str(Path(__file__).parent))
+            import client_config as _cc
+            import subprocess as _sp
+
+            active_client = client_id or _cc.get_active_client()
+
+            # Determine week_of (current Monday)
+            from datetime import datetime as _dt, timedelta as _td
+            today = _dt.now()
+            monday = today - _td(days=today.weekday())
+            week_of = monday.strftime("%Y-%m-%d")
+
+            cmd = [
+                _sys.executable,
+                str(Path(__file__).parent / "pipeline_runner.py"),
+                "--client", active_client,
+                "--week-of", week_of,
+                "--mode", "announcement",
+                "--announcement-text", text,
+                "--phase", phase,
+                "--count", "1",
+                "--skip-deploy",
+            ]
+            if mock:
+                cmd.append("--mock")
+            if phase != "images":
+                cmd.append("--skip-images")
+
+            result = _sp.run(cmd, capture_output=True, text=True, timeout=300)
+            output = result.stdout[-1000:] if result.stdout else ""
+            if result.returncode != 0:
+                err = result.stderr[-500:] if result.stderr else "Pipeline failed"
+                raise RuntimeError(f"{err}\n{output}")
+
+            with _jobs_lock:
+                _jobs[job_id] = {"status": "done", "phase": phase, "output": output}
+        except Exception as e:
+            with _jobs_lock:
+                _jobs[job_id] = {"status": "error", "error": str(e)}
+
+    with _jobs_lock:
+        _jobs[job_id] = {"status": "running", "phase": phase}
+
+    import threading as _threading
+    _threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"success": True, "job_id": job_id})
+
+
 # ── Publish to X API ───────────────────────────────────────────────────────────
 
 @app.route("/api/publish-to-x", methods=["POST"])
@@ -3957,6 +4025,22 @@ def api_admin_clients():
 
 
 # ── Flask routes ───────────────────────────────────────────────────────────────
+
+@app.route("/admin-panel")
+@app.route("/admin-panel/<path:filename>")
+def serve_admin_panel(filename="index.html"):
+    admin_dir = PROJECT_ROOT / "admin"
+    return send_from_directory(str(admin_dir), filename)
+
+
+@app.route("/api/job-status/<job_id>")
+def api_job_status(job_id):
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if not job:
+        return jsonify({"status": "unknown"}), 404
+    return jsonify(job)
+
 
 @app.route("/favicon.jpg")
 def serve_favicon():

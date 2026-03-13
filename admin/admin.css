@@ -387,7 +387,7 @@ label {
 
 .runs-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 18px;
 }
 
@@ -459,6 +459,37 @@ label {
   text-decoration: none;
 }
 .run-link:hover { text-decoration: underline; }
+
+/* ── Announcement tabs ───────────────────────────────────────── */
+.ann-tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+
+.ann-tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted2);
+  padding: 8px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.ann-tab-btn:hover { color: var(--text); }
+.ann-tab-btn.active {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+}
+
+.ann-tab-panel { padding: 4px 0; }
+.ann-tab-panel .hint { margin-bottom: 12px; }
+
+textarea.input { resize: vertical; min-height: 80px; }
 
 /* ── Footer ──────────────────────────────────────────────────── */
 .site-footer {

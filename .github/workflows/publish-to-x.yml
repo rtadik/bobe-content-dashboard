@@ -62,7 +62,9 @@ jobs:
         run: echo "${{ github.event.inputs.client_id }}" > .active-client
 
       - name: Publish thread to X
+        shell: bash
         run: |
+          set -euo pipefail
           python scripts/x_publisher.py \
             --client ${{ github.event.inputs.client_id }} \
             --week-of ${{ github.event.inputs.week_of }} \
@@ -123,7 +125,9 @@ jobs:
         run: echo "${{ github.event.inputs.client_id }}" > .active-client
 
       - name: Build static site
+        shell: bash
         run: |
+          set -euo pipefail
           python scripts/build_static.py \
             --output dist \
             --include-admin \

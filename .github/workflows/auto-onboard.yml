@@ -737,9 +737,12 @@ jobs:
         continue-on-error: true  # If pipeline was skipped or failed, build proceeds without content
 
       - name: Build static site (all clients)
+        shell: bash
         run: |
+          set -euo pipefail
           # Build for every onboarded client so login page and dashboards are all current
           FIRST=true
+          BUILD_FAILED=0
           for client_dir in clients/*/; do
             client_id=$(basename "$client_dir")
             if [[ "$client_id" == _* ]] || [[ "$client_id" == "intake" ]]; then
@@ -748,13 +751,23 @@ jobs:
             if [ -f "clients/$client_id/config.json" ]; then
               echo "Building for client: $client_id"
               if [ "$FIRST" = "true" ]; then
-                python scripts/build_static.py --output dist --include-admin --client "$client_id" || true
+                if ! python scripts/build_static.py --output dist --include-admin --client "$client_id"; then
+                  echo "::warning::Build failed for client $client_id"
+                  BUILD_FAILED=1
+                fi
                 FIRST=false
               else
-                python scripts/build_static.py --output dist --include-admin --no-clean --client "$client_id" || true
+                if ! python scripts/build_static.py --output dist --include-admin --no-clean --client "$client_id"; then
+                  echo "::warning::Build failed for client $client_id"
+                  BUILD_FAILED=1
+                fi
               fi
             fi
           done
+          if [ ! -f dist/index.html ]; then
+            echo "::error::No dist/index.html produced, aborting deploy"
+            exit 1
+          fi
 
       - name: Copy admin panel to dist
         run: |

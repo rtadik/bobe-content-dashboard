@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="github-repo" content="rtadik/bobe-content-dashboard">
 <title>Content Pipeline Admin</title>
 <link rel="stylesheet" href="admin.css">
 </head>
@@ -125,6 +126,72 @@
     <p id="pipeline-error" class="error-msg" style="display:none"></p>
   </section>
 
+  <!-- ── Announcement Test Section ─────────────────────────── -->
+  <section id="section-announcement" class="card">
+    <h2 class="card-title">
+      <span class="icon">&#128227;</span> Announcement Test
+    </h2>
+    <p class="hint">
+      Test announcement generation in isolation. Each button generates <strong>1 post</strong> for the selected phase only.
+      Run phases in order: Content first, then Translation or Images.
+      <br><span id="ann-mode-hint" style="color:var(--green);font-size:0.75rem;"></span>
+    </p>
+
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="ann-client">Client ID</label>
+        <input type="text" id="ann-client" class="input" value="bobe" placeholder="bobe">
+      </div>
+      <div class="form-group">
+        <label for="ann-week">Week Of <span class="label-hint">(optional)</span></label>
+        <input type="text" id="ann-week" class="input" placeholder="YYYY-MM-DD (defaults to current Monday)">
+      </div>
+    </div>
+
+    <div class="form-group form-group-full" style="margin-top:12px">
+      <label for="ann-text">Announcement Text <span class="label-required">*</span></label>
+      <textarea id="ann-text" class="input" rows="4" placeholder="Paste the client announcement here (2 sentences to a few paragraphs)"></textarea>
+    </div>
+
+    <label class="check-label" style="margin-top:8px">
+      <input type="checkbox" id="ann-mock">
+      <span>Mock run (no API calls)</span>
+      <span class="check-hint">For testing only</span>
+    </label>
+
+    <div class="ann-tabs" style="margin-top:16px">
+      <div class="ann-tab-bar">
+        <button class="ann-tab-btn active" data-phase="content">Content</button>
+        <button class="ann-tab-btn" data-phase="images">Images</button>
+        <button class="ann-tab-btn" data-phase="translation">Translation</button>
+      </div>
+
+      <div class="ann-tab-panel" id="ann-panel-content">
+        <p class="hint">Generates 1 topic angle + EN content (Twitter thread + Telegram post) + image prompts + RU translation via Gemini. <strong>Run this first.</strong></p>
+        <button id="ann-run-content" class="btn btn-primary">
+          <span class="btn-icon">&#9654;</span> Test Content
+        </button>
+      </div>
+
+      <div class="ann-tab-panel" id="ann-panel-images" style="display:none">
+        <p class="hint">Generates EN + RU images for the existing topic. Requires content phase to have run first.</p>
+        <button id="ann-run-images" class="btn btn-primary">
+          <span class="btn-icon">&#127912;</span> Test Images
+        </button>
+      </div>
+
+      <div class="ann-tab-panel" id="ann-panel-translation" style="display:none">
+        <p class="hint">Re-generates only Russian translation for the existing EN content. Requires content phase first.</p>
+        <button id="ann-run-translation" class="btn btn-primary">
+          <span class="btn-icon">&#127760;</span> Test Translation
+        </button>
+      </div>
+    </div>
+
+    <p id="ann-msg" class="success-msg" style="display:none"></p>
+    <p id="ann-error" class="error-msg" style="display:none"></p>
+  </section>
+
   <!-- ── Onboard Client Section ────────────────────────────── -->
   <section id="section-onboard" class="card" style="display:none">
     <h2 class="card-title">
@@ -203,6 +270,12 @@
       <div class="runs-col">
         <h3 class="runs-heading">Weekly Pipeline Runs</h3>
         <div id="pipeline-runs" class="runs-list">
+          <div class="runs-empty">Loading...</div>
+        </div>
+      </div>
+      <div class="runs-col">
+        <h3 class="runs-heading">Announcement Runs</h3>
+        <div id="announcement-runs" class="runs-list">
           <div class="runs-empty">Loading...</div>
         </div>
       </div>

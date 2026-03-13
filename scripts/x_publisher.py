@@ -105,6 +105,24 @@ def post_thread(client, tweets: list, mock: bool = False) -> list:
     return urls
 
 
+def _discover_columns(ws):
+    """Read header row and return a name->0-based-index map, or None if no headers found."""
+    header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+    if not header_row:
+        return None
+    col_map = {}
+    for idx, val in enumerate(header_row):
+        if val:
+            col_map[str(val).strip()] = idx
+    required = ["Topic", "Platform", "Content", "Status"]
+    missing = [h for h in required if h not in col_map]
+    if missing:
+        print(f"  Warning: Excel headers missing columns: {', '.join(missing)}")
+        print(f"  Found: {list(col_map.keys())}")
+        return None
+    return col_map
+
+
 def read_twitter_rows(excel_path: Path, topic_index: int):
     """
     Find Excel rows for the twitter content of the given topic_index (0-based).
@@ -114,6 +132,9 @@ def read_twitter_rows(excel_path: Path, topic_index: int):
     wb = openpyxl.load_workbook(str(excel_path), data_only=True)
     ws = wb["Content"]
 
+    # Try header-based column discovery first
+    col_map = _discover_columns(ws)
+
     topic_order = []
     topic_rows = {}
 
@@ -121,24 +142,31 @@ def read_twitter_rows(excel_path: Path, topic_index: int):
         if not row or len(row) < 2:
             continue
 
-        col1 = row[1] if len(row) > 1 else None
-        if not col1:
-            continue
-
-        if col1 in DAYS_SET:
-            # Old schema (no Bucket column): Day in col B
-            topic_name = row[2] if len(row) > 2 else None
-            platform = (row[3] or "").lower() if len(row) > 3 else ""
-            content = row[5] if len(row) > 5 else ""
-            status = "Draft"
-            tweet_url = ""
+        if col_map:
+            # Header-validated column positions
+            topic_name = row[col_map["Topic"]] if "Topic" in col_map else None
+            platform = (row[col_map["Platform"]] or "").lower() if "Platform" in col_map else ""
+            content = row[col_map["Content"]] if "Content" in col_map else ""
+            status = row[col_map["Status"]] if "Status" in col_map and col_map["Status"] < len(row) else "Draft"
+            tweet_url = row[col_map.get("Tweet_URL", 15)] if col_map.get("Tweet_URL", 15) < len(row) else ""
         else:
-            # New 15-column schema: Bucket in col B, Day in col C
-            topic_name = row[3] if len(row) > 3 else None
-            platform = (row[4] or "").lower() if len(row) > 4 else ""
-            content = row[6] if len(row) > 6 else ""
-            status = row[14] if len(row) > 14 else "Draft"
-            tweet_url = row[15] if len(row) > 15 else ""
+            # Fallback: positional detection
+            col1 = row[1] if len(row) > 1 else None
+            if not col1:
+                continue
+
+            if col1 in DAYS_SET:
+                topic_name = row[2] if len(row) > 2 else None
+                platform = (row[3] or "").lower() if len(row) > 3 else ""
+                content = row[5] if len(row) > 5 else ""
+                status = "Draft"
+                tweet_url = ""
+            else:
+                topic_name = row[3] if len(row) > 3 else None
+                platform = (row[4] or "").lower() if len(row) > 4 else ""
+                content = row[6] if len(row) > 6 else ""
+                status = row[14] if len(row) > 14 else "Draft"
+                tweet_url = row[15] if len(row) > 15 else ""
 
         if not topic_name:
             continue

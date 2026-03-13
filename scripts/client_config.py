@@ -28,11 +28,23 @@ DEFAULT_CLIENT = "bobe"
 
 
 def get_active_client() -> str:
-    """Read the active client ID from .active-client file, or return default."""
+    """Read the active client ID from .active-client file, or return default.
+    Raises ValueError if the file contains an invalid client ID.
+    """
     if ACTIVE_CLIENT_FILE.exists():
         client_id = ACTIVE_CLIENT_FILE.read_text().strip()
-        if client_id and (CLIENTS_DIR / client_id).is_dir():
+        if not client_id:
+            return DEFAULT_CLIENT
+        config_path = CLIENTS_DIR / client_id / "config.json"
+        if config_path.exists():
             return client_id
+        available = list_clients()
+        raise ValueError(
+            f"Invalid client '{client_id}' in .active-client "
+            f"(no config.json found at clients/{client_id}/).\n"
+            f"Available clients: {', '.join(available) or 'none'}\n"
+            f"Fix with: /switch-client <valid_id>"
+        )
     return DEFAULT_CLIENT
 
 

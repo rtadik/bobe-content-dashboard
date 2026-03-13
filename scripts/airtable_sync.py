@@ -79,7 +79,11 @@ COLUMN_MAP = {
     13: "Image_Path_RU",
     14: "Hashtags_RU",
     15: "Status",
+    16: "Tweet_URL",
 }
+
+# Expected column headers for validation (header text -> 1-based column index)
+EXPECTED_HEADERS = {v: k for k, v in COLUMN_MAP.items()}
 
 
 def build_table_fields(use_attachments: bool) -> list:
@@ -233,15 +237,35 @@ def read_excel_rows(excel_path: Path, week_of: str, client_id: str) -> list:
         sys.exit(1)
 
     ws = wb["Content"]
-    rows = []
 
+    # Validate column headers (row 1)
+    header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+    if header_row:
+        col_map = {}
+        for idx, val in enumerate(header_row, 1):
+            if val and str(val).strip() in EXPECTED_HEADERS:
+                col_map[str(val).strip()] = idx
+        missing = [h for h in ["Date", "Topic", "Platform", "Content", "Status"] if h not in col_map]
+        if missing:
+            print(f"Warning: Excel headers missing required columns: {', '.join(missing)}")
+            print(f"  Found headers: {[str(h) for h in header_row if h]}")
+            print(f"  Falling back to positional column mapping")
+            col_map = None
+    else:
+        col_map = None
+
+    rows = []
     for row in ws.iter_rows(min_row=2, values_only=True):
         if not any(cell for cell in row):
             continue
 
         record = {}
         for col_idx, field_name in COLUMN_MAP.items():
-            val = row[col_idx - 1] if col_idx - 1 < len(row) else None
+            if col_map and field_name in col_map:
+                actual_idx = col_map[field_name] - 1
+            else:
+                actual_idx = col_idx - 1
+            val = row[actual_idx] if actual_idx < len(row) else None
             record[field_name] = str(val) if val is not None else ""
 
         record["Week"] = week_of

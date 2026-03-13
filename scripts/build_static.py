@@ -2871,9 +2871,10 @@ def main():
             config_in_dist.unlink()
 
     # Write CNAME for custom domain (GitHub Pages)
+    cname_domain = os.environ.get("CNAME_DOMAIN", "content.rejiglabs.com")
     cname_path = Path(args.output) / "CNAME"
-    cname_path.write_text("content.rejiglabs.com\n")
-    print(f"  CNAME written: content.rejiglabs.com")
+    cname_path.write_text(f"{cname_domain}\n")
+    print(f"  CNAME written: {cname_domain}")
 
 
 if __name__ == "__main__":

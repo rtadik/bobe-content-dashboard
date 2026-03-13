@@ -29,10 +29,19 @@ import sys
 import json
 import re
 import time
+import logging
 import subprocess
 import argparse
 from datetime import datetime, timedelta
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+logging.basicConfig(
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+    level=logging.INFO,
+)
+logger = logging.getLogger("pipeline")
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -41,6 +50,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import client_config
 import bucket_generators
 from client_config import get_api_key
+from utils import is_cyrillic
 
 try:
     import airtable_writer
@@ -299,7 +309,8 @@ MOCK_CONTENT = {
 # ── Main pipeline ──────────────────────────────────────────────────────────────
 
 def run_pipeline(client_id, week_of, mock=False, skip_images=False,
-                 skip_airtable=False, skip_deploy=False, export_excel=False):
+                 skip_airtable=False, skip_deploy=False, export_excel=False,
+                 parallel_workers=4):
     """Run the full autonomous content pipeline."""
 
     config = client_config.load_config(client_id)
@@ -558,6 +569,25 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                 "status": "Draft",
             }
 
+            # Validate Russian content is actually Cyrillic
+            ru_text = content_json.get("content_ru", "")
+            if ru_text and not ru_text.startswith("[") and not is_cyrillic(ru_text):
+                logger.warning(f"    RU content for item {item_num} appears non-Cyrillic, retrying...")
+                try:
+                    retry_prompt = (
+                        f"Translate the following to Russian using Cyrillic script. "
+                        f"You MUST respond entirely in Russian:\n\n{content_json['content']}"
+                    )
+                    retry_ru = call_gemini(retry_prompt, client_id=client_id)
+                    if is_cyrillic(retry_ru):
+                        content_json["content_ru"] = retry_ru
+                        logger.info(f"    RU retry succeeded for item {item_num}")
+                    else:
+                        content_json["content_ru"] = f"[RU-WARN] {ru_text}"
+                        logger.warning(f"    RU retry still non-Cyrillic for item {item_num}")
+                except Exception as e:
+                    logger.warning(f"    RU retry failed for item {item_num}: {e}")
+
             # Write to Airtable inline (both Twitter and Telegram rows)
             if use_airtable and at_table_id:
                 try:
@@ -593,43 +623,42 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
 
     # ── Phase 5: Image Generation Loop ───────────────────────────────────────
     if not skip_images:
-        print(f"\nPhase 5: Generating 42 images (21 EN + 21 RU)...")
+        num_workers = parallel_workers
+        logger.info(f"Phase 5: Generating images ({num_workers} parallel workers)...")
+        phase5_start = time.time()
 
-        for topic_data in topics:
+        def _gen_images_for_topic(topic_data):
+            """Generate EN + RU images for one topic. Returns list of error strings."""
+            topic_errors = []
             topic_num = topic_data["topic_num"]
             day = topic_data["day"]
             topic = topic_data["topic"]
             angle = topic_data.get("angle", "Education")
 
-            # Use the Twitter content item for image prompts
             twitter_item = next(
                 (c for c in content_items
                  if c["topic"] == topic and c["platform"] == "Twitter"),
                 None,
             )
-
             if not twitter_item:
-                print(f"  Warning: no Twitter item found for topic {topic_num}, skipping")
-                continue
+                logger.warning(f"No Twitter item for topic {topic_num}, skipping images")
+                return topic_errors
 
             slug = topic_slug(topic)
             style_key, _ = get_style_preset(config, angle)
-
             en_img = twitter_item["image_path"]
             ru_img = twitter_item["image_path_ru"]
 
-            # Ensure image output directory exists
             img_dir = (PROJECT_ROOT / en_img).parent
             img_dir.mkdir(parents=True, exist_ok=True)
 
-            print(f"  Images {topic_num}/21 [{day}]: {topic[:42]}...")
+            logger.info(f"  Images {topic_num}/21 [{day}]: {topic[:42]}...")
 
             if not mock:
-                # Sanitize prompts for shell usage
                 en_prompt = twitter_item["image_prompt"].replace('"', "'")
                 ru_prompt = twitter_item["image_prompt_ru"].replace('"', "'")
 
-                # EN image via nano_banana.py (GPT-Image-1.5)
+                # EN image
                 try:
                     run_cmd(
                         f'{PY} scripts/nano_banana.py '
@@ -639,15 +668,14 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                         f'--no-r2 '
                         f'--client {client_id}'
                     )
-                    print(f"    EN: {Path(en_img).name}")
-                    # Upload EN image to R2 and patch Airtable
+                    logger.info(f"    EN: {Path(en_img).name}")
                     if use_airtable and HAS_CLOUD_MODULES and r2_uploader.is_configured():
                         try:
                             en_img_abs = str(PROJECT_ROOT / en_img)
                             if Path(en_img_abs).exists():
                                 r2_key_en = r2_uploader.make_key(client_id, week_of, Path(en_img).name)
                                 r2_url_en = r2_uploader.upload_file(en_img_abs, r2_key_en)
-                                print(f"    R2 EN: {r2_url_en}")
+                                logger.info(f"    R2 EN: {r2_url_en}")
                                 for plat_key in ["twitter", "telegram"]:
                                     rec_id = topic_at_records.get(topic_num, {}).get(plat_key)
                                     if rec_id:
@@ -656,13 +684,13 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                                             image_url_en=r2_url_en, api_key=at_api_key
                                         )
                         except Exception as e:
-                            print(f"    Warning: R2/AT EN image update failed: {e}")
-                            errors.append(f"R2/AT EN image topic {topic_num}: {e}")
+                            logger.warning(f"    R2/AT EN image update failed: {e}")
+                            topic_errors.append(f"R2/AT EN image topic {topic_num}: {e}")
                 except Exception as e:
-                    print(f"    Warning: EN image failed for topic {topic_num}: {e}")
-                    errors.append(f"EN image topic {topic_num}: {e}")
+                    logger.warning(f"    EN image failed for topic {topic_num}: {e}")
+                    topic_errors.append(f"EN image topic {topic_num}: {e}")
 
-                # RU image via wavespeed_img.py (Seedream 4.5)
+                # RU image
                 try:
                     run_cmd(
                         f'{PY} scripts/wavespeed_img.py '
@@ -671,15 +699,14 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                         f'--no-r2 '
                         f'--client {client_id}'
                     )
-                    print(f"    RU: {Path(ru_img).name}")
-                    # Upload RU image to R2 and patch Airtable
+                    logger.info(f"    RU: {Path(ru_img).name}")
                     if use_airtable and HAS_CLOUD_MODULES and r2_uploader.is_configured():
                         try:
                             ru_img_abs = str(PROJECT_ROOT / ru_img)
                             if Path(ru_img_abs).exists():
                                 r2_key_ru = r2_uploader.make_key(client_id, week_of, Path(ru_img).name)
                                 r2_url_ru = r2_uploader.upload_file(ru_img_abs, r2_key_ru)
-                                print(f"    R2 RU: {r2_url_ru}")
+                                logger.info(f"    R2 RU: {r2_url_ru}")
                                 for plat_key in ["twitter", "telegram"]:
                                     rec_id = topic_at_records.get(topic_num, {}).get(plat_key)
                                     if rec_id:
@@ -688,13 +715,32 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                                             image_url_ru=r2_url_ru, api_key=at_api_key
                                         )
                         except Exception as e:
-                            print(f"    Warning: R2/AT RU image update failed: {e}")
-                            errors.append(f"R2/AT RU image topic {topic_num}: {e}")
+                            logger.warning(f"    R2/AT RU image update failed: {e}")
+                            topic_errors.append(f"R2/AT RU image topic {topic_num}: {e}")
                 except Exception as e:
-                    print(f"    Warning: RU image failed for topic {topic_num}: {e}")
-                    errors.append(f"RU image topic {topic_num}: {e}")
+                    logger.warning(f"    RU image failed for topic {topic_num}: {e}")
+                    topic_errors.append(f"RU image topic {topic_num}: {e}")
             else:
-                print(f"    [mock] Skipping image API calls")
+                logger.info(f"    [mock] Skipping image API calls")
+
+            return topic_errors
+
+        with ThreadPoolExecutor(max_workers=num_workers) as pool:
+            futures = {
+                pool.submit(_gen_images_for_topic, td): td["topic_num"]
+                for td in topics
+            }
+            for future in as_completed(futures):
+                topic_num = futures[future]
+                try:
+                    topic_errors = future.result()
+                    errors.extend(topic_errors)
+                except Exception as e:
+                    logger.error(f"Topic {topic_num} images crashed: {e}")
+                    errors.append(f"Topic {topic_num} images failed: {e}")
+
+        phase5_elapsed = time.time() - phase5_start
+        logger.info(f"  Phase 5 complete in {phase5_elapsed:.0f}s")
     else:
         print("\nPhase 5: Skipping image generation (--skip-images)")
 
@@ -1035,8 +1081,21 @@ def main():
         help="Announcement text for --mode announcement (used by generate-announcement.yml workflow)",
     )
     parser.add_argument(
+        "--count", type=int, default=7,
+        help="Number of announcement topics to generate (default 7, use 1 for testing)",
+    )
+    parser.add_argument(
+        "--phase", default="all",
+        choices=["all", "content", "images", "translation"],
+        help="Which phase to run in announcement mode: all, content, images, or translation",
+    )
+    parser.add_argument(
         "--purge-older-than", type=int, default=12,
         help="Delete image dirs older than N weeks from outputs/content/{client}/images/ (0 = skip, default 12)",
+    )
+    parser.add_argument(
+        "--parallel-workers", type=int, default=4,
+        help="Number of parallel workers for image generation (default 4, set 1 for sequential)",
     )
     args = parser.parse_args()
 
@@ -1045,7 +1104,9 @@ def main():
 
     # Announcement-only mode: save input text and regenerate announcement bucket
     if args.mode == "announcement" and args.announcement_text:
-        print(f"\nAnnouncement mode: {client_id}, week {week_of}")
+        ann_count = min(args.count, 7)
+        phase = args.phase
+        print(f"\nAnnouncement mode: {client_id}, week {week_of}, count={ann_count}, phase={phase}")
         cfg = client_config.load_config(client_id)
         out_dir = client_config.get_output_dir(client_id)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -1066,38 +1127,49 @@ def main():
             DAYS[i]: (datetime.strptime(week_of, "%Y-%m-%d") + timedelta(days=i)).strftime("%Y-%m-%d")
             for i in range(7)
         }
-        ann_topics = bucket_generators.generate_announcement_placeholders(
-            cfg, week_of, day_dates_ann, args.announcement_text, mock=args.mock
-        )
-        print(f"  Generated {len(ann_topics)} announcement topics")
+
+        # Phase: content or all — generate topic angles
+        if phase in ("all", "content"):
+            ann_topics = bucket_generators.generate_announcement_placeholders(
+                cfg, week_of, day_dates_ann, args.announcement_text, mock=args.mock, count=ann_count
+            )
+            print(f"  Generated {len(ann_topics)} announcement topics")
+
+            # Save topics to temp file so other phases can pick them up
+            topics_file = out_dir / f"{week_of}-ann-topics.json"
+            topics_file.write_text(json.dumps(ann_topics, indent=2, ensure_ascii=False))
+        else:
+            # Load existing topics for images/translation phases
+            topics_file = out_dir / f"{week_of}-ann-topics.json"
+            if topics_file.exists():
+                ann_topics = json.loads(topics_file.read_text(encoding="utf-8"))[:ann_count]
+            else:
+                print(f"  Error: no topics file at {topics_file}. Run content phase first.")
+                sys.exit(1)
 
         # Generate full content + images for each announcement topic
         # (Reuse the same per-topic content generation as Phase 4)
         xlsx_suffix = "mock-weekly-content" if args.mock else "weekly-content"
         xlsx_path = out_dir / f"{week_of}-{xlsx_suffix}.xlsx"
-        if not xlsx_path.exists():
-            print(f"  Error: workbook not found at {xlsx_path}. Run full pipeline first.")
-            sys.exit(1)
 
-        # Update announcement rows in workbook by generating content for each topic
         from openpyxl import load_workbook as opxl_load
-        wb = opxl_load(str(xlsx_path))
-        ws = wb["Content"]
 
-        for row in ws.iter_rows(min_row=2):
-            bucket_cell = row[1]  # Column B = Bucket
-            if str(bucket_cell.value or "").lower() == "announcements":
-                # Find matching announcement topic by day
-                day_val = str(row[2].value or "")  # Column C = Day
-                ann_topic = next((t for t in ann_topics if t["day"] == day_val), None)
-                if ann_topic:
-                    row[3].value = ann_topic["topic"]  # Column D = Topic
-                    row[14].value = "Draft"            # Column O = Status (was Pending Input)
+        # Update workbook with topics (if workbook exists and phase includes content)
+        if xlsx_path.exists() and phase in ("all", "content"):
+            wb = opxl_load(str(xlsx_path))
+            ws = wb["Content"]
+            for row in ws.iter_rows(min_row=2):
+                bucket_cell = row[1]  # Column B = Bucket
+                if str(bucket_cell.value or "").lower() == "announcements":
+                    day_val = str(row[2].value or "")  # Column C = Day
+                    ann_topic = next((t for t in ann_topics if t["day"] == day_val), None)
+                    if ann_topic:
+                        row[3].value = ann_topic["topic"]  # Column D = Topic
+                        row[14].value = "Draft"            # Column O = Status
+            wb.save(str(xlsx_path))
+            print(f"  Workbook updated with announcement topics")
 
-        wb.save(str(xlsx_path))
-        print(f"  Workbook updated with announcement topics")
-
-        # Generate content via Gemini for each announcement topic (both platforms)
+        # Config for content generation
         tone = cfg.get("content", {}).get("tone", "educational")
         voice = cfg.get("content", {}).get("voice", "")
         display_name = cfg.get("display_name", client_id)
@@ -1118,91 +1190,161 @@ def main():
                 en_path = make_image_path(client_id, week_of, topic_data["day"], slug, platform)
                 ru_path = make_image_path(client_id, week_of, topic_data["day"], slug, platform, ru=True)
 
-                print(f"  Generating content: {topic_data['day']} {platform} [{topic_data['topic'][:40]}]...")
+                # ── Content phase: generate EN content + image prompts ──
+                if phase in ("all", "content"):
+                    print(f"  Generating content: {topic_data['day']} {platform} [{topic_data['topic'][:40]}]...")
 
-                if not args.mock:
-                    format_desc = fmt + (" (5 tweets separated by ---)" if fmt == "thread" else "")
-                    platform_rules = get_platform_rules(cfg, platform, fmt)
-                    prompt = CONTENT_GEN_PROMPT.format(
-                        display_name=display_name, tone=tone, voice=voice,
-                        tagline=cfg.get("tagline", ""), pillars=pillars, ctas=ctas,
-                        hashtags=hashtags_cfg,
-                        topic_num=topic_data["topic_num"], topic=topic_data["topic"],
-                        angle=topic_data.get("angle", "Announcement"),
-                        day=topic_data["day"], date=topic_data["date"],
-                        platform=platform, format_desc=format_desc,
-                        source_context="",
-                        platform_rules=platform_rules, mascot=mascot, bg_style=bg_style,
-                        style_preset=style_desc,
-                    )
-                    try:
-                        response = call_gemini(prompt, client_id=client_id)
-                        c = extract_json(response)
-                    except Exception as e:
-                        print(f"    Warning: content gen failed: {e}")
+                    if not args.mock:
+                        format_desc = fmt + (" (5 tweets separated by ---)" if fmt == "thread" else "")
+                        platform_rules = get_platform_rules(cfg, platform, fmt)
+                        prompt = CONTENT_GEN_PROMPT.format(
+                            display_name=display_name, tone=tone, voice=voice,
+                            tagline=cfg.get("tagline", ""), pillars=pillars, ctas=ctas,
+                            hashtags=hashtags_cfg,
+                            topic_num=topic_data["topic_num"], topic=topic_data["topic"],
+                            angle=topic_data.get("angle", "Announcement"),
+                            day=topic_data["day"], date=topic_data["date"],
+                            platform=platform, format_desc=format_desc,
+                            source_context="",
+                            platform_rules=platform_rules, mascot=mascot, bg_style=bg_style,
+                            style_preset=style_desc,
+                        )
+                        try:
+                            response = call_gemini(prompt, client_id=client_id)
+                            c = extract_json(response)
+                        except Exception as e:
+                            print(f"    Warning: content gen failed: {e}")
+                            c = dict(MOCK_CONTENT)
+                    else:
                         c = dict(MOCK_CONTENT)
-                else:
-                    c = dict(MOCK_CONTENT)
-                    c["content"] = f"[Mock announcement {platform} EN] {topic_data['topic'][:60]}"
+                        c["content"] = f"[Mock announcement {platform} EN] {topic_data['topic'][:60]}"
 
-                content_json = {
-                    "date": topic_data["date"],
-                    "bucket": "announcements",
-                    "day": topic_data["day"],
-                    "topic": topic_data["topic"],
-                    "platform": platform,
-                    "format": fmt,
-                    "content": c.get("content", ""),
-                    "image_prompt": c.get("image_prompt", f"{display_name}: {topic_data['topic']}"),
-                    "image_path": en_path,
-                    "hashtags": c.get("hashtags", []),
-                    "content_ru": c.get("content_ru", ""),
-                    "image_prompt_ru": c.get("image_prompt_ru", ""),
-                    "image_path_ru": ru_path,
-                    "hashtags_ru": c.get("hashtags_ru", []),
-                    "status": "Draft",
-                }
+                    # Save per-item JSON for other phases to read
+                    content_json = {
+                        "date": topic_data["date"],
+                        "bucket": "announcements",
+                        "day": topic_data["day"],
+                        "topic": topic_data["topic"],
+                        "platform": platform,
+                        "format": fmt,
+                        "content": c.get("content", ""),
+                        "image_prompt": c.get("image_prompt", f"{display_name}: {topic_data['topic']}"),
+                        "image_path": en_path,
+                        "hashtags": c.get("hashtags", []),
+                        "content_ru": c.get("content_ru", ""),
+                        "image_prompt_ru": c.get("image_prompt_ru", ""),
+                        "image_path_ru": ru_path,
+                        "hashtags_ru": c.get("hashtags_ru", []),
+                        "status": "Draft",
+                    }
 
-                tmp_file = f"/tmp/ann_content_{topic_data['day']}_{platform.lower()}.json"
-                with open(tmp_file, "w", encoding="utf-8") as f:
-                    json.dump(content_json, f, ensure_ascii=False, indent=2)
+                    tmp_file = out_dir / f"ann_content_{topic_data['day']}_{platform.lower()}.json"
+                    tmp_file.write_text(json.dumps(content_json, indent=2, ensure_ascii=False))
 
-                # Update the existing row in workbook (find by bucket+day+platform)
-                wb2 = opxl_load(str(xlsx_path))
-                ws2 = wb2["Content"]
-                for row in ws2.iter_rows(min_row=2):
-                    if (str(row[1].value or "").lower() == "announcements" and
-                            str(row[2].value or "") == topic_data["day"] and
-                            str(row[4].value or "").lower() == platform.lower()):
-                        row[3].value = topic_data["topic"]     # D: Topic
-                        row[6].value = c.get("content", "")   # G: Content
-                        row[7].value = c.get("image_prompt", "")  # H: Image Prompt
-                        row[8].value = en_path                 # I: Image Path
-                        row[9].value = ", ".join(c.get("hashtags", []))  # J: Hashtags
-                        row[10].value = c.get("content_ru", "")  # K: Content_RU
-                        row[11].value = c.get("image_prompt_ru", "")  # L: Image_Prompt_RU
-                        row[12].value = ru_path                # M: Image_Path_RU
-                        row[13].value = ", ".join(c.get("hashtags_ru", []))  # N: Hashtags_RU
-                        row[14].value = "Draft"                # O: Status
-                        break
-                wb2.save(str(xlsx_path))
+                    # Update workbook row
+                    if xlsx_path.exists():
+                        wb2 = opxl_load(str(xlsx_path))
+                        ws2 = wb2["Content"]
+                        for row in ws2.iter_rows(min_row=2):
+                            if (str(row[1].value or "").lower() == "announcements" and
+                                    str(row[2].value or "") == topic_data["day"] and
+                                    str(row[4].value or "").lower() == platform.lower()):
+                                row[3].value = topic_data["topic"]
+                                row[6].value = c.get("content", "")
+                                row[7].value = c.get("image_prompt", "")
+                                row[8].value = en_path
+                                row[9].value = ", ".join(c.get("hashtags", []))
+                                row[10].value = c.get("content_ru", "")
+                                row[11].value = c.get("image_prompt_ru", "")
+                                row[12].value = ru_path
+                                row[13].value = ", ".join(c.get("hashtags_ru", []))
+                                row[14].value = "Draft"
+                                break
+                        wb2.save(str(xlsx_path))
 
-                # Generate images if not skipping
-                if not args.mock and not args.skip_images:
-                    img_dir = (PROJECT_ROOT / en_path).parent
-                    img_dir.mkdir(parents=True, exist_ok=True)
-                    safe_en = c.get("image_prompt", "").replace('"', "'")
-                    safe_ru = c.get("image_prompt_ru", "").replace('"', "'")
-                    try:
-                        run_cmd(f'{PY} scripts/nano_banana.py --prompt "{safe_en}" --output "{en_path}" --style {style_key} --client {client_id}')
-                    except Exception as e:
-                        print(f"    Warning: EN image failed: {e}")
-                    try:
-                        run_cmd(f'{PY} scripts/wavespeed_img.py --prompt "{safe_ru}" --output "{ru_path}" --client {client_id}')
-                    except Exception as e:
-                        print(f"    Warning: RU image failed: {e}")
+                # ── Translation phase: regenerate only RU content ──
+                if phase == "translation":
+                    tmp_file = out_dir / f"ann_content_{topic_data['day']}_{platform.lower()}.json"
+                    if not tmp_file.exists():
+                        print(f"  Skipping translation {topic_data['day']} {platform}: no content file. Run content phase first.")
+                        continue
+                    c = json.loads(tmp_file.read_text(encoding="utf-8"))
+                    en_content = c.get("content", "")
+                    en_hashtags = c.get("hashtags", [])
+                    if not en_content:
+                        print(f"  Skipping translation {topic_data['day']} {platform}: no EN content.")
+                        continue
 
-        print(f"\nAnnouncement mode complete. Week: {week_of}")
+                    print(f"  Translating: {topic_data['day']} {platform} [{topic_data.get('topic', '')[:40]}]...")
+                    if not args.mock:
+                        translate_prompt = (
+                            f"Translate this social media post to Russian. Keep the same tone, formatting, and structure.\n"
+                            f"Also translate these hashtags to Russian equivalents: {', '.join(en_hashtags)}\n"
+                            f"Also create a Russian image prompt based on this English one: {c.get('image_prompt', '')}\n\n"
+                            f"English content:\n{en_content}\n\n"
+                            f'Return ONLY JSON: {{"content_ru": "...", "hashtags_ru": ["..."], "image_prompt_ru": "..."}}'
+                        )
+                        try:
+                            resp = call_gemini(translate_prompt, client_id=client_id)
+                            tr = extract_json(resp)
+                        except Exception as e:
+                            print(f"    Warning: translation failed: {e}")
+                            tr = {"content_ru": "", "hashtags_ru": [], "image_prompt_ru": ""}
+                    else:
+                        tr = {
+                            "content_ru": f"[Mock RU] {en_content[:60]}",
+                            "hashtags_ru": ["#тест"],
+                            "image_prompt_ru": f"[Mock RU prompt] {c.get('image_prompt', '')[:40]}",
+                        }
+
+                    # Update the saved content JSON
+                    c["content_ru"] = tr.get("content_ru", "")
+                    c["hashtags_ru"] = tr.get("hashtags_ru", [])
+                    c["image_prompt_ru"] = tr.get("image_prompt_ru", "")
+                    tmp_file.write_text(json.dumps(c, indent=2, ensure_ascii=False))
+
+                    # Update workbook row
+                    if xlsx_path.exists():
+                        wb2 = opxl_load(str(xlsx_path))
+                        ws2 = wb2["Content"]
+                        for row in ws2.iter_rows(min_row=2):
+                            if (str(row[1].value or "").lower() == "announcements" and
+                                    str(row[2].value or "") == topic_data["day"] and
+                                    str(row[4].value or "").lower() == platform.lower()):
+                                row[10].value = tr.get("content_ru", "")
+                                row[11].value = tr.get("image_prompt_ru", "")
+                                row[13].value = ", ".join(tr.get("hashtags_ru", []))
+                                break
+                        wb2.save(str(xlsx_path))
+
+                # ── Images phase: generate EN + RU images ──
+                if phase in ("all", "images"):
+                    tmp_file = out_dir / f"ann_content_{topic_data['day']}_{platform.lower()}.json"
+                    if tmp_file.exists():
+                        c = json.loads(tmp_file.read_text(encoding="utf-8"))
+                    else:
+                        print(f"  Skipping images {topic_data['day']} {platform}: no content file. Run content phase first.")
+                        continue
+
+                    if not args.mock and not args.skip_images:
+                        img_dir = (PROJECT_ROOT / en_path).parent
+                        img_dir.mkdir(parents=True, exist_ok=True)
+                        safe_en = c.get("image_prompt", "").replace('"', "'")
+                        safe_ru = c.get("image_prompt_ru", "").replace('"', "'")
+                        print(f"  Generating images: {topic_data['day']} {platform}...")
+                        try:
+                            run_cmd(f'{PY} scripts/nano_banana.py --prompt "{safe_en}" --output "{en_path}" --style {style_key} --client {client_id}')
+                        except Exception as e:
+                            print(f"    Warning: EN image failed: {e}")
+                        if safe_ru:
+                            try:
+                                run_cmd(f'{PY} scripts/wavespeed_img.py --prompt "{safe_ru}" --output "{ru_path}" --client {client_id}')
+                            except Exception as e:
+                                print(f"    Warning: RU image failed: {e}")
+                    elif args.mock:
+                        print(f"  [Mock] Images: {topic_data['day']} {platform}")
+
+        print(f"\nAnnouncement mode complete. Phase: {phase}, count: {ann_count}, week: {week_of}")
         sys.exit(0)
 
     if args.regen_topic is not None:
@@ -1223,6 +1365,7 @@ def main():
         skip_airtable=args.skip_airtable,
         skip_deploy=args.skip_deploy,
         export_excel=args.export_excel,
+        parallel_workers=args.parallel_workers,
     )
 
     if success and args.mode == "full" and args.purge_older_than > 0:

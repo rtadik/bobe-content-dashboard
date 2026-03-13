@@ -66,19 +66,30 @@ def get_client():
     )
 
 
-def upload_bytes(image_data: bytes, key: str) -> str:
+def upload_bytes(image_data: bytes, key: str, max_retries: int = 3) -> str:
     """
     Upload raw image bytes to R2 under the given key.
-    Returns the public URL.
+    Returns the public URL. Retries on transient failures.
     """
     client = get_client()
-    client.put_object(
-        Bucket=R2_BUCKET_NAME,
-        Key=key,
-        Body=image_data,
-        ContentType="image/png",
-    )
-    return f"{R2_PUBLIC_URL}/{key}"
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            client.put_object(
+                Bucket=R2_BUCKET_NAME,
+                Key=key,
+                Body=image_data,
+                ContentType="image/png",
+            )
+            return f"{R2_PUBLIC_URL}/{key}"
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt  # 1s, 2s, 4s
+                print(f"  R2 upload retry {attempt + 1}/{max_retries} in {wait}s: {e}")
+                import time
+                time.sleep(wait)
+    raise last_error
 
 
 def upload_file(local_path: str, key: str) -> str:

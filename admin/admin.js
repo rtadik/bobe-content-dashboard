@@ -5,12 +5,13 @@
  * All API calls go directly to api.github.com — no intermediary server.
  */
 
-const REPO = "rtadik/bobe-content-dashboard";
+const REPO = document.querySelector('meta[name="github-repo"]')?.content || "rtadik/bobe-content-dashboard";
 const API  = "https://api.github.com";
 
 // Workflow file names in .github/workflows/
-const PIPELINE_WORKFLOW = "weekly-pipeline.yml";
-const ONBOARD_WORKFLOW  = "onboard-client.yml";
+const PIPELINE_WORKFLOW      = "weekly-pipeline.yml";
+const ANNOUNCEMENT_WORKFLOW  = "generate-announcement.yml";
+const ONBOARD_WORKFLOW       = "onboard-client.yml";
 
 // Auto-refresh interval when a run is in progress (ms)
 const POLL_INTERVAL = 30000;
@@ -79,6 +80,7 @@ async function connect(pat) {
     _authedUser = user.login;
     setAuthed(true, user.login);
     showPipelineSection();
+    showAnnouncementSection();
     showOnboardSection();
     showStatusSection();
     refreshStatus();
@@ -114,12 +116,14 @@ function setAuthed(authed, username) {
 
 // ── Section visibility ────────────────────────────────────────────────────────
 
-function showPipelineSection() { document.getElementById("section-pipeline").style.display = "block"; }
-function showOnboardSection()  { document.getElementById("section-onboard").style.display = "block"; }
-function showStatusSection()   { document.getElementById("section-status").style.display = "block"; }
+function showPipelineSection()     { document.getElementById("section-pipeline").style.display = "block"; }
+function showAnnouncementSection() { document.getElementById("section-announcement").style.display = "block"; }
+function showOnboardSection()      { document.getElementById("section-onboard").style.display = "block"; }
+function showStatusSection()       { document.getElementById("section-status").style.display = "block"; }
 
 function hideSections() {
   document.getElementById("section-pipeline").style.display = "none";
+  document.getElementById("section-announcement").style.display = "none";
   document.getElementById("section-onboard").style.display = "none";
   document.getElementById("section-status").style.display = "none";
 }
@@ -246,20 +250,156 @@ async function runOnboard() {
   }
 }
 
+// ── Announcement test trigger ─────────────────────────────────────────────────
+
+// Detect if running locally (served by Flask) vs deployed (Cloudflare Pages)
+function isLocal() {
+  return location.hostname === "localhost" || location.hostname === "127.0.0.1";
+}
+
+// Flask base URL for local mode
+function flaskBase() {
+  return `${location.protocol}//${location.hostname}:5001`;
+}
+
+async function runAnnouncementTest(phase) {
+  const clientId = document.getElementById("ann-client").value.trim() || "bobe";
+  const weekOf   = document.getElementById("ann-week").value.trim();
+  const text     = document.getElementById("ann-text").value.trim();
+  const mock     = document.getElementById("ann-mock").checked;
+
+  if (!text) {
+    showMsg("ann-error", "Announcement text is required.");
+    return;
+  }
+
+  hideMsg("ann-error");
+  hideMsg("ann-msg");
+
+  const btn = document.getElementById(`ann-run-${phase}`);
+  const origHTML = btn.innerHTML;
+  btn.disabled = true;
+  btn.textContent = "Running...";
+
+  const phaseLabel = { content: "Content", images: "Images", translation: "Translation" }[phase];
+
+  // Try local Flask API first (works when Flask server is running)
+  try {
+    const base = isLocal() ? flaskBase() : "";
+    const res = await fetch(`${base}/api/test-announcement`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        phase,
+        mock,
+        client_id: clientId,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || "API error");
+
+    showMsg("ann-msg", `${phaseLabel} test started (1 post, local). Job ID: ${data.job_id}`);
+    pollJobStatus(data.job_id, phase);
+    return;
+  } catch (localErr) {
+    // If local Flask not available and we have a PAT, fall back to GitHub Actions
+    if (_pat) {
+      try {
+        const inputs = {
+          client_id:         clientId,
+          week_of:           weekOf,
+          announcement_text: text,
+          phase:             phase,
+          count:             "1",
+          mock:              String(mock),
+        };
+        await triggerWorkflow(ANNOUNCEMENT_WORKFLOW, inputs);
+        showMsg("ann-msg", `${phaseLabel} test triggered via GitHub Actions (1 post). Check Run Status below.`);
+        setTimeout(() => { refreshStatus(); startPolling(); }, 5000);
+        return;
+      } catch (ghErr) {
+        showMsg("ann-error", `Local: ${localErr.message}. GitHub Actions: ${ghErr.message}`);
+      }
+    } else {
+      showMsg("ann-error", `Flask server not reachable: ${localErr.message}. Start the server with /view-content or connect GitHub PAT.`);
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = origHTML;
+  }
+}
+
+async function pollJobStatus(jobId, phase) {
+  const base = isLocal() ? flaskBase() : "";
+  const phaseLabel = { content: "Content", images: "Images", translation: "Translation" }[phase];
+  const interval = setInterval(async () => {
+    try {
+      const res = await fetch(`${base}/api/job-status/${jobId}`);
+      const data = await res.json();
+      if (data.status === "done") {
+        clearInterval(interval);
+        showMsg("ann-msg", `${phaseLabel} test complete. ${data.output || ""}`);
+      } else if (data.status === "error") {
+        clearInterval(interval);
+        showMsg("ann-error", `${phaseLabel} failed: ${data.error || "Unknown error"}`);
+        hideMsg("ann-msg");
+      }
+      // else still running, keep polling
+    } catch {
+      clearInterval(interval);
+    }
+  }, 3000);
+}
+
+function updateAnnouncementModeHint() {
+  const hint = document.getElementById("ann-mode-hint");
+  if (hint) {
+    if (isLocal()) {
+      hint.textContent = "Local mode: runs via Flask API (no GitHub PAT needed)";
+    } else {
+      hint.textContent = "Remote mode: requires GitHub PAT connection above";
+      hint.style.color = "var(--yellow)";
+    }
+  }
+}
+
+function initAnnouncementTabs() {
+  const tabs = document.querySelectorAll(".ann-tab-btn");
+  tabs.forEach(tab => {
+    tab.addEventListener("click", () => {
+      tabs.forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      document.querySelectorAll(".ann-tab-panel").forEach(p => p.style.display = "none");
+      document.getElementById(`ann-panel-${tab.dataset.phase}`).style.display = "block";
+    });
+  });
+}
+
+// ── HTML escaping ─────────────────────────────────────────────────────────────
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 // ── Run status ────────────────────────────────────────────────────────────────
 
 async function refreshStatus() {
   document.getElementById("refresh-btn").disabled = true;
   try {
-    const [pipelineRuns, onboardRuns] = await Promise.all([
+    const [pipelineRuns, announcementRuns, onboardRuns] = await Promise.all([
       getWorkflowRuns(PIPELINE_WORKFLOW, 5),
+      getWorkflowRuns(ANNOUNCEMENT_WORKFLOW, 5),
       getWorkflowRuns(ONBOARD_WORKFLOW, 5),
     ]);
     renderRuns("pipeline-runs", pipelineRuns);
+    renderRuns("announcement-runs", announcementRuns);
     renderRuns("onboard-runs", onboardRuns);
 
     // Start/stop auto-refresh based on whether any run is active
-    const allRuns = [...pipelineRuns, ...onboardRuns];
+    const allRuns = [...pipelineRuns, ...announcementRuns, ...onboardRuns];
     const hasActive = allRuns.some(r => r.status === "in_progress" || r.status === "queued");
     if (hasActive) {
       startPolling();
@@ -267,8 +407,9 @@ async function refreshStatus() {
       stopPolling();
     }
   } catch (err) {
-    const errHtml = `<div class="runs-empty" style="color:var(--red)">Error: ${err.message}</div>`;
+    const errHtml = `<div class="runs-empty" style="color:var(--red)">Error: ${escapeHtml(err.message)}</div>`;
     document.getElementById("pipeline-runs").innerHTML = errHtml;
+    document.getElementById("announcement-runs").innerHTML = errHtml;
     document.getElementById("onboard-runs").innerHTML = errHtml;
   } finally {
     document.getElementById("refresh-btn").disabled = false;
@@ -435,6 +576,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Pipeline
   document.getElementById("pipeline-run-btn").addEventListener("click", runPipeline);
+
+  // Announcement test
+  initAnnouncementTabs();
+  updateAnnouncementModeHint();
+  document.getElementById("ann-run-content").addEventListener("click", () => runAnnouncementTest("content"));
+  document.getElementById("ann-run-images").addEventListener("click", () => runAnnouncementTest("images"));
+  document.getElementById("ann-run-translation").addEventListener("click", () => runAnnouncementTest("translation"));
 
   // Onboard
   document.getElementById("onboard-run-btn").addEventListener("click", runOnboard);

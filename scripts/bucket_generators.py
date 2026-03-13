@@ -336,21 +336,26 @@ Days: {', '.join(f'{d} {day_dates[d]}' for d in DAYS)}"""
 
 # ── Announcements ─────────────────────────────────────────────────────────────
 
+ANNOUNCEMENT_ANGLES = [
+    ("Direct announcement", "What's new"),
+    ("User benefit", "What this means for you"),
+    ("Behind-the-scenes", "How we built/decided this"),
+    ("Social proof", "Why our users love this"),
+    ("Educational", "Why this matters for the industry"),
+    ("Before vs after", "How things have changed"),
+    ("Future vision", "Where this is taking us"),
+]
+
 ANNOUNCEMENT_ANGLES_PROMPT = """\
 You are a content strategist for {display_name}.
 
 The client has submitted this weekly announcement:
 "{announcement_text}"
 
-Generate 7 different content TOPIC TITLES based on this announcement, one per day Mon–Sun.
-Each topic approaches the announcement from a different angle:
-1. Direct announcement ("What's new")
-2. User benefit ("What this means for you")
-3. Behind-the-scenes ("How we built/decided this")
-4. Social proof ("Why our users love this")
-5. Educational ("Why this matters for the industry")
-6. Before vs after ("How things have changed")
-7. Future vision ("Where this is taking us")
+Generate {count} different content TOPIC TITLES based on this announcement.
+Each topic approaches the announcement from a different angle.
+Use these angles (pick the first {count}):
+{angles_list}
 
 Tone: {tone}
 
@@ -359,27 +364,28 @@ RULES:
 - Each topic max 80 chars
 - Topics should feel natural, not like a press release
 
-Return ONLY a JSON array of exactly 7 objects, no other text:
+Return ONLY a JSON array of exactly {count} objects, no other text:
 [
   {{"topic_num": 1, "day": "Mon", "date": "{date_mon}", "topic": "...", "angle": "Announcement", "source": "Client Input"}},
   ...
 ]
-Days: Mon {date_mon}, Tue {date_tue}, Wed {date_wed}, Thu {date_thu}, Fri {date_fri}, Sat {date_sat}, Sun {date_sun}"""
+Days: {days_list}"""
 
 
 def generate_announcement_placeholders(config: dict, week_of: str, day_dates: dict,
-                                        announcement_text: str = "", mock: bool = False) -> list:
+                                        announcement_text: str = "", mock: bool = False,
+                                        count: int = 7) -> list:
     """
-    Generate 7 announcement topic dicts.
-    If announcement_text is provided: generates 7 angles from it via Gemini.
-    If not: returns 7 placeholder rows with status "Pending Input".
-    Returns list of 7 topic dicts with bucket="announcements".
+    Generate announcement topic dicts.
+    count: number of topics to generate (default 7, use 1 for testing).
+    If announcement_text is provided: generates angles from it via Gemini.
+    If not: returns placeholder rows with status "Pending Input".
     """
+    count = min(count, 7)  # cap at 7 (one per day)
     client_id = config.get("client_id", "bobe")
     display_name = config.get("display_name", client_id)
 
     if not announcement_text:
-        # Return placeholder rows — will be filled when client submits
         return [
             {
                 "bucket": "announcements",
@@ -391,7 +397,7 @@ def generate_announcement_placeholders(config: dict, week_of: str, day_dates: di
                 "source": "Pending",
                 "status": "Pending Input",
             }
-            for i in range(7)
+            for i in range(count)
         ]
 
     if mock:
@@ -405,17 +411,21 @@ def generate_announcement_placeholders(config: dict, week_of: str, day_dates: di
                 "angle": "Announcement",
                 "source": "Client Input",
             }
-            for i in range(7)
+            for i in range(count)
         ]
 
     tone = config.get("content", {}).get("tone", "educational")
+    angles_list = "\n".join(f"{i+1}. {a[0]} (\"{a[1]}\")" for i, a in enumerate(ANNOUNCEMENT_ANGLES[:count]))
+    days_used = DAYS[:count]
+    days_list = ", ".join(f"{d} {day_dates[d]}" for d in days_used)
 
     prompt = ANNOUNCEMENT_ANGLES_PROMPT.format(
         display_name=display_name, announcement_text=announcement_text[:1000],
-        tone=tone,
-        date_mon=day_dates["Mon"], date_tue=day_dates["Tue"],
-        date_wed=day_dates["Wed"], date_thu=day_dates["Thu"],
-        date_fri=day_dates["Fri"], date_sat=day_dates["Sat"], date_sun=day_dates["Sun"],
+        tone=tone, count=count, angles_list=angles_list, days_list=days_list,
+        date_mon=day_dates.get("Mon", ""), date_tue=day_dates.get("Tue", ""),
+        date_wed=day_dates.get("Wed", ""), date_thu=day_dates.get("Thu", ""),
+        date_fri=day_dates.get("Fri", ""), date_sat=day_dates.get("Sat", ""),
+        date_sun=day_dates.get("Sun", ""),
     )
 
     try:
@@ -426,10 +436,10 @@ def generate_announcement_placeholders(config: dict, week_of: str, day_dates: di
             t["topic_num"] = i + 1
             if not t.get("date"):
                 t["date"] = day_dates.get(t.get("day", "Mon"), week_of)
-        return topics[:7]
+        return topics[:count]
     except Exception as e:
         print(f"  Warning: announcement topic generation failed ({e}), using placeholders")
-        return generate_announcement_placeholders(config, week_of, day_dates, announcement_text="")
+        return generate_announcement_placeholders(config, week_of, day_dates, announcement_text="", count=count)
 
 
 # ── Social Proof ──────────────────────────────────────────────────────────────

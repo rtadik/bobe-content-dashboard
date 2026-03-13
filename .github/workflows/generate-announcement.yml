@@ -13,6 +13,20 @@ on:
       announcement_text:
         description: 'Client announcement text (2 sentences to several paragraphs)'
         required: true
+      phase:
+        description: 'Phase to run: all, content, images, or translation'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - content
+          - images
+          - translation
+      count:
+        description: 'Number of topics to generate (1 for testing, 7 for full)'
+        required: false
+        default: '7'
       mock:
         description: 'Dry run — no API calls (for testing)'
         type: boolean
@@ -67,18 +81,24 @@ jobs:
       - name: Save announcement and generate content
         env:
           ANNOUNCEMENT_TEXT: ${{ github.event.inputs.announcement_text }}
+        shell: bash
         run: |
+          set -euo pipefail
           ARGS="--client ${{ github.event.inputs.client_id }}"
           ARGS="$ARGS --week-of ${{ github.event.inputs.week_of }}"
           ARGS="$ARGS --mode announcement"
           ARGS="$ARGS --announcement-text \"$ANNOUNCEMENT_TEXT\""
+          ARGS="$ARGS --phase ${{ github.event.inputs.phase || 'all' }}"
+          ARGS="$ARGS --count ${{ github.event.inputs.count || '7' }}"
           if [ "${{ github.event.inputs.mock }}" = "true" ]; then
             ARGS="$ARGS --mock"
           fi
           python scripts/pipeline_runner.py $ARGS --skip-deploy
 
       - name: Build static site
+        shell: bash
         run: |
+          set -euo pipefail
           python scripts/build_static.py \
             --output dist \
             --include-admin \

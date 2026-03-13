@@ -73,7 +73,9 @@ jobs:
         run: echo "${{ github.event.inputs.client_id }}" > .active-client
 
       - name: Regenerate item
+        shell: bash
         run: |
+          set -euo pipefail
           python scripts/pipeline_runner.py \
             --client ${{ github.event.inputs.client_id }} \
             --week-of ${{ github.event.inputs.week_of }} \
@@ -143,7 +145,9 @@ jobs:
           path: outputs/content/${{ github.event.inputs.client_id }}/
 
       - name: Build static site
+        shell: bash
         run: |
+          set -euo pipefail
           python scripts/build_static.py \
             --output dist \
             --include-admin \
