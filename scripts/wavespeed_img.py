@@ -123,7 +123,7 @@ Character (REQUIRED): {mascot_desc}. Place the mascot prominently on the right s
 Text: Include bold white Cyrillic headline text: "{headline_ru}"
 Place the headline on the left side, large and readable.
 
-Logo (REQUIRED): Top-left corner — {logo_desc}. The logo must be clearly visible and placed exactly in the top-left corner.
+Logo (REQUIRED): Top-left area with generous padding from edges (at least 5% margin so nothing is clipped) — {logo_desc}. The logo must be clearly visible and never flush against the image border.
 
 Style: Cinematic 3D render, professional aesthetic.
 Topic context: {topic}"""

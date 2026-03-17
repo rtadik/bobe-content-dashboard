@@ -879,6 +879,82 @@ STATIC_HTML = """<!DOCTYPE html>
   #regen-status-bar .status-msg { flex: 1; }
   #regen-status-bar .dismiss-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1rem; padding: 2px 6px; }
 
+  /* Announcements header tab */
+  .announcements-header-tab {
+    background: rgba(255,78,225,0.12) !important;
+    color: #FF4FDA !important;
+    border: 1px solid rgba(255,78,225,0.25);
+  }
+  .announcements-header-tab.active {
+    background: #FF4FDA !important;
+    color: #fff !important;
+  }
+  .announcements-header-tab:hover:not(.active) {
+    background: rgba(255,78,225,0.2) !important;
+    color: #FF4FDA !important;
+  }
+
+  /* Announcement page styles */
+  .ann-week-section { margin: 24px; }
+  .ann-week-header {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 16px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ann-week-header h2 { color: var(--white); font-size: 18px; margin: 0; font-weight: 600; }
+  .ann-week-header .ann-count { color: var(--muted); font-size: 13px; }
+
+  .ann-new-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 20px; background: rgba(255,78,225,0.12);
+    color: #FF4FDA; border: 1px dashed rgba(255,78,225,0.4);
+    border-radius: 10px; cursor: pointer; font-weight: 600;
+    font-size: 14px; transition: all 0.2s; font-family: inherit;
+    margin: 0 24px 24px;
+  }
+  .ann-new-btn:hover { background: rgba(255,78,225,0.2); border-style: solid; }
+
+  .ann-input-card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px; margin: 0 24px 20px;
+    position: relative;
+  }
+  .ann-input-card h3 { color: var(--white); margin: 0 0 8px; font-size: 16px; }
+  .ann-input-card p { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .ann-input-card textarea {
+    width: 100%; box-sizing: border-box;
+    background: rgba(0,0,0,0.3); color: var(--white); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px; font-size: 14px; resize: vertical;
+    font-family: inherit;
+  }
+  .ann-input-card textarea:focus { outline: none; border-color: var(--blue-link); }
+  .ann-input-card .btn-generate {
+    margin-top: 12px; padding: 10px 20px; background: #FF4FDA;
+    color: #fff; border: none; border-radius: 8px; cursor: pointer;
+    font-weight: 600; font-size: 14px; transition: background 0.2s; font-family: inherit;
+  }
+  .ann-input-card .btn-generate:hover { background: #e040c0; }
+  .ann-input-card .btn-generate:disabled { opacity: 0.6; cursor: not-allowed; }
+  .ann-input-card .ann-status { margin-top: 10px; font-size: 13px; color: var(--muted); }
+
+  .ann-loading-overlay {
+    position: absolute; inset: 0; background: rgba(17,27,50,0.85);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    border-radius: 12px; z-index: 10;
+  }
+  .ann-loading-overlay .spinner {
+    width: 36px; height: 36px; border: 3px solid rgba(255,255,255,0.15);
+    border-top-color: #FF4FDA; border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  .ann-loading-overlay .spinner-label {
+    margin-top: 12px; color: #FF4FDA; font-size: 13px; font-weight: 600;
+  }
+
+  .ann-empty-state {
+    text-align: center; padding: 40px 20px; color: var(--muted);
+  }
+  .ann-empty-state .icon { font-size: 2.5rem; margin-bottom: 8px; }
+
   /* Bucket tabs */
   .bucket-tabs {
     display: flex; gap: 8px; padding: 16px 24px 0;
@@ -893,28 +969,18 @@ STATIC_HTML = """<!DOCTYPE html>
   .bucket-tab.active { background: var(--blue); color: #fff; }
   .bucket-tab:hover:not(.active) { background: rgba(255,255,255,0.07); color: var(--text); }
 
-  /* Announcement input panel */
-  .announcement-input-panel {
-    margin: 20px 24px; padding: 20px; background: rgba(255,255,255,0.04);
-    border-radius: 12px; border: 1px solid var(--border);
-  }
-  .announcement-input-panel h3 { color: var(--white); margin: 0 0 8px; font-size: 16px; }
-  .announcement-input-panel p { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
-  .announcement-input-panel textarea {
-    width: 100%; box-sizing: border-box;
-    background: rgba(0,0,0,0.3); color: var(--white); border: 1px solid var(--border);
-    border-radius: 8px; padding: 12px; font-size: 14px; resize: vertical;
-    font-family: inherit;
-  }
-  .announcement-input-panel textarea:focus { outline: none; border-color: var(--blue-link); }
-  .btn-generate-announcement {
-    margin-top: 12px; padding: 10px 20px; background: var(--blue);
-    color: #fff; border: none; border-radius: 8px; cursor: pointer;
-    font-weight: 600; font-size: 14px; transition: background 0.2s; font-family: inherit;
-  }
-  .btn-generate-announcement:hover { background: var(--blue-hover); }
-  .btn-generate-announcement:disabled { opacity: 0.6; cursor: not-allowed; }
-  #announcement-status { margin-top: 10px; font-size: 13px; color: var(--muted); }
+  .blog-actions { margin-top: 0.75rem; display: flex; align-items: center; gap: 0.75rem; }
+  .blog-btn { background: var(--card-bg); border: 1px solid var(--blue); color: var(--blue); padding: 0.4rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s; }
+  .blog-btn:hover { background: var(--blue); color: #fff; }
+  .blog-btn.generating { opacity: 0.6; cursor: wait; }
+  .blog-status { font-size: 0.8rem; color: var(--muted); }
+  .blogs-panel { padding: 1rem 0; }
+  .blogs-list { display: grid; gap: 1.5rem; }
+  .blog-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; }
+  .blog-card h3 { color: var(--text); margin: 0 0 0.5rem 0; font-size: 1.1rem; }
+  .blog-card .blog-meta { color: var(--muted); font-size: 0.8rem; margin-bottom: 1rem; }
+  .blog-card .blog-preview { color: var(--text); font-size: 0.9rem; line-height: 1.6; }
+  .blog-card .blog-actions-bar { margin-top: 1rem; display: flex; gap: 0.5rem; }
 </style>
 </head>
 <body>
@@ -978,8 +1044,9 @@ STATIC_HTML = """<!DOCTYPE html>
   {% set visible_tabs = date_options | selectattr('is_mock', 'equalto', false) | list %}
   {% if visible_tabs|length > 0 %}
   <div class="week-tabs">
+    <a class="week-tab announcements-header-tab{% if is_announcements_page %} active{% endif %}" href="announcements.html">Announcements</a>
     {% for opt in visible_tabs %}
-    <a class="week-tab{% if opt.is_placeholder %} placeholder-tab{% endif %}{% if opt.date_id == current_date_id %} active{% endif %}" href="{{ opt.filename }}">{{ opt.label }}</a>
+    <a class="week-tab{% if opt.is_placeholder %} placeholder-tab{% endif %}{% if not is_announcements_page and opt.date_id == current_date_id %} active{% endif %}" href="{{ opt.filename }}">{{ opt.label }}</a>
     {% endfor %}
     {% if gh_repo %}<button class="week-add-btn" onclick="openAddWeekModal()" title="Add new week">+</button>{% endif %}
   </div>
@@ -989,26 +1056,98 @@ STATIC_HTML = """<!DOCTYPE html>
     <button class="lang-btn active" id="btn-en" onclick="setLang('en')">EN</button>
     <button class="lang-btn" id="btn-ru" onclick="setLang('ru')">RU</button>
   </div>
+  <a href="settings.html" class="settings-link" title="Settings" style="color:var(--muted);font-size:1.1rem;text-decoration:none;padding:4px 8px;">&#9881;</a>
   <button class="logout-btn" onclick="logout()" title="Log out">Log out</button>
 </header>
 
-<!-- Bucket tab navigation -->
+{% if not is_announcements_page %}
+<!-- Bucket tab navigation (weekly pages: Trending + Education only) -->
 <div class="bucket-tabs" id="bucket-tabs">
   <button class="bucket-tab active" data-bucket="trending" onclick="switchBucket('trending')">&#128200; Trending</button>
   <button class="bucket-tab" data-bucket="education" onclick="switchBucket('education')">&#127891; Education</button>
-  <button class="bucket-tab" data-bucket="announcements" onclick="switchBucket('announcements')">&#128227; Announcements</button>
+  <button class="bucket-tab" data-bucket="blogs" onclick="switchBucket('blogs')">&#128221; Blogs</button>
+</div>
+{% endif %}
+
+{% if is_announcements_page %}
+<!-- Announcements page: aggregated across all weeks -->
+<div style="padding: 16px 24px 0;">
+  <h2 style="color:var(--white); font-size:20px; margin:0 0 4px;">All Announcements</h2>
+  <p style="color:var(--muted); font-size:13px; margin:0 0 16px;">Submit announcements and generate 7 content angles from each. Grouped by week.</p>
 </div>
 
-<!-- Announcement input panel (shown only on announcements tab) -->
-<div class="announcement-input-panel" id="announcement-input-panel" style="display:none">
-  <h3>Weekly Announcement</h3>
-  <p>Paste your weekly update below. The system will generate 7 different content angles from it (one per day).</p>
-  <textarea id="announcement-text" rows="4" placeholder="e.g. We launched a new grid bot feature for ETH/USDT pairs..."></textarea>
-  <button class="btn-generate-announcement" id="btn-gen-ann" onclick="submitAnnouncement()">Generate 7 Content Angles</button>
-  <div id="announcement-status"></div>
-</div>
+{% for week_group in announcement_weeks %}
+<div class="ann-week-section">
+  <div class="ann-week-header">
+    <h2>{{ week_group.label }}</h2>
+    <span class="ann-count">{{ week_group.topics|length }} topic{{ 's' if week_group.topics|length != 1 else '' }}</span>
+  </div>
 
-{% if is_placeholder %}
+  {% if week_group.topics %}
+  <div class="grid" style="padding: 0;">
+    {% for t in week_group.topics %}
+    <div class="card" id="ann-card-{{ week_group.week_of }}-{{ loop.index }}" data-bucket="announcements" data-topic-name="{{ t.topic | e }}">
+      <!-- EN Image -->
+      <div class="card-img en-only" {% if t.image_src %}data-src="{{ t.image_src }}"{% endif %}>
+        {% if t.image_src %}
+        <img src="{{ t.image_src }}" alt="{{ t.topic }}" loading="lazy">
+        <div class="img-overlay"></div>
+        {% else %}
+        <div class="no-img"><span class="no-img-icon">&#128444;</span><span>No image</span></div>
+        {% endif %}
+      </div>
+      <!-- RU Image -->
+      <div class="card-img ru-only" {% if t.image_src_ru %}data-src="{{ t.image_src_ru }}"{% endif %}>
+        {% if t.image_src_ru %}
+        <img src="{{ t.image_src_ru }}" alt="{{ t.topic }}" loading="lazy">
+        <div class="img-overlay"></div>
+        {% else %}
+        <div class="no-img"><span class="no-img-icon">&#128444;</span><span>No Russian image</span></div>
+        {% endif %}
+      </div>
+      <!-- Content -->
+      <div class="card-body">
+        <div class="card-meta">
+          <span class="meta-tag bucket-announcements">Announcement</span>
+          <span class="meta-day">{{ t.day or '' }} {{ t.date or '' }}</span>
+        </div>
+        <div class="card-title">{{ t.topic }}</div>
+        <div class="card-content en-only">
+          {% if t.twitter %}<div class="content-block"><strong>Twitter</strong><pre>{{ t.twitter }}</pre></div>{% endif %}
+          {% if t.telegram %}<div class="content-block"><strong>Telegram</strong><pre>{{ t.telegram }}</pre></div>{% endif %}
+        </div>
+        <div class="card-content ru-only">
+          {% if t.twitter_ru %}<div class="content-block"><strong>Twitter RU</strong><pre>{{ t.twitter_ru }}</pre></div>{% endif %}
+          {% if t.telegram_ru %}<div class="content-block"><strong>Telegram RU</strong><pre>{{ t.telegram_ru }}</pre></div>{% endif %}
+        </div>
+        {% if t.hashtag_list %}<div class="hashtags en-only">{{ t.hashtag_list | join(' ') }}</div>{% endif %}
+        {% if t.hashtag_list_ru %}<div class="hashtags ru-only">{{ t.hashtag_list_ru | join(' ') }}</div>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- New announcement input for this week -->
+  <div class="ann-input-card" id="ann-input-{{ week_group.week_of }}" style="display:none; position:relative;">
+    <h3>New Announcement for {{ week_group.label }}</h3>
+    <p>Paste your update below. The system will generate 7 different content angles from it.</p>
+    <textarea id="ann-text-{{ week_group.week_of }}" rows="4" placeholder="e.g. We launched a new grid bot feature for ETH/USDT pairs..."></textarea>
+    <button class="btn-generate" id="ann-btn-{{ week_group.week_of }}" onclick="submitAnnouncement('{{ week_group.week_of }}', {{ week_group.next_index }})">Generate 7 Content Angles</button>
+    <div class="ann-status" id="ann-status-{{ week_group.week_of }}"></div>
+  </div>
+  <button class="ann-new-btn" onclick="toggleAnnInput('{{ week_group.week_of }}')">+ New Announcement</button>
+</div>
+{% endfor %}
+
+{% if not announcement_weeks %}
+<div class="ann-empty-state">
+  <div class="icon">&#128227;</div>
+  <p>No announcements yet. Run the weekly pipeline first to create week slots, then add announcements here.</p>
+</div>
+{% endif %}
+
+{% elif is_placeholder %}
 <!-- Placeholder week — no content yet -->
 <div class="placeholder-grid" id="placeholder-grid">
   <div class="placeholder-card" data-bucket="trending" id="ph-trending">
@@ -1023,18 +1162,12 @@ STATIC_HTML = """<!DOCTYPE html>
     <div class="placeholder-hint">7 belief-building posts from the buyer journey, generated for this week.</div>
     <button class="generate-bucket-btn" id="gen-btn-education" onclick="generateWeek()">Generate</button>
   </div>
-  <div class="placeholder-card" data-bucket="announcements" id="ph-announcements">
-    <span class="placeholder-icon">&#128227;</span>
-    <div class="placeholder-label">Announcements</div>
-    <div class="placeholder-hint">Add your weekly update above, then generate 7 content angles from it.</div>
-    <button class="generate-bucket-btn" id="gen-btn-announcements" onclick="generateWeek()">Generate</button>
-  </div>
 </div>
 {% else %}
 <main class="grid">
 {% if topics %}
   {% for t in topics %}
-  <div class="card" id="card-{{ loop.index }}" data-bucket="{{ t.bucket or 'trending' }}">
+  <div class="card" id="card-{{ loop.index }}" data-bucket="{{ t.bucket or 'trending' }}" data-topic-name="{{ t.topic | e }}">
 
     <!-- EN Image -->
     <div class="card-img en-only" {% if t.image_src %}data-src="{{ t.image_src }}"{% endif %}
@@ -1215,9 +1348,22 @@ STATIC_HTML = """<!DOCTYPE html>
       </div>
       {% endif %}
 
+      <!-- Blog+ button (EN only, shown after content is available) -->
+      <div class="en-only blog-actions">
+        <button class="blog-btn" id="blog-btn-{{ loop.index }}"
+                onclick="generateBlog({{ loop.index }}, '{{ t.topic | e }}')">&#128221; Blog+</button>
+        <span class="blog-status" id="blog-status-{{ loop.index }}"></span>
+      </div>
+
     </div>
   </div>
   {% endfor %}
+
+  <!-- Blogs panel (shown when Blogs tab is active) -->
+  <div id="blogs-panel" class="blogs-panel" style="display:none;">
+    <div class="blogs-loading" id="blogs-loading">Loading blogs...</div>
+    <div class="blogs-list" id="blogs-list"></div>
+  </div>
 
 {% else %}
   <div class="empty">
@@ -1446,7 +1592,9 @@ function approveImage(idx) {
   updateRuRegenState(idx, newStatus === 'approved');
   if (newStatus === 'approved') {
     setLang('ru');
-    showToast('Image approved ✓ — switched to Russian');
+    showToast('Image approved ✓ — generating Russian version...');
+    // Auto-trigger RU image generation from the approved EN image
+    triggerRegen(idx, 'image_ru');
   } else {
     showToast('Approval removed');
   }
@@ -1604,9 +1752,13 @@ function triggerRegen(idx, regenType) {
     showRuModal();
   }
 
+  // Read topic name from card data attribute (stable identifier)
+  const card = document.getElementById(`card-${idx}`);
+  const topicName = card ? card.getAttribute('data-topic-name') : '';
+
   // Worker path: no PAT needed
   if (REGEN_WORKER_URL) {
-    _dispatchViaWorker('regenerate-item', { topic_index: String(idx - 1), regen_type: regenType }, idx, regenType);
+    _dispatchViaWorker('regenerate-item', { topic_index: String(idx - 1), regen_type: regenType, topic_name: topicName }, idx, regenType);
     return;
   }
 
@@ -1639,6 +1791,7 @@ function triggerRegen(idx, regenType) {
               week_of:     WEEK_OF,
               topic_index: String(idx - 1),
               regen_type:  regenType,
+              topic_name:  topicName,
             },
           }),
         }
@@ -1775,18 +1928,22 @@ function switchBucket(bucket) {
   document.querySelectorAll('.bucket-tab').forEach(function(tab) {
     tab.classList.toggle('active', tab.dataset.bucket === bucket);
   });
+  var isBlogsTab = bucket === 'blogs';
   document.querySelectorAll('.card').forEach(function(card) {
     var cardBucket = card.dataset.bucket || 'trending';
-    card.style.display = cardBucket === bucket ? '' : 'none';
+    // Hide announcement cards on weekly pages (they live on the announcements page)
+    if (cardBucket === 'announcements') { card.style.display = 'none'; return; }
+    card.style.display = isBlogsTab ? 'none' : (cardBucket === bucket ? '' : 'none');
   });
   // Show/hide placeholder cards
   document.querySelectorAll('.placeholder-card').forEach(function(card) {
     var cardBucket = card.dataset.bucket || 'trending';
-    card.style.display = cardBucket === bucket ? '' : 'none';
+    card.style.display = isBlogsTab ? 'none' : (cardBucket === bucket ? '' : 'none');
   });
-  var inputPanel = document.getElementById('announcement-input-panel');
-  if (inputPanel) {
-    inputPanel.style.display = bucket === 'announcements' ? 'block' : 'none';
+  var blogsPanel = document.getElementById('blogs-panel');
+  if (blogsPanel) {
+    blogsPanel.style.display = isBlogsTab ? 'block' : 'none';
+    if (isBlogsTab) loadBlogs();
   }
   try { localStorage.setItem('active-bucket', bucket); } catch(e) {}
 }
@@ -1796,7 +1953,7 @@ function switchBucket(bucket) {
   var saved = '';
   try { saved = localStorage.getItem('active-bucket') || ''; } catch(e) {}
   var firstBucket = 'trending';
-  var allBuckets = new Set(['trending','education','announcements']);
+  var allBuckets = new Set(['trending','education','blogs']);
   document.querySelectorAll('.card').forEach(function(c) { if(c.dataset.bucket) allBuckets.add(c.dataset.bucket); });
   switchBucket(saved && allBuckets.has(saved) ? saved : firstBucket);
 })();
@@ -1875,27 +2032,60 @@ function _triggerWeeklyPipeline(weekOf) {
 }
 
 // ── Announcement generation (via GitHub Actions) ───────────────────────────────
-async function submitAnnouncement() {
-  var text = (document.getElementById('announcement-text') || {}).value;
+// Toggle announcement input card visibility
+function toggleAnnInput(weekOf) {
+  var card = document.getElementById('ann-input-' + weekOf);
+  if (!card) return;
+  card.style.display = card.style.display === 'none' ? 'block' : 'none';
+}
+
+// Show loading overlay on announcement input card
+function showAnnLoading(weekOf) {
+  var card = document.getElementById('ann-input-' + weekOf);
+  if (!card) return;
+  var existing = card.querySelector('.ann-loading-overlay');
+  if (existing) return;
+  var overlay = document.createElement('div');
+  overlay.className = 'ann-loading-overlay';
+  overlay.innerHTML = '<div class="spinner"></div><span class="spinner-label">Generating 7 content angles...</span>';
+  card.appendChild(overlay);
+}
+
+function hideAnnLoading(weekOf) {
+  var card = document.getElementById('ann-input-' + weekOf);
+  if (!card) return;
+  var overlay = card.querySelector('.ann-loading-overlay');
+  if (overlay) overlay.remove();
+}
+
+async function submitAnnouncement(weekOf, annIndex) {
+  var textEl = document.getElementById('ann-text-' + weekOf);
+  var text = textEl ? textEl.value : '';
   if (!text || !text.trim()) {
     alert('Please enter your announcement text first.');
     return;
   }
-  var btn = document.getElementById('btn-gen-ann');
-  var statusEl = document.getElementById('announcement-status');
+  var btn = document.getElementById('ann-btn-' + weekOf);
+  var statusEl = document.getElementById('ann-status-' + weekOf);
   if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
   if (statusEl) statusEl.textContent = 'Preparing to trigger workflow...';
+  showAnnLoading(weekOf);
 
   if (!GH_REPO || GH_REPO === '') {
     if (statusEl) statusEl.textContent = 'GitHub repo not configured. Contact admin.';
     if (btn) { btn.disabled = false; btn.textContent = 'Generate 7 Content Angles'; }
+    hideAnnLoading(weekOf);
     return;
   }
 
   // Worker path: no PAT needed
   if (REGEN_WORKER_URL) {
     if (statusEl) statusEl.textContent = 'Triggering announcement pipeline...';
-    _dispatchViaWorker('generate-announcement', { bucket: 'announcements', announcement_text: text.trim() }, null, 'announce');
+    _dispatchViaWorker('generate-announcement', {
+      announcement_text: text.trim(),
+      announcement_index: String(annIndex || 0),
+      week_of: weekOf,
+    }, null, 'announce');
     if (btn) { btn.textContent = 'Queued \u2713'; }
     return;
   }
@@ -1904,7 +2094,7 @@ async function submitAnnouncement() {
     try {
       if (statusEl) statusEl.textContent = 'Triggering announcement pipeline...';
       const resp = await fetch(
-        'https://api.github.com/repos/' + GH_REPO + '/actions/workflows/weekly-pipeline.yml/dispatches',
+        'https://api.github.com/repos/' + GH_REPO + '/actions/workflows/generate-announcement.yml/dispatches',
         {
           method: 'POST',
           headers: {
@@ -1916,36 +2106,173 @@ async function submitAnnouncement() {
             ref: 'main',
             inputs: {
               client_id: CLIENT_ID,
-              week_of:   WEEK_OF,
-              bucket:    'announcements',
+              week_of:   weekOf,
               announcement_text: text.trim(),
+              announcement_index: String(annIndex || 0),
             },
           }),
         }
       );
 
       if (resp.status === 204) {
-        if (statusEl) statusEl.textContent = 'Workflow triggered! Generating 7 content angles (2-5 min). Refresh when done.';
-        if (btn) { btn.textContent = 'Queued ✓'; }
-        showRegenStatus('Announcement pipeline started. Refresh in a few minutes.');
+        if (statusEl) statusEl.textContent = 'Workflow triggered! Generating 7 content angles (2-5 min). Page will reload.';
+        if (btn) { btn.textContent = 'Queued \u2713'; }
+        showRegenStatus('Announcement pipeline started. Page will reload when done.');
         pollRegenCompletion(token);
       } else if (resp.status === 401 || resp.status === 403) {
         sessionStorage.removeItem('gh_pat');
         if (statusEl) statusEl.textContent = 'Token invalid or expired. Please try again.';
         if (btn) { btn.disabled = false; btn.textContent = 'Generate 7 Content Angles'; }
+        hideAnnLoading(weekOf);
       } else {
         const err = await resp.text();
         if (statusEl) statusEl.textContent = 'GitHub API error: ' + resp.status;
         if (btn) { btn.disabled = false; btn.textContent = 'Generate 7 Content Angles'; }
+        hideAnnLoading(weekOf);
         console.error('GH API error', resp.status, err);
       }
     } catch(e) {
       if (statusEl) statusEl.textContent = 'Network error: ' + e.message;
       if (btn) { btn.disabled = false; btn.textContent = 'Generate 7 Content Angles'; }
+      hideAnnLoading(weekOf);
     }
   });
 }
+
+// ── Blog Generation ─────────────────────────────────────────────────────
+function generateBlog(idx, topicName) {
+  const btn = document.getElementById(`blog-btn-${idx}`);
+  const status = document.getElementById(`blog-status-${idx}`);
+  if (!btn || btn.classList.contains('generating')) return;
+
+  btn.classList.add('generating');
+  btn.textContent = '\u23F3 Generating...';
+  status.textContent = '';
+
+  // Use GitHub Actions workflow for live dashboard
+  const weekOf = '{{ week_of }}';
+  const clientId = '{{ client_id }}';
+  const pat = sessionStorage.getItem('gh_pat') || '';
+  const ghRepo = '{{ gh_repo }}';
+  const workerUrl = '{{ regen_worker_url }}';
+
+  if (workerUrl) {
+    // Trigger via Cloudflare Worker proxy
+    fetch(workerUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        workflow: 'generate-blog.yml',
+        ref: 'main',
+        inputs: {
+          client_id: clientId,
+          week_of: weekOf,
+          topic_index: String(idx - 1),
+          platform: 'twitter'
+        }
+      })
+    }).then(r => r.json()).then(d => {
+      if (d.ok || d.status === 204) {
+        status.textContent = 'Blog generation started. Page will reload when ready.';
+        status.style.color = 'var(--green)';
+        pollWorkflowAndReload('generate-blog.yml');
+      } else {
+        throw new Error(d.message || 'Failed to trigger');
+      }
+    }).catch(e => {
+      btn.classList.remove('generating');
+      btn.innerHTML = '&#128221; Blog+';
+      status.textContent = 'Error: ' + e.message;
+      status.style.color = 'var(--red)';
+    });
+  } else if (pat && ghRepo) {
+    // Direct GitHub API
+    fetch(`https://api.github.com/repos/${ghRepo}/actions/workflows/generate-blog.yml/dispatches`, {
+      method: 'POST',
+      headers: {'Authorization': `token ${pat}`, 'Accept': 'application/vnd.github.v3+json'},
+      body: JSON.stringify({
+        ref: 'main',
+        inputs: {
+          client_id: clientId,
+          week_of: weekOf,
+          topic_index: String(idx - 1),
+          platform: 'twitter'
+        }
+      })
+    }).then(r => {
+      if (r.status === 204) {
+        status.textContent = 'Blog generation started. Page will reload when ready.';
+        status.style.color = 'var(--green)';
+        pollWorkflowAndReload('generate-blog.yml');
+      } else {
+        throw new Error('HTTP ' + r.status);
+      }
+    }).catch(e => {
+      btn.classList.remove('generating');
+      btn.innerHTML = '&#128221; Blog+';
+      status.textContent = 'Error: ' + e.message;
+      status.style.color = 'var(--red)';
+    });
+  } else {
+    status.textContent = 'Enter GitHub PAT first (click any Regen button)';
+    status.style.color = 'var(--muted)';
+    btn.classList.remove('generating');
+    btn.innerHTML = '&#128221; Blog+';
+  }
+}
+
+function loadBlogs() {
+  const list = document.getElementById('blogs-list');
+  const loading = document.getElementById('blogs-loading');
+  if (!list) return;
+
+  // Fetch blogs from the server (for static site, blogs are embedded at build time)
+  // For now, check if any blog files exist in the blogs/ subdirectory
+  const clientId = '{{ client_id }}';
+  const weekOf = '{{ week_of }}';
+
+  // Try fetching from local API (Flask) or show placeholder
+  fetch(`/api/blogs/${clientId}/${weekOf}`)
+    .then(r => r.json())
+    .then(data => {
+      if (loading) loading.style.display = 'none';
+      if (data.blogs && data.blogs.length > 0) {
+        list.innerHTML = data.blogs.map(b => `
+          <div class="blog-card">
+            <h3>${escapeHtml(b.title || 'Untitled')}</h3>
+            <div class="blog-meta">${escapeHtml(b.source_platform || '')} | ${b.word_count || '?'} words | ${escapeHtml(b.generated_at || '')}</div>
+            <div class="blog-preview">${escapeHtml(b.body_preview || '')}</div>
+            <div class="blog-actions-bar">
+              <button class="copy-btn" onclick="copyBlogContent('${escapeHtml(b.slug || '')}')">Copy Full Blog</button>
+            </div>
+          </div>
+        `).join('');
+      } else {
+        list.innerHTML = '<div style="text-align:center;color:var(--muted);padding:2rem;">No blogs generated yet. Click Blog+ on any post to create one.</div>';
+      }
+    })
+    .catch(() => {
+      if (loading) loading.style.display = 'none';
+      list.innerHTML = '<div style="text-align:center;color:var(--muted);padding:2rem;">No blogs generated yet. Click Blog+ on any post to create one.</div>';
+    });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Baserow config for setup wizard and approval workflow
+window.BASEROW_TOKEN = '{{ baserow_token }}';
+window.BASEROW_URL = '{{ baserow_url }}';
+window.SETTINGS_TABLE_ID = '{{ settings_table_id }}';
+window.APPROVALS_TABLE_ID = '{{ approvals_table_id }}';
+window.CURRENT_CLIENT_ID = '{{ client_id }}';
 </script>
+
+{{ setup_wizard_html }}
+
 </body>
 </html>"""
 
@@ -2478,6 +2805,562 @@ document.addEventListener('keydown', e => {
 </html>"""
 
 
+
+# ── Settings page template ────────────────────────────────────────────────────
+
+SETTINGS_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Settings — {{ brand_name }}</title>
+<link rel="icon" type="image/jpeg" href="../../favicon.jpg">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #000e2b; --surface: rgba(255,255,255,0.04); --surface2: rgba(255,255,255,0.07);
+    --border: rgba(255,255,255,0.08); --blue: #0055ff; --blue-hover: #0044cc;
+    --blue-link: #0099ff; --green: #5BD69F; --green-dim: rgba(91,214,159,0.1);
+    --red: #FF6B6B; --yellow: #f0c040; --white: #ffffff; --muted: #999999;
+    --text: rgba(255,255,255,0.7);
+  }
+  html, body { background: var(--bg); color: var(--white); font-family: 'DM Sans', system-ui, sans-serif; min-height: 100vh; line-height: 1.5; }
+  header { background: rgba(0,14,43,0.85); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); padding: 0 24px; height: 80px; display: flex; align-items: center; gap: 16px; position: sticky; top: 0; z-index: 200; }
+  .brand { font-weight: 800; font-size: 1.15rem; }
+  .brand-dot { color: var(--blue); }
+  .spacer { flex: 1; }
+  .back-link { color: var(--blue-link); text-decoration: none; font-size: 0.85rem; font-weight: 600; }
+  .back-link:hover { text-decoration: underline; }
+  .logout-btn { background: none; border: 1px solid var(--border); color: var(--muted); padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 0.8rem; font-family: inherit; }
+  .logout-btn:hover { color: var(--white); border-color: rgba(255,255,255,0.2); }
+  .settings-container { max-width: 800px; margin: 32px auto; padding: 0 24px; }
+  .settings-section { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px; margin-bottom: 24px; }
+  .settings-section h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 4px; }
+  .settings-section .section-desc { font-size: 0.82rem; color: var(--muted); margin-bottom: 20px; }
+  .field-group { display: flex; flex-direction: column; gap: 16px; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 0.78rem; font-weight: 600; color: var(--text); letter-spacing: 0.2px; }
+  .field input, .field textarea { background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: #fff; padding: 10px 14px; border-radius: 10px; font-size: 0.9rem; outline: none; transition: border-color 0.2s; font-family: inherit; }
+  .field input:focus, .field textarea:focus { border-color: var(--blue-link); }
+  .field textarea { resize: vertical; min-height: 80px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .field .field-hint { font-size: 0.72rem; color: var(--muted); }
+  .field .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .status-connected { background: var(--green); }
+  .status-missing { background: var(--red); }
+  .tutorial-toggle { font-size: 0.78rem; color: var(--blue-link); cursor: pointer; background: none; border: none; font-family: inherit; padding: 0; }
+  .tutorial-toggle:hover { text-decoration: underline; }
+  .tutorial-content { display: none; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 14px; margin-top: 8px; font-size: 0.78rem; color: var(--text); line-height: 1.7; }
+  .tutorial-content.show { display: block; }
+  .tutorial-content ol { padding-left: 20px; }
+  .tutorial-content li { margin-bottom: 4px; }
+  .btn-save { background: var(--blue); color: #fff; border: none; padding: 10px 24px; border-radius: 10px; font-weight: 600; font-size: 0.85rem; cursor: pointer; font-family: inherit; transition: background 0.2s; }
+  .btn-save:hover { background: var(--blue-hover); }
+  .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
+  .save-status { font-size: 0.78rem; color: var(--green); margin-left: 12px; display: none; }
+  .save-row { display: flex; align-items: center; margin-top: 16px; }
+  .color-preview { width: 32px; height: 32px; border-radius: 8px; border: 2px solid var(--border); display: inline-block; vertical-align: middle; margin-left: 8px; }
+  .style-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  .style-card { border: 2px solid var(--border); border-radius: 12px; overflow: hidden; cursor: pointer; transition: border-color 0.2s, transform 0.2s; }
+  .style-card:hover { border-color: var(--blue-link); transform: translateY(-2px); }
+  .style-card.selected { border-color: var(--green); }
+  .style-card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
+  .style-card .style-label { padding: 10px; font-size: 0.82rem; font-weight: 600; text-align: center; }
+  .style-card .style-label .check { color: var(--green); margin-left: 4px; }
+  .btn-generate-styles { background: var(--surface2); border: 1px solid var(--border); color: var(--white); padding: 12px 24px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 0.85rem; font-family: inherit; width: 100%; margin-top: 12px; }
+  .btn-generate-styles:hover { border-color: var(--blue-link); }
+  .btn-generate-styles:disabled { opacity: 0.6; cursor: not-allowed; }
+  #style-status { font-size: 0.82rem; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<script>
+(function() {
+  var auth = sessionStorage.getItem('dash_auth');
+  if (!auth) { window.location.replace('login.html'); return; }
+  try {
+    var session = JSON.parse(auth);
+    var expectedClient = '{{ client_id }}';
+    if (session.role !== 'admin' && session.clientId !== expectedClient) {
+      sessionStorage.removeItem('dash_auth');
+      window.location.replace('login.html');
+    }
+  } catch(e) { sessionStorage.removeItem('dash_auth'); window.location.replace('login.html'); }
+})();
+</script>
+<header>
+  <div class="brand">{{ brand_name }}<span class="brand-dot">.</span></div>
+  <span style="font-size:0.82rem;color:var(--muted);">Settings</span>
+  <div class="spacer"></div>
+  <a href="./" class="back-link">Back to Dashboard</a>
+  <button class="logout-btn" onclick="sessionStorage.removeItem('dash_auth');window.location.href='login.html'">Log out</button>
+</header>
+
+<div class="settings-container">
+
+  <!-- API Connections -->
+  <div class="settings-section" id="section-apis">
+    <h2>API Connections</h2>
+    <p class="section-desc">Connect your API keys to enable content generation, image creation, and publishing.</p>
+    <div class="field-group">
+      <div class="field">
+        <label><span class="status-dot" id="dot-gemini"></span>Google AI (Gemini) — Content Generation</label>
+        <input type="password" id="api-gemini" placeholder="AIza..." autocomplete="off">
+        <button class="tutorial-toggle" onclick="toggleTutorial('tut-gemini')">How to get this key</button>
+        <div class="tutorial-content" id="tut-gemini">
+          <ol>
+            <li>Go to <a href="https://aistudio.google.com/" target="_blank" style="color:var(--blue-link)">aistudio.google.com</a></li>
+            <li>Sign in with your Google account</li>
+            <li>Click "Get API Key" in the top menu</li>
+            <li>Click "Create API Key" and select a project</li>
+            <li>Copy the generated key (starts with AIza...)</li>
+          </ol>
+          <p style="margin-top:8px;color:var(--muted)">Free tier: 15 requests/minute, 1M tokens/day.</p>
+        </div>
+      </div>
+      <div class="field">
+        <label><span class="status-dot" id="dot-wavespeed"></span>WaveSpeed — Image Generation (EN)</label>
+        <input type="password" id="api-wavespeed" placeholder="ws_..." autocomplete="off">
+        <button class="tutorial-toggle" onclick="toggleTutorial('tut-wavespeed')">How to get this key</button>
+        <div class="tutorial-content" id="tut-wavespeed">
+          <ol>
+            <li>Go to <a href="https://wavespeed.ai/" target="_blank" style="color:var(--blue-link)">wavespeed.ai</a></li>
+            <li>Create an account or sign in</li>
+            <li>Go to Account > API Keys</li>
+            <li>Click "Create New Key" and copy it</li>
+          </ol>
+          <p style="margin-top:8px;color:var(--muted)">Pay-per-image. ~$2-5/week for 21 images.</p>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label><span class="status-dot" id="dot-airtable"></span>Airtable API Key</label>
+          <input type="password" id="api-airtable" placeholder="pat..." autocomplete="off">
+          <button class="tutorial-toggle" onclick="toggleTutorial('tut-airtable')">Setup guide</button>
+        </div>
+        <div class="field">
+          <label>Airtable Base ID</label>
+          <input type="text" id="api-airtable-base" placeholder="appXXXXXXXXXX" autocomplete="off">
+        </div>
+      </div>
+      <div class="tutorial-content" id="tut-airtable">
+        <ol>
+          <li>Go to <a href="https://airtable.com/" target="_blank" style="color:var(--blue-link)">airtable.com</a> and create a free account</li>
+          <li>Create a new Base (e.g., "My Content")</li>
+          <li>Copy the Base ID from the URL (starts with app...)</li>
+          <li>Go to <a href="https://airtable.com/create/tokens" target="_blank" style="color:var(--blue-link)">airtable.com/create/tokens</a></li>
+          <li>Create a token with scopes: data.records:write, data.records:read, schema.bases:write, schema.bases:read</li>
+          <li>Add access to your base, then copy the token</li>
+        </ol>
+      </div>
+      <div class="field">
+        <label><span class="status-dot" id="dot-apify"></span>Apify — Trending Topic Scraping</label>
+        <input type="password" id="api-apify" placeholder="apify_api_..." autocomplete="off">
+        <button class="tutorial-toggle" onclick="toggleTutorial('tut-apify')">How to get this key</button>
+        <div class="tutorial-content" id="tut-apify">
+          <ol>
+            <li>Go to <a href="https://console.apify.com/" target="_blank" style="color:var(--blue-link)">console.apify.com</a></li>
+            <li>Create a free account</li>
+            <li>Go to Settings > Integrations</li>
+            <li>Copy your API Token</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+    <div class="save-row">
+      <button class="btn-save" id="btn-save-apis" onclick="saveApiKeys()">Save API Keys</button>
+      <span class="save-status" id="status-apis">Saved!</span>
+    </div>
+  </div>
+
+  <!-- Optional: WaveSpeed RU + X Publishing -->
+  <div class="settings-section">
+    <h2>Optional Connections</h2>
+    <p class="section-desc">Russian image generation and direct X (Twitter) publishing.</p>
+    <div class="field-group">
+      <div class="field">
+        <label><span class="status-dot" id="dot-wavespeed-ru"></span>WaveSpeed RU — Russian Image Generation</label>
+        <input type="password" id="api-wavespeed-ru" placeholder="Same as EN key, or separate" autocomplete="off">
+        <span class="field-hint">Leave empty to skip Russian images. Uses same WaveSpeed account.</span>
+      </div>
+      <div class="field">
+        <label>X (Twitter) Publishing</label>
+        <div class="field-row">
+          <input type="password" id="api-x-key" placeholder="API Key" autocomplete="off">
+          <input type="password" id="api-x-secret" placeholder="API Secret" autocomplete="off">
+        </div>
+        <div class="field-row" style="margin-top:8px">
+          <input type="password" id="api-x-token" placeholder="Access Token" autocomplete="off">
+          <input type="password" id="api-x-token-secret" placeholder="Access Token Secret" autocomplete="off">
+        </div>
+        <button class="tutorial-toggle" onclick="toggleTutorial('tut-x')">How to get X API keys</button>
+        <div class="tutorial-content" id="tut-x">
+          <ol>
+            <li>Go to <a href="https://developer.x.com/" target="_blank" style="color:var(--blue-link)">developer.x.com</a></li>
+            <li>Create a developer account and a new App</li>
+            <li>Go to Keys and Tokens</li>
+            <li>Copy Consumer Keys (API Key + Secret) and Access Token + Secret</li>
+            <li>Ensure your app has Read and Write permissions</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+    <div class="save-row">
+      <button class="btn-save" onclick="saveOptionalKeys()">Save Optional Keys</button>
+      <span class="save-status" id="status-optional">Saved!</span>
+    </div>
+  </div>
+
+  <!-- Brand Settings -->
+  <div class="settings-section">
+    <h2>Brand Settings</h2>
+    <p class="section-desc">Customize your brand appearance for generated content and images.</p>
+    <div class="field-group">
+      <div class="field">
+        <label>Logo URL</label>
+        <input type="url" id="brand-logo" placeholder="https://example.com/logo.png" autocomplete="off">
+        <span class="field-hint">Direct link to your logo image (PNG or JPG)</span>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Primary Color <span class="color-preview" id="preview-primary"></span></label>
+          <input type="text" id="brand-primary" placeholder="#1a1a2e" oninput="updateColorPreview('primary')">
+        </div>
+        <div class="field">
+          <label>Accent Color <span class="color-preview" id="preview-accent"></span></label>
+          <input type="text" id="brand-accent" placeholder="#1589DC" oninput="updateColorPreview('accent')">
+        </div>
+      </div>
+      <div class="field">
+        <label>Mascot / Character Description</label>
+        <textarea id="brand-mascot" placeholder="Describe your brand mascot or character for image generation..."></textarea>
+      </div>
+      <div class="field">
+        <label>Tone / Voice</label>
+        <textarea id="brand-tone" placeholder="Describe how your brand communicates..."></textarea>
+      </div>
+    </div>
+    <div class="save-row">
+      <button class="btn-save" onclick="saveBrandSettings()">Save Brand Settings</button>
+      <span class="save-status" id="status-brand">Saved!</span>
+    </div>
+  </div>
+
+  <!-- Image Style Selection -->
+  <div class="settings-section" id="section-style">
+    <h2>Image Style</h2>
+    <p class="section-desc">Choose your preferred image style. We generate 4 sample images using your brand, and you pick the one you like best.</p>
+    <div id="style-samples">
+      <!-- Populated by JS -->
+    </div>
+    <button class="btn-generate-styles" id="btn-gen-styles" onclick="generateStyleSamples()">Generate 4 Style Samples</button>
+    <div id="style-status"></div>
+  </div>
+
+</div>
+
+<script>
+const CLIENT_ID = '{{ client_id }}';
+const BASEROW_TOKEN = '{{ baserow_token }}';
+const BASEROW_URL = '{{ baserow_url }}';
+const SETTINGS_TABLE = '{{ settings_table_id }}';
+const STYLES_TABLE = '{{ styles_table_id }}';
+const GH_REPO = '{{ gh_repo }}';
+const REGEN_WORKER_URL = '{{ regen_worker_url }}';
+
+// Baserow API helpers
+async function brGet(tableId, search) {
+  const url = BASEROW_URL + '/api/database/rows/table/' + tableId + '/?user_field_names=true&size=50' + (search ? '&search=' + encodeURIComponent(search) : '');
+  const res = await fetch(url, { headers: { 'Authorization': 'Token ' + BASEROW_TOKEN } });
+  if (!res.ok) return { results: [] };
+  return res.json();
+}
+async function brCreate(tableId, data) {
+  const res = await fetch(BASEROW_URL + '/api/database/rows/table/' + tableId + '/?user_field_names=true', {
+    method: 'POST', headers: { 'Authorization': 'Token ' + BASEROW_TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  return res.ok ? res.json() : {};
+}
+async function brUpdate(tableId, rowId, data) {
+  const res = await fetch(BASEROW_URL + '/api/database/rows/table/' + tableId + '/' + rowId + '/?user_field_names=true', {
+    method: 'PATCH', headers: { 'Authorization': 'Token ' + BASEROW_TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  return res.ok ? res.json() : {};
+}
+
+let settingsRowId = null;
+
+// Load existing settings on page load
+async function loadSettings() {
+  if (!BASEROW_TOKEN || !SETTINGS_TABLE) return;
+  try {
+    const data = await brGet(SETTINGS_TABLE, CLIENT_ID);
+    const row = (data.results || []).find(r => r.client_id === CLIENT_ID);
+    if (!row) return;
+    settingsRowId = row.id;
+    // Populate API fields
+    if (row.google_ai_api_key) document.getElementById('api-gemini').value = row.google_ai_api_key;
+    if (row.wavespeed_api_key) document.getElementById('api-wavespeed').value = row.wavespeed_api_key;
+    if (row.airtable_api_key) document.getElementById('api-airtable').value = row.airtable_api_key;
+    if (row.airtable_base_id) document.getElementById('api-airtable-base').value = row.airtable_base_id;
+    if (row.apify_api_token) document.getElementById('api-apify').value = row.apify_api_token;
+    if (row.wavespeed_ru_api_key) document.getElementById('api-wavespeed-ru').value = row.wavespeed_ru_api_key;
+    if (row.x_api_key) document.getElementById('api-x-key').value = row.x_api_key;
+    if (row.x_api_secret) document.getElementById('api-x-secret').value = row.x_api_secret;
+    if (row.x_access_token) document.getElementById('api-x-token').value = row.x_access_token;
+    if (row.x_access_token_secret) document.getElementById('api-x-token-secret').value = row.x_access_token_secret;
+    if (row.logo_url) document.getElementById('brand-logo').value = row.logo_url;
+    if (row.primary_color) { document.getElementById('brand-primary').value = row.primary_color; updateColorPreview('primary'); }
+    if (row.accent_color) { document.getElementById('brand-accent').value = row.accent_color; updateColorPreview('accent'); }
+    if (row.tone_override) document.getElementById('brand-tone').value = row.tone_override;
+    // Update status dots
+    updateStatusDots();
+  } catch (e) { console.warn('Failed to load settings:', e); }
+}
+
+function updateStatusDots() {
+  const fields = {
+    'dot-gemini': 'api-gemini', 'dot-wavespeed': 'api-wavespeed',
+    'dot-airtable': 'api-airtable', 'dot-apify': 'api-apify',
+    'dot-wavespeed-ru': 'api-wavespeed-ru'
+  };
+  for (const [dotId, fieldId] of Object.entries(fields)) {
+    const dot = document.getElementById(dotId);
+    const val = document.getElementById(fieldId).value;
+    dot.className = 'status-dot ' + (val ? 'status-connected' : 'status-missing');
+  }
+}
+
+async function saveApiKeys() {
+  const btn = document.getElementById('btn-save-apis');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  const data = {
+    client_id: CLIENT_ID,
+    google_ai_api_key: document.getElementById('api-gemini').value,
+    wavespeed_api_key: document.getElementById('api-wavespeed').value,
+    airtable_api_key: document.getElementById('api-airtable').value,
+    airtable_base_id: document.getElementById('api-airtable-base').value,
+    apify_api_token: document.getElementById('api-apify').value,
+  };
+  try {
+    if (settingsRowId) { await brUpdate(SETTINGS_TABLE, settingsRowId, data); }
+    else { const row = await brCreate(SETTINGS_TABLE, data); settingsRowId = row.id; }
+    showSaveStatus('status-apis');
+    updateStatusDots();
+  } catch (e) { alert('Save failed: ' + e.message); }
+  btn.disabled = false; btn.textContent = 'Save API Keys';
+}
+
+async function saveOptionalKeys() {
+  const data = {
+    client_id: CLIENT_ID,
+    wavespeed_ru_api_key: document.getElementById('api-wavespeed-ru').value,
+    x_api_key: document.getElementById('api-x-key').value,
+    x_api_secret: document.getElementById('api-x-secret').value,
+    x_access_token: document.getElementById('api-x-token').value,
+    x_access_token_secret: document.getElementById('api-x-token-secret').value,
+  };
+  try {
+    if (settingsRowId) { await brUpdate(SETTINGS_TABLE, settingsRowId, data); }
+    else { const row = await brCreate(SETTINGS_TABLE, data); settingsRowId = row.id; }
+    showSaveStatus('status-optional');
+    updateStatusDots();
+  } catch (e) { alert('Save failed: ' + e.message); }
+}
+
+async function saveBrandSettings() {
+  const data = {
+    client_id: CLIENT_ID,
+    logo_url: document.getElementById('brand-logo').value,
+    primary_color: document.getElementById('brand-primary').value,
+    accent_color: document.getElementById('brand-accent').value,
+    tone_override: document.getElementById('brand-tone').value,
+  };
+  try {
+    if (settingsRowId) { await brUpdate(SETTINGS_TABLE, settingsRowId, data); }
+    else { const row = await brCreate(SETTINGS_TABLE, data); settingsRowId = row.id; }
+    showSaveStatus('status-brand');
+  } catch (e) { alert('Save failed: ' + e.message); }
+}
+
+function showSaveStatus(elId) {
+  const el = document.getElementById(elId);
+  el.style.display = 'inline'; setTimeout(() => el.style.display = 'none', 3000);
+}
+
+function toggleTutorial(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('show');
+}
+
+function updateColorPreview(which) {
+  const input = document.getElementById('brand-' + which);
+  const preview = document.getElementById('preview-' + which);
+  preview.style.background = input.value || 'transparent';
+}
+
+// Style sample generation
+async function generateStyleSamples() {
+  const btn = document.getElementById('btn-gen-styles');
+  const status = document.getElementById('style-status');
+  btn.disabled = true; btn.textContent = 'Generating 4 samples...';
+  status.textContent = 'This may take 1-2 minutes. Images are generated using your brand settings.';
+
+  // Trigger via GitHub Actions or worker
+  const ghToken = sessionStorage.getItem('gh_pat') || '';
+  if (!ghToken && GH_REPO) {
+    // Need GitHub token for Actions
+    status.innerHTML = 'A GitHub PAT is needed to trigger image generation. <a href="./" style="color:var(--blue-link)">Go to dashboard</a> and enter your PAT first.';
+    btn.disabled = false; btn.textContent = 'Generate 4 Style Samples';
+    return;
+  }
+
+  status.textContent = 'Triggering style sample generation...';
+  // TODO: Trigger actual generation workflow
+  // For now, show placeholder
+  status.textContent = 'Style generation will be available after Baserow tables are configured. Save your API keys first.';
+  btn.disabled = false; btn.textContent = 'Generate 4 Style Samples';
+}
+
+async function selectStyleCard(rowId) {
+  if (!STYLES_TABLE) return;
+  // Deselect all, select this one
+  const data = await brGet(STYLES_TABLE, CLIENT_ID);
+  for (const row of (data.results || [])) {
+    if (row.client_id === CLIENT_ID) {
+      await brUpdate(STYLES_TABLE, row.id, { selected: row.id === rowId });
+    }
+  }
+  await loadStyleSamples();
+}
+
+async function loadStyleSamples() {
+  if (!STYLES_TABLE || !BASEROW_TOKEN) return;
+  const data = await brGet(STYLES_TABLE, CLIENT_ID);
+  const samples = (data.results || []).filter(r => r.client_id === CLIENT_ID);
+  const container = document.getElementById('style-samples');
+  if (!samples.length) { container.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;">No style samples generated yet. Click the button below to create 4 samples using your brand.</p>'; return; }
+  let html = '<div class="style-grid">';
+  for (const s of samples) {
+    const sel = s.selected ? ' selected' : '';
+    const check = s.selected ? '<span class="check">&#10003;</span>' : '';
+    html += '<div class="style-card' + sel + '" onclick="selectStyleCard(' + s.id + ')"><img src="' + (s.sample_image_url || '') + '" alt="' + s.style_preset + '"><div class="style-label">' + s.style_preset + check + '</div></div>';
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// Init
+loadSettings();
+loadStyleSamples();
+</script>
+</body>
+</html>"""
+
+
+# ── First-login setup wizard modal (injected into dashboard) ──────────────────
+
+SETUP_WIZARD_HTML = """
+<!-- First-login setup wizard -->
+<div id="setup-wizard-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:none;align-items:center;justify-content:center;">
+<div style="background:#0a1628;border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:40px;max-width:520px;width:90%;max-height:90vh;overflow-y:auto;">
+  <h2 style="font-size:1.3rem;margin-bottom:8px;">Welcome to your dashboard</h2>
+  <p style="color:#999;font-size:0.85rem;margin-bottom:24px;">Before you can generate content, connect your API keys. This only takes a few minutes.</p>
+  <div style="display:flex;flex-direction:column;gap:16px;">
+    <div class="field">
+      <label style="font-size:0.78rem;font-weight:600;color:rgba(255,255,255,0.7);">Google AI (Gemini) — Required</label>
+      <input type="password" id="wiz-gemini" placeholder="AIza..." style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:#fff;padding:10px 14px;border-radius:10px;font-size:0.9rem;outline:none;width:100%;box-sizing:border-box;">
+    </div>
+    <div class="field">
+      <label style="font-size:0.78rem;font-weight:600;color:rgba(255,255,255,0.7);">WaveSpeed — Required</label>
+      <input type="password" id="wiz-wavespeed" placeholder="ws_..." style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:#fff;padding:10px 14px;border-radius:10px;font-size:0.9rem;outline:none;width:100%;box-sizing:border-box;">
+    </div>
+    <div class="field">
+      <label style="font-size:0.78rem;font-weight:600;color:rgba(255,255,255,0.7);">Airtable API Key — Required</label>
+      <input type="password" id="wiz-airtable" placeholder="pat..." style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:#fff;padding:10px 14px;border-radius:10px;font-size:0.9rem;outline:none;width:100%;box-sizing:border-box;">
+    </div>
+    <div class="field">
+      <label style="font-size:0.78rem;font-weight:600;color:rgba(255,255,255,0.7);">Airtable Base ID — Required</label>
+      <input type="text" id="wiz-airtable-base" placeholder="appXXXXXXXXXX" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:#fff;padding:10px 14px;border-radius:10px;font-size:0.9rem;outline:none;width:100%;box-sizing:border-box;">
+    </div>
+    <div class="field">
+      <label style="font-size:0.78rem;font-weight:600;color:rgba(255,255,255,0.7);">Apify — Required</label>
+      <input type="password" id="wiz-apify" placeholder="apify_api_..." style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:#fff;padding:10px 14px;border-radius:10px;font-size:0.9rem;outline:none;width:100%;box-sizing:border-box;">
+    </div>
+  </div>
+  <p id="wiz-error" style="color:#FF6B6B;font-size:0.78rem;margin-top:12px;display:none;"></p>
+  <button id="wiz-save-btn" onclick="saveWizardKeys()" style="width:100%;margin-top:20px;padding:12px;background:#0055ff;color:#fff;border:none;border-radius:12px;font-weight:600;font-size:0.92rem;cursor:pointer;font-family:inherit;">Save & Continue</button>
+  <p style="color:#666;font-size:0.72rem;margin-top:12px;text-align:center;">You can update these later in Settings.</p>
+</div>
+</div>
+<script>
+async function checkFirstLogin() {
+  if (!window.BASEROW_TOKEN || !window.SETTINGS_TABLE_ID) return;
+  try {
+    const url = window.BASEROW_URL + '/api/database/rows/table/' + window.SETTINGS_TABLE_ID + '/?user_field_names=true&search=' + encodeURIComponent(window.CURRENT_CLIENT_ID);
+    const res = await fetch(url, { headers: { 'Authorization': 'Token ' + window.BASEROW_TOKEN } });
+    if (!res.ok) return;
+    const data = await res.json();
+    const row = (data.results || []).find(r => r.client_id === window.CURRENT_CLIENT_ID);
+    if (row && row.setup_complete) return;
+    // Show wizard
+    document.getElementById('setup-wizard-overlay').style.display = 'flex';
+  } catch (e) { console.warn('Setup check failed:', e); }
+}
+async function saveWizardKeys() {
+  const gemini = document.getElementById('wiz-gemini').value.trim();
+  const ws = document.getElementById('wiz-wavespeed').value.trim();
+  const at = document.getElementById('wiz-airtable').value.trim();
+  const atBase = document.getElementById('wiz-airtable-base').value.trim();
+  const apify = document.getElementById('wiz-apify').value.trim();
+  const err = document.getElementById('wiz-error');
+  if (!gemini || !ws || !at || !atBase || !apify) {
+    err.textContent = 'All fields are required to continue.'; err.style.display = 'block'; return;
+  }
+  const btn = document.getElementById('wiz-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  err.style.display = 'none';
+  const data = {
+    client_id: window.CURRENT_CLIENT_ID,
+    google_ai_api_key: gemini, wavespeed_api_key: ws,
+    airtable_api_key: at, airtable_base_id: atBase,
+    apify_api_token: apify, setup_complete: true,
+  };
+  try {
+    const searchUrl = window.BASEROW_URL + '/api/database/rows/table/' + window.SETTINGS_TABLE_ID + '/?user_field_names=true&search=' + encodeURIComponent(window.CURRENT_CLIENT_ID);
+    const searchRes = await fetch(searchUrl, { headers: { 'Authorization': 'Token ' + window.BASEROW_TOKEN } });
+    const searchData = await searchRes.json();
+    const existing = (searchData.results || []).find(r => r.client_id === window.CURRENT_CLIENT_ID);
+    const baseUrl = window.BASEROW_URL + '/api/database/rows/table/' + window.SETTINGS_TABLE_ID + '/';
+    if (existing) {
+      await fetch(baseUrl + existing.id + '/?user_field_names=true', {
+        method: 'PATCH', headers: { 'Authorization': 'Token ' + window.BASEROW_TOKEN, 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+    } else {
+      await fetch(baseUrl + '?user_field_names=true', {
+        method: 'POST', headers: { 'Authorization': 'Token ' + window.BASEROW_TOKEN, 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+    }
+    document.getElementById('setup-wizard-overlay').style.display = 'none';
+    // Redirect to style selection
+    window.location.href = 'settings.html#section-style';
+  } catch (e) {
+    err.textContent = 'Save failed: ' + e.message; err.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Save & Continue';
+  }
+}
+// Check on page load
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', checkFirstLogin);
+else checkFirstLogin();
+</script>
+"""
+
+
 def build_site(output_dir, dates=None, credentials=None, active_client="bobe", clean=True):
     """Build the static site into output_dir.
 
@@ -2490,6 +3373,13 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
     """
     output = Path(output_dir)
     github_regen_token = ""  # Phase 4a: inject via Cloudflare Worker proxy, not static HTML
+
+    # Baserow config for client-side settings + setup wizard
+    baserow_token = os.environ.get("BASEROW_API_TOKEN", "")
+    baserow_url = os.environ.get("BASEROW_URL", "https://api.baserow.io")
+    settings_table_id = os.environ.get("BASEROW_TABLE_CLIENT_SETTINGS", "")
+    approvals_table_id = os.environ.get("BASEROW_TABLE_CONTENT_APPROVALS", "")
+    styles_table_id = os.environ.get("BASEROW_TABLE_IMAGE_STYLE_PREFS", "")
 
     # Clean previous build (skip when building multiple clients sequentially)
     if clean and output.exists():
@@ -2578,6 +3468,24 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
     images_copied = set()
     pages_built = 0
 
+    # Detect GitHub repo from env or git remote (used by all pages)
+    gh_repo = os.environ.get("GH_REPO", "")
+    if not gh_repo:
+        try:
+            import subprocess as _sp
+            remote = _sp.check_output(
+                ["git", "remote", "get-url", "origin"],
+                stderr=_sp.DEVNULL, text=True, cwd=str(Path(__file__).parent.parent)
+            ).strip()
+            if "github.com" in remote:
+                if remote.startswith("https://"):
+                    gh_repo = remote.replace("https://github.com/", "").removesuffix(".git")
+                else:
+                    gh_repo = remote.split("github.com:")[-1].removesuffix(".git")
+        except Exception:
+            pass
+    regen_worker_url = os.environ.get("REGEN_WORKER_URL", "")
+
     for date_id in build_dates:
         topics = []
         # Try Airtable first for week: dates
@@ -2639,25 +3547,7 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
         # Derive week_of from date_id (e.g. 'week:2026-02-16' -> '2026-02-16')
         week_of_str = date_id.split(":")[-1] if ":" in date_id else date_id
 
-        # Detect GitHub repo from env or git remote
-        gh_repo = os.environ.get("GH_REPO", "")
-        if not gh_repo:
-            try:
-                import subprocess as _sp
-                remote = _sp.check_output(
-                    ["git", "remote", "get-url", "origin"],
-                    stderr=_sp.DEVNULL, text=True, cwd=str(Path(__file__).parent.parent)
-                ).strip()
-                # Parse 'https://github.com/owner/repo.git' or 'git@github.com:owner/repo.git'
-                if "github.com" in remote:
-                    if remote.startswith("https://"):
-                        gh_repo = remote.replace("https://github.com/", "").removesuffix(".git")
-                    else:
-                        gh_repo = remote.split("github.com:")[-1].removesuffix(".git")
-            except Exception:
-                pass
-
-        regen_worker_url = os.environ.get("REGEN_WORKER_URL", "")
+        # gh_repo and regen_worker_url are set before the loop
 
         # Render the dashboard page (with auth guard)
         html = dashboard_template.render(
@@ -2675,6 +3565,13 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
             client_logo_url=client_logo_url,
             x_publishing_enabled=client_config.is_x_publishing_enabled(active_client),
             is_placeholder=False,
+            is_announcements_page=False,
+            announcement_weeks=[],
+            baserow_token=baserow_token,
+            baserow_url=baserow_url,
+            settings_table_id=settings_table_id,
+            approvals_table_id=approvals_table_id,
+            setup_wizard_html=SETUP_WIZARD_HTML,
         )
 
         page_path = client_dash_dir / f"{safe_name}.html"
@@ -2700,11 +3597,119 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
             client_logo_url=client_logo_url,
             x_publishing_enabled=client_config.is_x_publishing_enabled(active_client),
             is_placeholder=True,
+            is_announcements_page=False,
+            announcement_weeks=[],
+            baserow_token=baserow_token,
+            baserow_url=baserow_url,
+            settings_table_id=settings_table_id,
+            approvals_table_id=approvals_table_id,
+            setup_wizard_html=SETUP_WIZARD_HTML,
         )
         ph_page_path = client_dash_dir / f"week-{ph_week_of}.html"
         ph_page_path.write_text(ph_html, encoding="utf-8")
         pages_built += 1
         print(f"  Built: dashboard/{active_client}/{ph_page_path.name} (placeholder)")
+
+    # ── Build announcements.html — aggregated across all weeks ──
+    announcement_weeks = []
+    # Collect announcement topics from all weeks (newest first)
+    for date_id in reversed(build_dates):
+        if not date_id.startswith("week:"):
+            continue
+        week_of_str_ann = date_id[5:]
+
+        # Load topics for this week
+        ann_topics = []
+        if HAS_AIRTABLE_WRITER:
+            at_cfg = _client_cfg.get("airtable", {})
+            if at_cfg.get("enabled"):
+                all_topics = load_content_from_airtable(date_id, active_client)
+                ann_topics = [t for t in all_topics if (t.get("bucket") or "").lower() == "announcements"]
+
+        if not ann_topics:
+            xlsx = find_excel(date_id)
+            if xlsx:
+                all_topics = load_content(xlsx)
+                ann_topics = [t for t in all_topics if (t.get("bucket") or "").lower() == "announcements"]
+
+        # Copy images for announcement topics
+        for t in ann_topics:
+            fn = t.get("image_filename")
+            fn_ru = t.get("image_filename_ru")
+            t["image_src"] = fn if (fn and fn.startswith("http")) else (f"images/{fn}" if fn else "")
+            t["image_src_ru"] = fn_ru if (fn_ru and fn_ru.startswith("http")) else (f"images/{fn_ru}" if fn_ru else "")
+            for img_key in ("image_filename", "image_filename_ru"):
+                img_rel = t.get(img_key)
+                if not img_rel or img_rel.startswith("http"):
+                    continue
+                src = IMAGES_DIR / img_rel
+                if not src.exists():
+                    src = CONTENT_DIR / img_rel
+                if not src.exists():
+                    continue
+                dst = images_out / img_rel
+                if str(dst) not in images_copied:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(str(src), str(dst))
+                    images_copied.add(str(dst))
+
+        # Determine next announcement index for the "+ New" button
+        inputs_file = client_config.get_output_dir(active_client) / f"{week_of_str_ann}-bucket-inputs.json"
+        next_index = 0
+        if inputs_file.exists():
+            try:
+                inputs_data = json.loads(inputs_file.read_text(encoding="utf-8"))
+                ann_list = inputs_data.get("announcements", [])
+                if isinstance(ann_list, list):
+                    next_index = len(ann_list)
+                elif isinstance(ann_list, dict):
+                    next_index = 1
+            except Exception:
+                pass
+
+        # Find label for this week
+        week_label = date_id
+        for opt in date_options:
+            if opt["date_id"] == date_id:
+                week_label = opt["label"]
+                break
+
+        announcement_weeks.append({
+            "week_of": week_of_str_ann,
+            "label": week_label,
+            "topics": ann_topics,
+            "next_index": next_index,
+        })
+
+    # Render the announcements page
+    ann_html = dashboard_template.render(
+        topics=[],
+        date_label="Announcements",
+        current_date_id="announcements",
+        date_options=date_options,
+        brand_name=_display_name,
+        expected_client_id=active_client,
+        week_of=build_dates[-1].split(":")[-1] if build_dates else "",
+        client_id=active_client,
+        gh_repo=gh_repo,
+        github_regen_token=github_regen_token,
+        regen_worker_url=regen_worker_url,
+        client_logo_url=client_logo_url,
+        x_publishing_enabled=client_config.is_x_publishing_enabled(active_client),
+        is_placeholder=False,
+        is_announcements_page=True,
+        announcement_weeks=announcement_weeks,
+        baserow_token=baserow_token,
+        baserow_url=baserow_url,
+        settings_table_id=settings_table_id,
+        approvals_table_id=approvals_table_id,
+        setup_wizard_html=SETUP_WIZARD_HTML,
+    )
+    ann_page_path = client_dash_dir / "announcements.html"
+    ann_page_path.write_text(ann_html, encoding="utf-8")
+    ann_topic_count = sum(len(w["topics"]) for w in announcement_weeks)
+    pages_built += 1
+    print(f"  Built: dashboard/{active_client}/announcements.html ({ann_topic_count} announcement topics across {len(announcement_weeks)} weeks)")
 
     # Copy favicon if available
     favicon_src = Path(__file__).parent.parent / "reference" / "favicon.jpg"
@@ -2770,6 +3775,21 @@ def build_site(output_dir, dates=None, credentials=None, active_client="bobe", c
         client_login_dir.mkdir(parents=True, exist_ok=True)
         (client_login_dir / "login.html").write_text(client_login_html, encoding="utf-8")
         print(f"  Built: dashboard/{_cid}/login.html (1 credential baked in)")
+
+    # Generate settings page for the active client
+    settings_template = plain_env.from_string(SETTINGS_HTML)
+    settings_html = settings_template.render(
+        brand_name=_display_name,
+        client_id=active_client,
+        baserow_token=baserow_token,
+        baserow_url=baserow_url,
+        settings_table_id=settings_table_id,
+        styles_table_id=styles_table_id,
+        gh_repo=gh_repo,
+        regen_worker_url=regen_worker_url,
+    )
+    (client_dash_dir / "settings.html").write_text(settings_html, encoding="utf-8")
+    print(f"  Built: dashboard/{active_client}/settings.html")
 
     # Calculate total size
     total_size = sum(f.stat().st_size for f in output.rglob("*") if f.is_file())

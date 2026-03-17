@@ -1,4 +1,4 @@
-name: Generate Announcement Content
+name: Generate Blog Post
 
 on:
   workflow_dispatch:
@@ -10,27 +10,21 @@ on:
       week_of:
         description: 'Week start date YYYY-MM-DD'
         required: true
-      announcement_text:
-        description: 'Client announcement text (2 sentences to several paragraphs)'
+      topic_index:
+        description: '0-based topic index from the weekly content'
         required: true
-      phase:
-        description: 'Phase to run: all, content, images, or translation'
-        required: false
-        default: 'all'
+      platform:
+        description: 'Source platform for the blog content'
+        required: true
+        default: 'twitter'
         type: choice
         options:
-          - all
-          - content
-          - images
-          - translation
-      announcement_index:
-        description: 'Index of this announcement within the week (0-based, for multi-announcement support)'
+          - twitter
+          - telegram
+      extra_context:
+        description: 'Additional context for the blog (optional)'
         required: false
-        default: '0'
-      count:
-        description: 'Number of topics to generate (1 for testing, 7 for full)'
-        required: false
-        default: '7'
+        default: ''
       mock:
         description: 'Dry run — no API calls (for testing)'
         type: boolean
@@ -41,9 +35,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  generate-announcement:
+  generate-blog:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     permissions:
       contents: write
@@ -78,27 +72,31 @@ jobs:
           echo "R2_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}" >> .env
           echo "R2_BUCKET_NAME=${{ secrets.R2_BUCKET_NAME }}" >> .env
           echo "R2_PUBLIC_URL=${{ secrets.R2_PUBLIC_URL }}" >> .env
+          echo "BASEROW_API_TOKEN=${{ secrets.BASEROW_API_TOKEN }}" >> .env
+          echo "BASEROW_DATABASE_ID=${{ secrets.BASEROW_DATABASE_ID }}" >> .env
+          echo "BASEROW_TABLE_CLIENT_SETTINGS=${{ secrets.BASEROW_TABLE_CLIENT_SETTINGS }}" >> .env
+          echo "BASEROW_TABLE_CONTENT_APPROVALS=${{ secrets.BASEROW_TABLE_CONTENT_APPROVALS }}" >> .env
+          echo "BASEROW_TABLE_IMAGE_STYLE_PREFS=${{ secrets.BASEROW_TABLE_IMAGE_STYLE_PREFS }}" >> .env
 
       - name: Set active client
         run: echo "${{ github.event.inputs.client_id }}" > .active-client
 
-      - name: Save announcement and generate content
-        env:
-          ANNOUNCEMENT_TEXT: ${{ github.event.inputs.announcement_text }}
+      - name: Generate blog post
         shell: bash
         run: |
           set -euo pipefail
           ARGS="--client ${{ github.event.inputs.client_id }}"
+          ARGS="$ARGS --topic-index ${{ github.event.inputs.topic_index }}"
           ARGS="$ARGS --week-of ${{ github.event.inputs.week_of }}"
-          ARGS="$ARGS --mode announcement"
-          ARGS="$ARGS --announcement-text \"$ANNOUNCEMENT_TEXT\""
-          ARGS="$ARGS --phase ${{ github.event.inputs.phase || 'all' }}"
-          ARGS="$ARGS --count ${{ github.event.inputs.count || '7' }}"
-          ARGS="$ARGS --announcement-index ${{ github.event.inputs.announcement_index || '0' }}"
+          ARGS="$ARGS --platform ${{ github.event.inputs.platform }}"
+          ARGS="$ARGS --from-airtable"
+          if [ -n "${{ github.event.inputs.extra_context }}" ]; then
+            ARGS="$ARGS --extra-context \"${{ github.event.inputs.extra_context }}\""
+          fi
           if [ "${{ github.event.inputs.mock }}" = "true" ]; then
             ARGS="$ARGS --mock"
           fi
-          python scripts/pipeline_runner.py $ARGS --skip-deploy
+          python scripts/blog_generator.py $ARGS
 
       - name: Build static site
         shell: bash
@@ -123,7 +121,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Generate announcement: ${{ github.event.inputs.client_id }} ${{ github.event.inputs.week_of }}"
+          git commit -m "Generate blog: ${{ github.event.inputs.client_id }} ${{ github.event.inputs.week_of }} topic-${{ github.event.inputs.topic_index }}"
           git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/rtadik/bobe-content-dashboard.git HEAD:gh-pages
           cd ..
 

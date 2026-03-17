@@ -114,6 +114,78 @@ For a complete step-by-step setup guide (including token creation, scopes, and t
 
 ---
 
+## Cloudflare R2 (Image Storage)
+
+**Used by:** `scripts/r2_uploader.py`, `scripts/nano_banana.py`, `scripts/wavespeed_img.py`, `scripts/pipeline_runner.py`
+
+Cloudflare R2 is an S3-compatible object store with zero egress fees and a 10 GB free tier. Generated images are uploaded to R2 and referenced by public URL in Airtable and the dashboard.
+
+### Getting Your Credentials
+
+1. Sign up at [dash.cloudflare.com](https://dash.cloudflare.com)
+2. Go to **R2 Object Storage** in the sidebar
+3. Click **Create bucket** and name it (e.g., `bobe-content-images`)
+4. Enable **Public access** on the bucket (Settings tab > Public access > Allow Access)
+5. Copy your **Account ID** from the R2 overview page
+6. Go to **R2 > Manage R2 API Tokens** > **Create API token**
+   - Permission: **Object Read & Write**
+   - Scope: apply to your bucket
+7. Copy the **Access Key ID** and **Secret Access Key**
+
+### Environment Variables
+
+Add to `.env`:
+
+```bash
+R2_ACCOUNT_ID=your_account_id
+R2_ACCESS_KEY_ID=your_access_key_id
+R2_SECRET_ACCESS_KEY=your_secret_access_key
+R2_BUCKET_NAME=your-bucket-name
+R2_PUBLIC_URL=https://pub-XXXX.r2.dev
+```
+
+The `R2_PUBLIC_URL` is found on the bucket's Settings tab under "Public Bucket URL" (after enabling public access).
+
+### Client Config
+
+Update `clients/{client_id}/config.json`:
+
+```json
+"r2": {
+  "enabled": true,
+  "bucket_name": "your-bucket-name",
+  "public_url": "https://pub-XXXX.r2.dev"
+},
+"airtable": {
+  "images_base_url": "https://pub-XXXX.r2.dev"
+}
+```
+
+### GitHub Actions Secrets
+
+Add these 5 secrets to your repo (Settings > Secrets > Actions):
+
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET_NAME`
+- `R2_PUBLIC_URL`
+
+### Usage & Costs
+
+- **Free tier:** 10 GB storage, 10 million Class A ops/month, zero egress fees
+- Typical weekly pipeline: 42 images (~20 MB) = well within free tier
+- No credit card required for free tier
+
+### Testing
+
+```bash
+source venv/bin/activate
+python scripts/r2_uploader.py --test
+```
+
+---
+
 ## GitHub Actions (Remote Pipeline Execution)
 
 **Used by:** `.github/workflows/weekly-pipeline.yml`, `.github/workflows/onboard-client.yml`, `admin/index.html`
@@ -138,7 +210,7 @@ For complete setup instructions including Secrets, Pages settings, workflow perm
 Install before running any scripts:
 
 ```bash
-pip install requests openpyxl google-genai python-dotenv
+pip install requests openpyxl google-genai python-dotenv boto3
 ```
 
 Or using a virtual environment (recommended):
@@ -146,7 +218,7 @@ Or using a virtual environment (recommended):
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install requests openpyxl google-genai python-dotenv
+pip install requests openpyxl google-genai python-dotenv boto3
 ```
 
 ### Full requirements:
@@ -155,6 +227,7 @@ requests>=2.28.0
 openpyxl>=3.1.0
 google-genai>=1.0.0
 python-dotenv>=1.0.0
+boto3>=1.28.0
 ```
 
 ---

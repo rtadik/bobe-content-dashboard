@@ -11,9 +11,13 @@ on:
         description: 'Week start date YYYY-MM-DD'
         required: true
       topic_index:
-        description: 'Topic index (0-based, 0-20)'
-        required: true
+        description: 'Topic index (0-based, 0-20) — fallback if topic_name not provided'
+        required: false
         default: '0'
+      topic_name:
+        description: 'Topic name (stable identifier — preferred over index)'
+        required: false
+        default: ''
       regen_type:
         description: 'What to regenerate'
         type: choice
@@ -76,19 +80,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/pipeline_runner.py \
-            --client ${{ github.event.inputs.client_id }} \
-            --week-of ${{ github.event.inputs.week_of }} \
-            --regen-topic ${{ github.event.inputs.topic_index }} \
-            --regen-type ${{ github.event.inputs.regen_type }} \
-            --skip-deploy
+          ARGS="--client ${{ github.event.inputs.client_id }}"
+          ARGS="$ARGS --week-of ${{ github.event.inputs.week_of }}"
+          ARGS="$ARGS --regen-topic ${{ github.event.inputs.topic_index }}"
+          ARGS="$ARGS --regen-type ${{ github.event.inputs.regen_type }}"
+          ARGS="$ARGS --skip-deploy"
+          TOPIC_NAME="${{ github.event.inputs.topic_name }}"
+          if [ -n "$TOPIC_NAME" ]; then
+            ARGS="$ARGS --regen-topic-name \"$TOPIC_NAME\""
+          fi
+          python scripts/pipeline_runner.py $ARGS
 
       - name: Upload regenerated outputs as artifact
         uses: actions/upload-artifact@v4
         with:
           name: regen-outputs-${{ github.event.inputs.client_id }}-${{ github.run_id }}
           path: outputs/content/${{ github.event.inputs.client_id }}/
-          retention-days: 1
+          retention-days: 7
           if-no-files-found: warn
 
   deploy:
@@ -170,3 +178,13 @@ jobs:
           git commit -m "Regen item: client=${{ github.event.inputs.client_id }} topic=${{ github.event.inputs.topic_index }} type=${{ github.event.inputs.regen_type }}"
           git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/rtadik/bobe-content-dashboard.git HEAD:gh-pages
           cd ..
+
+      - name: Health check deployed site
+        run: |
+          sleep 30
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://content.rejiglabs.com/ || echo "000")
+          if [ "$STATUS" = "200" ]; then
+            echo "Health check passed (HTTP $STATUS)"
+          else
+            echo "::warning::Health check returned HTTP $STATUS — site may not be fully propagated yet"
+          fi

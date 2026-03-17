@@ -690,36 +690,8 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                     logger.warning(f"    EN image failed for topic {topic_num}: {e}")
                     topic_errors.append(f"EN image topic {topic_num}: {e}")
 
-                # RU image
-                try:
-                    run_cmd(
-                        f'{PY} scripts/wavespeed_img.py '
-                        f'--prompt "{ru_prompt}" '
-                        f'--output "{ru_img}" '
-                        f'--no-r2 '
-                        f'--client {client_id}'
-                    )
-                    logger.info(f"    RU: {Path(ru_img).name}")
-                    if use_airtable and HAS_CLOUD_MODULES and r2_uploader.is_configured():
-                        try:
-                            ru_img_abs = str(PROJECT_ROOT / ru_img)
-                            if Path(ru_img_abs).exists():
-                                r2_key_ru = r2_uploader.make_key(client_id, week_of, Path(ru_img).name)
-                                r2_url_ru = r2_uploader.upload_file(ru_img_abs, r2_key_ru)
-                                logger.info(f"    R2 RU: {r2_url_ru}")
-                                for plat_key in ["twitter", "telegram"]:
-                                    rec_id = topic_at_records.get(topic_num, {}).get(plat_key)
-                                    if rec_id:
-                                        airtable_writer.update_image_urls(
-                                            at_base_id, at_table_id, rec_id,
-                                            image_url_ru=r2_url_ru, api_key=at_api_key
-                                        )
-                        except Exception as e:
-                            logger.warning(f"    R2/AT RU image update failed: {e}")
-                            topic_errors.append(f"R2/AT RU image topic {topic_num}: {e}")
-                except Exception as e:
-                    logger.warning(f"    RU image failed for topic {topic_num}: {e}")
-                    topic_errors.append(f"RU image topic {topic_num}: {e}")
+                # RU image: skipped during pipeline — generated on EN image approval
+                logger.info(f"    RU: skipped (generated on EN approval)")
             else:
                 logger.info(f"    [mock] Skipping image API calls")
 
@@ -824,8 +796,86 @@ English content:
 Return ONLY the Russian translation, nothing else."""
 
 
-def run_regen_item(client_id, week_of, topic_index, regen_type, mock=False):
-    """Regenerate a single topic item (image or content) and update the workbook."""
+def _update_image_after_regen(client_id, week_of, topic_name, img_path, lang="en"):
+    """Upload regenerated image to R2 and update Airtable record.
+
+    Args:
+        lang: "en" or "ru" — determines which Airtable field to update.
+    """
+    import time
+
+    if not HAS_CLOUD_MODULES:
+        print("  Cloud modules not available, skipping R2/Airtable update")
+        return
+
+    img_abs = str(PROJECT_ROOT / img_path)
+    if not Path(img_abs).exists():
+        print(f"  Warning: generated image not found at {img_abs}")
+        return
+
+    # Upload to R2 with cache-busting filename
+    r2_url = None
+    if r2_uploader.is_configured():
+        try:
+            filename = Path(img_path).name
+            r2_key = r2_uploader.make_key(client_id, week_of, filename)
+            r2_url = r2_uploader.upload_file(img_abs, r2_key)
+            # Append cache-buster so CDN/browser serves fresh version
+            r2_url = f"{r2_url}?v={int(time.time())}"
+            print(f"  R2 upload: {r2_url}")
+        except Exception as e:
+            print(f"  R2 upload failed: {e}")
+
+    if not r2_url:
+        return
+
+    # Update Airtable record for this topic
+    config = client_config.load_config(client_id)
+    at_cfg = config.get("airtable", {})
+    if not at_cfg.get("enabled"):
+        print("  Airtable not enabled, skipping record update")
+        return
+
+    at_base_id = at_cfg.get("base_id", "")
+    at_api_key = get_api_key(client_id, "airtable")
+    if not at_base_id or not at_api_key:
+        print("  Airtable credentials missing, skipping record update")
+        return
+
+    try:
+        at_table_id = airtable_writer.get_or_create_table(at_base_id, week_of, at_api_key)
+        records = airtable_writer.load_records(at_base_id, at_table_id, at_api_key)
+
+        # Find records matching this topic name
+        updated = 0
+        for rec in records:
+            f = rec.get("fields", {})
+            if f.get("Topic", "").strip() == topic_name.strip():
+                rec_id = rec.get("id")
+                if rec_id:
+                    if lang == "en":
+                        airtable_writer.update_image_urls(
+                            at_base_id, at_table_id, rec_id,
+                            image_url_en=r2_url, api_key=at_api_key
+                        )
+                    else:
+                        airtable_writer.update_image_urls(
+                            at_base_id, at_table_id, rec_id,
+                            image_url_ru=r2_url, api_key=at_api_key
+                        )
+                    updated += 1
+        print(f"  Airtable updated: {updated} record(s) with new {lang.upper()} image URL")
+    except Exception as e:
+        print(f"  Airtable update failed: {e}")
+
+
+def run_regen_item(client_id, week_of, topic_index, regen_type, mock=False, topic_name=None):
+    """Regenerate a single topic item (image or content) and update the workbook.
+
+    Args:
+        topic_name: If provided, look up topic by name (stable identifier).
+                    Falls back to topic_index if topic_name is not found.
+    """
     from openpyxl import load_workbook as opxl_load
 
     config = client_config.load_config(client_id)
@@ -839,7 +889,7 @@ def run_regen_item(client_id, week_of, topic_index, regen_type, mock=False):
         print(f"  Error: workbook not found: {xlsx_path}")
         return False
 
-    print(f"  Regen type: {regen_type}, topic index: {topic_index}, workbook: {xlsx_path.name}")
+    print(f"  Regen type: {regen_type}, topic index: {topic_index}, topic_name: {topic_name or '(none)'}, workbook: {xlsx_path.name}")
 
     # ── Read workbook to find rows for this topic ─────────────────────────────
     wb = opxl_load(xlsx_path)
@@ -862,11 +912,28 @@ def run_regen_item(client_id, week_of, topic_index, regen_type, mock=False):
             seen.add(t)
             topic_order.append(t)
 
-    if topic_index >= len(topic_order):
-        print(f"  Error: topic_index {topic_index} out of range (found {len(topic_order)} topics)")
-        return False
+    # Resolve target topic: prefer topic_name (stable), fall back to index
+    target_topic = None
+    if topic_name:
+        # Exact match first
+        if topic_name in seen:
+            target_topic = topic_name
+        else:
+            # Case-insensitive fallback
+            for t in topic_order:
+                if t.lower().strip() == topic_name.lower().strip():
+                    target_topic = t
+                    break
+        if target_topic:
+            print(f"  Resolved by topic name: '{target_topic}'")
+        else:
+            print(f"  Warning: topic_name '{topic_name}' not found in workbook, falling back to index {topic_index}")
 
-    target_topic = topic_order[topic_index]
+    if not target_topic:
+        if topic_index >= len(topic_order):
+            print(f"  Error: topic_index {topic_index} out of range (found {len(topic_order)} topics)")
+            return False
+        target_topic = topic_order[topic_index]
     topic_rows = [r for r in data_rows if r[2] == target_topic]
     twitter_row = next((r for r in topic_rows if str(r[3]).lower() == "twitter"), topic_rows[0])
 
@@ -952,37 +1019,55 @@ def run_regen_item(client_id, week_of, topic_index, regen_type, mock=False):
                 f'--client {client_id}'
             )
             print(f"  EN image regenerated: {Path(img_path).name}")
+
+            # Upload to R2 and update Airtable with new URL
+            _update_image_after_regen(client_id, week_of, target_topic, img_path, "en")
+
             return True
         except Exception as e:
             print(f"  Error generating EN image: {e}")
             return False
 
-    # ── image_ru: regenerate RU image via wavespeed_img.py ───────────────────
+    # ── image_ru: regenerate RU image via wavespeed_img.py (translate from EN) ──
     elif regen_type == "image_ru":
         # Col K (index 10) = Image_Prompt_RU, Col L (index 11) = Image_Path_RU
         ru_prompt = twitter_row[10] if len(twitter_row) > 10 else ""
         ru_path = twitter_row[11] if len(twitter_row) > 11 else ""
-        if not ru_prompt or not ru_path:
-            print("  No RU image prompt/path found in workbook")
+        en_path = twitter_row[7] if len(twitter_row) > 7 else ""  # Col H (index 7) = EN Image Path
+        if not ru_path:
+            print("  No RU image path found in workbook")
             return False
 
         img_dir = (PROJECT_ROOT / ru_path).parent
         img_dir.mkdir(parents=True, exist_ok=True)
 
-        safe_prompt = ru_prompt.replace('"', "'")
-
         if mock:
             print(f"  [mock] Would generate RU image: {ru_path}")
             return True
 
+        en_img_abs = str(PROJECT_ROOT / en_path) if en_path else ""
         try:
-            run_cmd(
-                f'{PY} scripts/wavespeed_img.py '
-                f'--prompt "{safe_prompt}" '
-                f'--output "{ru_path}" '
-                f'--client {client_id}'
-            )
+            if en_img_abs and Path(en_img_abs).exists():
+                run_cmd(
+                    f'{PY} scripts/wavespeed_img.py '
+                    f'--edit-image "{en_img_abs}" '
+                    f'--output "{ru_path}" '
+                    f'--client {client_id}'
+                )
+            else:
+                safe_prompt = ru_prompt.replace('"', "'")
+                print("  EN image not found, falling back to prompt generation")
+                run_cmd(
+                    f'{PY} scripts/wavespeed_img.py '
+                    f'--prompt "{safe_prompt}" '
+                    f'--output "{ru_path}" '
+                    f'--client {client_id}'
+                )
             print(f"  RU image regenerated: {Path(ru_path).name}")
+
+            # Upload to R2 and update Airtable with new URL
+            _update_image_after_regen(client_id, week_of, target_topic, ru_path, "ru")
+
             return True
         except Exception as e:
             print(f"  Error generating RU image: {e}")
@@ -1066,6 +1151,10 @@ def main():
         help="Regenerate a single topic item (0-based index). Skips full pipeline.",
     )
     parser.add_argument(
+        "--regen-topic-name", default=None,
+        help="Regenerate by topic name (stable identifier). Preferred over --regen-topic index.",
+    )
+    parser.add_argument(
         "--regen-type",
         choices=["image_en", "image_ru", "content", "content_ru"],
         default="image_en",
@@ -1073,8 +1162,8 @@ def main():
     )
     parser.add_argument(
         "--mode", default="full",
-        choices=["full", "announcement"],
-        help="Pipeline mode: 'full' runs complete pipeline, 'announcement' generates only the announcement bucket for a week",
+        choices=["full", "announcement", "content-only", "images-approved"],
+        help="Pipeline mode: 'full' runs complete pipeline, 'content-only' skips images (for approval workflow), 'images-approved' generates images only for approved content, 'announcement' generates only the announcement bucket",
     )
     parser.add_argument(
         "--announcement-text", default=None,
@@ -1083,6 +1172,10 @@ def main():
     parser.add_argument(
         "--count", type=int, default=7,
         help="Number of announcement topics to generate (default 7, use 1 for testing)",
+    )
+    parser.add_argument(
+        "--announcement-index", type=int, default=0,
+        help="Index of the announcement within the week (for multi-announcement support, default 0)",
     )
     parser.add_argument(
         "--phase", default="all",
@@ -1102,16 +1195,72 @@ def main():
     client_id = args.client or client_config.get_active_client()
     week_of = get_monday(getattr(args, "week_of", None))
 
+    # Content-only mode: run Phases 1-4, skip images. Creates approval rows in Baserow.
+    if args.mode == "content-only":
+        logger.info(f"Content-only mode: {client_id}, week {week_of}")
+        run_pipeline(
+            client_id=client_id,
+            week_of=week_of,
+            mock=args.mock,
+            skip_images=True,
+            skip_airtable=args.skip_airtable,
+            skip_deploy=args.skip_deploy,
+            export_excel=args.export_excel,
+            parallel_workers=args.parallel_workers,
+        )
+        # Initialize approval rows in Baserow
+        try:
+            import baserow_client
+            if baserow_client.is_configured():
+                baserow_client.init_week_approvals(client_id, week_of)
+                logger.info("Approval rows initialized in Baserow")
+        except (ImportError, Exception) as e:
+            logger.warning(f"Could not init Baserow approvals: {e}")
+        sys.exit(0)
+
+    # Images-approved mode: generate images only for content with approved status
+    if args.mode == "images-approved":
+        logger.info(f"Images-approved mode: {client_id}, week {week_of}")
+        try:
+            import baserow_client
+            approvals = baserow_client.get_week_approvals(client_id, week_of)
+            approved_indices = set()
+            for a in approvals:
+                if a.get("content_status") == "approved":
+                    approved_indices.add(a.get("topic_index"))
+            logger.info(f"Found {len(approved_indices)} approved topics for image generation")
+            if not approved_indices:
+                logger.info("No approved topics found. Nothing to generate.")
+                sys.exit(0)
+            # Run pipeline with skip_images=False, but we'll need to filter
+            # For now, run full pipeline and let it handle all images
+            # TODO: filter to only approved indices
+            run_pipeline(
+                client_id=client_id,
+                week_of=week_of,
+                mock=args.mock,
+                skip_images=False,
+                skip_airtable=args.skip_airtable,
+                skip_deploy=args.skip_deploy,
+                export_excel=args.export_excel,
+                parallel_workers=args.parallel_workers,
+            )
+        except (ImportError, Exception) as e:
+            logger.error(f"Images-approved mode failed: {e}")
+            sys.exit(1)
+        sys.exit(0)
+
     # Announcement-only mode: save input text and regenerate announcement bucket
     if args.mode == "announcement" and args.announcement_text:
         ann_count = min(args.count, 7)
         phase = args.phase
-        print(f"\nAnnouncement mode: {client_id}, week {week_of}, count={ann_count}, phase={phase}")
+        ann_index = getattr(args, 'announcement_index', 0) or 0
+        print(f"\nAnnouncement mode: {client_id}, week {week_of}, count={ann_count}, phase={phase}, announcement_index={ann_index}")
         cfg = client_config.load_config(client_id)
         out_dir = client_config.get_output_dir(client_id)
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save input text
+        # Save input text (multi-announcement: array format)
         inputs_file = out_dir / f"{week_of}-bucket-inputs.json"
         inputs = {}
         if inputs_file.exists():
@@ -1119,9 +1268,30 @@ def main():
                 inputs = json.loads(inputs_file.read_text(encoding="utf-8"))
             except Exception:
                 pass
-        inputs["announcements"] = {"text": args.announcement_text, "submitted_at": datetime.now().isoformat()}
+
+        # Migrate old single-announcement format to array
+        ann_list = inputs.get("announcements", [])
+        if isinstance(ann_list, dict):
+            # Old format: {"text": "...", "submitted_at": "..."}
+            ann_list = [ann_list] if ann_list.get("text") else []
+
+        # Append new announcement or update existing by index
+        new_entry = {
+            "text": args.announcement_text,
+            "created": datetime.now().isoformat(),
+            "index": ann_index,
+            "status": "generating",
+        }
+        if ann_index < len(ann_list):
+            ann_list[ann_index] = new_entry
+        else:
+            new_entry["index"] = len(ann_list)
+            ann_index = new_entry["index"]
+            ann_list.append(new_entry)
+
+        inputs["announcements"] = ann_list
         inputs_file.write_text(json.dumps(inputs, indent=2, ensure_ascii=False))
-        print(f"  Input saved to {inputs_file}")
+        print(f"  Input saved to {inputs_file} (announcement #{ann_index}, {len(ann_list)} total)")
 
         day_dates_ann = {
             DAYS[i]: (datetime.strptime(week_of, "%Y-%m-%d") + timedelta(days=i)).strftime("%Y-%m-%d")
@@ -1136,11 +1306,11 @@ def main():
             print(f"  Generated {len(ann_topics)} announcement topics")
 
             # Save topics to temp file so other phases can pick them up
-            topics_file = out_dir / f"{week_of}-ann-topics.json"
+            topics_file = out_dir / f"{week_of}-ann-topics-{ann_index}.json"
             topics_file.write_text(json.dumps(ann_topics, indent=2, ensure_ascii=False))
         else:
             # Load existing topics for images/translation phases
-            topics_file = out_dir / f"{week_of}-ann-topics.json"
+            topics_file = out_dir / f"{week_of}-ann-topics-{ann_index}.json"
             if topics_file.exists():
                 ann_topics = json.loads(topics_file.read_text(encoding="utf-8"))[:ann_count]
             else:
@@ -1238,7 +1408,7 @@ def main():
                         "status": "Draft",
                     }
 
-                    tmp_file = out_dir / f"ann_content_{topic_data['day']}_{platform.lower()}.json"
+                    tmp_file = out_dir / f"ann_content_{ann_index}_{topic_data['day']}_{platform.lower()}.json"
                     tmp_file.write_text(json.dumps(content_json, indent=2, ensure_ascii=False))
 
                     # Update workbook row
@@ -1264,7 +1434,7 @@ def main():
 
                 # ── Translation phase: regenerate only RU content ──
                 if phase == "translation":
-                    tmp_file = out_dir / f"ann_content_{topic_data['day']}_{platform.lower()}.json"
+                    tmp_file = out_dir / f"ann_content_{ann_index}_{topic_data['day']}_{platform.lower()}.json"
                     if not tmp_file.exists():
                         print(f"  Skipping translation {topic_data['day']} {platform}: no content file. Run content phase first.")
                         continue
@@ -1319,7 +1489,7 @@ def main():
 
                 # ── Images phase: generate EN + RU images ──
                 if phase in ("all", "images"):
-                    tmp_file = out_dir / f"ann_content_{topic_data['day']}_{platform.lower()}.json"
+                    tmp_file = out_dir / f"ann_content_{ann_index}_{topic_data['day']}_{platform.lower()}.json"
                     if tmp_file.exists():
                         c = json.loads(tmp_file.read_text(encoding="utf-8"))
                     else:
@@ -1336,24 +1506,33 @@ def main():
                             run_cmd(f'{PY} scripts/nano_banana.py --prompt "{safe_en}" --output "{en_path}" --style {style_key} --client {client_id}')
                         except Exception as e:
                             print(f"    Warning: EN image failed: {e}")
-                        if safe_ru:
-                            try:
-                                run_cmd(f'{PY} scripts/wavespeed_img.py --prompt "{safe_ru}" --output "{ru_path}" --client {client_id}')
-                            except Exception as e:
-                                print(f"    Warning: RU image failed: {e}")
+                        # RU image: skipped — generated on EN image approval
+                        print(f"    RU image: skipped (generated on EN approval)")
                     elif args.mock:
                         print(f"  [Mock] Images: {topic_data['day']} {platform}")
+
+        # Update announcement status in bucket-inputs.json
+        try:
+            inputs = json.loads(inputs_file.read_text(encoding="utf-8"))
+            ann_list = inputs.get("announcements", [])
+            if isinstance(ann_list, list) and ann_index < len(ann_list):
+                ann_list[ann_index]["status"] = "generated"
+                inputs["announcements"] = ann_list
+                inputs_file.write_text(json.dumps(inputs, indent=2, ensure_ascii=False))
+        except Exception:
+            pass
 
         print(f"\nAnnouncement mode complete. Phase: {phase}, count: {ann_count}, week: {week_of}")
         sys.exit(0)
 
-    if args.regen_topic is not None:
+    if args.regen_topic is not None or args.regen_topic_name:
         success = run_regen_item(
             client_id=client_id,
             week_of=week_of,
-            topic_index=args.regen_topic,
+            topic_index=args.regen_topic or 0,
             regen_type=args.regen_type,
             mock=args.mock,
+            topic_name=args.regen_topic_name,
         )
         sys.exit(0 if success else 1)
 

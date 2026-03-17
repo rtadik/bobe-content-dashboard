@@ -334,4 +334,11 @@ def records_to_topics(records: list) -> list:
         t["image_filename_ru"] = t["image_url_ru"] or None
         result.append(t)
 
+    # Sort by date then day for consistent ordering across loads
+    day_order = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+    result.sort(key=lambda t: (
+        str(t.get("date", "")),
+        day_order.get(str(t.get("day", "")).lower()[:3], 99),
+    ))
+
     return result

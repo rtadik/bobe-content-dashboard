@@ -150,3 +150,13 @@ jobs:
           git commit -m "Publish to X: client=${{ github.event.inputs.client_id }} topic=${{ github.event.inputs.topic_index }}"
           git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/rtadik/bobe-content-dashboard.git HEAD:gh-pages
           cd ..
+
+      - name: Health check deployed site
+        run: |
+          sleep 30
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://content.rejiglabs.com/ || echo "000")
+          if [ "$STATUS" = "200" ]; then
+            echo "Health check passed (HTTP $STATUS)"
+          else
+            echo "::warning::Health check returned HTTP $STATUS — site may not be fully propagated yet"
+          fi

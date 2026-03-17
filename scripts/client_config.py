@@ -19,7 +19,10 @@ Usage:
 
 import json
 import os
+import logging
 from pathlib import Path
+
+logger = logging.getLogger("client_config")
 
 PROJECT_ROOT = Path(__file__).parent.parent
 CLIENTS_DIR = PROJECT_ROOT / "clients"
@@ -237,14 +240,52 @@ def get_x_credentials(client_id: str) -> dict:
 
 
 def get_api_key(client_id: str, service: str) -> str:
-    """Return client-specific API key, falling back to global env var."""
+    """Return client-specific API key. Resolution order:
+    1. Baserow Client_Settings (if configured)
+    2. config.json api_keys field
+    3. Client-specific env var ({CLIENT_ID_UPPER}_{SERVICE_UPPER})
+    4. Global env var (e.g. GOOGLE_AI_API_KEY)
+    """
+    # 1. Try Baserow
+    try:
+        from baserow_client import get_api_key_from_baserow, is_configured as br_configured
+        if br_configured():
+            br_key = get_api_key_from_baserow(client_id, service)
+            if br_key:
+                return br_key
+    except (ImportError, Exception) as e:
+        logger.debug(f"Baserow lookup skipped: {e}")
+
+    # 2. Try config.json
     config = load_config(client_id)
     client_key = config.get("api_keys", {}).get(service, "")
     if client_key:
         return client_key
+
+    # 3. Try client-specific env var
+    prefix = client_id.upper()
+    service_upper = service.upper()
+    client_env = os.environ.get(f"{prefix}_{service_upper}", "")
+    if client_env:
+        return client_env
+
+    # 4. Fall back to global env var
     env_map = {
         "gemini": "GOOGLE_AI_API_KEY",
         "wavespeed_en": "WAVESPEED_API_KEY",
         "wavespeed_ru": "WAVESPEED_API_KEY",
     }
     return os.environ.get(env_map.get(service, ""), "")
+
+
+def get_style_preference(client_id: str = None) -> dict:
+    """Return the client's selected image style preference from Baserow."""
+    if client_id is None:
+        client_id = get_active_client()
+    try:
+        from baserow_client import get_selected_style, is_configured as br_configured
+        if br_configured():
+            return get_selected_style(client_id)
+    except (ImportError, Exception):
+        pass
+    return {}

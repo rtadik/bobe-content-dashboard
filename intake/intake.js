@@ -13,6 +13,13 @@
 
 'use strict';
 
+// ── HTML escaping (XSS prevention) ──────────────────────────
+function escapeHtml(str) {
+  var div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 // ── State ──────────────────────────────────────────────────────
 let intakeData = null;
 
@@ -305,7 +312,7 @@ function showSuccessPanel({ emailFailed = false, clientId = '', password = '', w
   creds.innerHTML =
     '<strong>Your credentials:</strong><br>' +
     'Username: <strong>admin</strong><br>' +
-    'Password: <strong>' + (password || derivePassword(getValue('client_id'))) + '</strong>';
+    'Password: <strong>' + escapeHtml(password || derivePassword(getValue('client_id'))) + '</strong>';
 
   // Worker / onboarding status message
   const statusEl = document.getElementById('onboardStatus');
@@ -333,7 +340,7 @@ function showSuccessPanel({ emailFailed = false, clientId = '', password = '', w
       'Email delivery failed. Your credentials are shown above — save them now. ' +
       'Download your intake file and send it to your partner to complete setup.';
     document.getElementById('successMsg').innerHTML =
-      'There was a problem sending the credential email to <strong>' + email + '</strong>.';
+      'There was a problem sending the credential email to <strong>' + escapeHtml(email) + '</strong>.';
   }
 
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -369,10 +376,17 @@ function copyJSON() {
   }
 }
 
-// ── Form submit ────────────────────────────────────────────────
+// ── Form submit (rate-limited: 1 submit per 60s) ─────────────
+var _lastSubmitTime = 0;
 async function handleSubmit(e) {
   e.preventDefault();
+  var now = Date.now();
+  if (now - _lastSubmitTime < 60000) {
+    alert('Please wait before submitting again.');
+    return;
+  }
   if (!validateForm()) return;
+  _lastSubmitTime = now;
 
   const submitBtn = document.getElementById('submitBtn');
   submitBtn.textContent = 'Sending credentials...';

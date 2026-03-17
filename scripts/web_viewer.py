@@ -1606,23 +1606,59 @@ async function approveImage(idx) {
   const newStatus  = isApproved ? 'pending' : 'approved';
 
   try {
-    await fetch('/api/approve', {
+    const res = await fetch('/api/approve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: CURRENT_DATE, topic: t.topic, status: newStatus }),
+      body: JSON.stringify({ date: CURRENT_DATE, topic: t.topic, status: newStatus, topic_index: idx - 1 }),
     });
+    const result = await res.json();
     setApprovalUI(idx, newStatus);
     updateRuGenButton(idx);
     updateRuRegenState(idx, newStatus === 'approved');
     if (newStatus === 'approved') {
       setLang('ru');
-      showToast('Image approved ✓ — switched to Russian');
+      if (result.ru_job_id) {
+        showToast('Image approved ✓ — generating Russian version...');
+        pollRuAutoGen(idx, result.ru_job_id);
+      } else {
+        showToast('Image approved ✓ — switched to Russian');
+      }
     } else {
       showToast('Approval removed');
     }
   } catch (e) {
     showToast('Could not save approval', true);
   }
+}
+
+async function pollRuAutoGen(idx, jobId) {
+  const ruImgEl = document.getElementById(`img-ru-${idx}`);
+  const overlay = document.getElementById(`overlay-ru-${idx}`);
+  if (overlay) { overlay.style.display = 'flex'; overlay.textContent = 'Generating RU...'; }
+
+  const poll = async () => {
+    try {
+      const res = await fetch(`/api/regen-status/${jobId}`);
+      const data = await res.json();
+      if (data.status === 'done') {
+        if (overlay) overlay.style.display = 'none';
+        if (ruImgEl && data.ru_image) {
+          ruImgEl.src = `/images/${data.ru_image}?t=${Date.now()}`;
+        }
+        showToast('Russian image generated ✓');
+        return;
+      } else if (data.status === 'error') {
+        if (overlay) overlay.style.display = 'none';
+        showToast('RU image generation failed: ' + (data.error || 'unknown'), true);
+        return;
+      }
+      setTimeout(poll, 3000);
+    } catch (e) {
+      if (overlay) overlay.style.display = 'none';
+      showToast('Error polling RU generation', true);
+    }
+  };
+  poll();
 }
 
 // ── Regeneration (async + polling) ───────────────────────────────────────────
@@ -3058,6 +3094,7 @@ def api_approve():
     date   = data.get("date", "")
     topic  = data.get("topic", "")
     status = data.get("status", "approved")
+    topic_index = data.get("topic_index")  # 0-based, optional
 
     if not date or not topic:
         return jsonify({"success": False, "error": "date and topic required"}), 400
@@ -3065,7 +3102,61 @@ def api_approve():
     approvals = load_approvals(date)
     approvals[topic] = {"status": status}
     save_approvals(date, approvals)
-    return jsonify({"success": True})
+
+    # Auto-trigger RU image generation when EN image is approved
+    ru_job_id = None
+    if status == "approved" and topic_index is not None and HAS_RU_GENERATOR:
+        xlsx = find_excel(date)
+        if xlsx:
+            topics = load_content(xlsx)
+            idx = int(topic_index)
+            if 0 <= idx < len(topics):
+                topic_data = topics[idx]
+                en_image = topic_data.get("image_filename")
+                if en_image:
+                    en_image_path = IMAGES_DIR / en_image
+                    if en_image_path.exists():
+                        ru_job_id = str(uuid.uuid4())
+                        with _jobs_lock:
+                            _jobs[ru_job_id] = {"status": "running", "phase": "translating_image", "error": None}
+
+                        def _auto_gen_ru(job_id, en_path, en_fname, topic_name, date_str):
+                            try:
+                                stem = Path(en_fname).stem
+                                parent = Path(en_fname).parent
+                                base_stem = re.sub(r"_ru$", "", stem)
+                                ru_image_filename = str(parent / f"{base_stem}_ru.png")
+                                ru_output_path = IMAGES_DIR / ru_image_filename
+
+                                wavespeed_translate_image(str(en_path), str(ru_output_path))
+
+                                # Update workbook
+                                xlsx_path = find_excel(date_str)
+                                if xlsx_path:
+                                    relative_path = f"outputs/content/images/{ru_image_filename}"
+                                    wb = openpyxl.load_workbook(str(xlsx_path))
+                                    ws = wb["Content"]
+                                    for row in ws.iter_rows(min_row=2):
+                                        if row[2].value == topic_name:
+                                            row[11].value = relative_path
+                                    wb.save(str(xlsx_path))
+
+                                with _jobs_lock:
+                                    _jobs[job_id] = {
+                                        "status": "done", "phase": "done", "error": None,
+                                        "ru_image": ru_image_filename,
+                                    }
+                            except Exception as e:
+                                with _jobs_lock:
+                                    _jobs[job_id] = {"status": "error", "phase": "error", "error": str(e)}
+
+                        threading.Thread(
+                            target=_auto_gen_ru,
+                            args=(ru_job_id, en_image_path, en_image, topic, date),
+                            daemon=True,
+                        ).start()
+
+    return jsonify({"success": True, "ru_job_id": ru_job_id})
 
 
 @app.route("/api/regenerate", methods=["POST"])
@@ -3488,6 +3579,7 @@ def api_generate_announcement():
     data = request.get_json(force=True)
     text = (data.get("text") or "").strip()
     date_id = data.get("date", "")
+    announcement_index = data.get("announcement_index", 0)
 
     if not text:
         return jsonify({"success": False, "error": "text is required"}), 400
@@ -3514,14 +3606,6 @@ def api_generate_announcement():
             output_dir = _cc.get_output_dir(active_client)
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Find the workbook for this week (may be normal or mock)
-            xlsx_normal = output_dir / f"{week_of}-weekly-content.xlsx"
-            xlsx_mock   = output_dir / f"{week_of}-mock-weekly-content.xlsx"
-            if not xlsx_normal.exists() and not xlsx_mock.exists():
-                with _jobs_lock:
-                    _jobs[job_id] = {"status": "error", "error": f"No workbook found for {week_of}. Run the pipeline first."}
-                return
-
             # Run pipeline_runner in announcement mode
             cmd = [
                 _sys.executable,
@@ -3530,12 +3614,11 @@ def api_generate_announcement():
                 "--week-of", week_of,
                 "--mode", "announcement",
                 "--announcement-text", text,
+                "--announcement-index", str(announcement_index),
                 "--skip-images",
                 "--skip-airtable",
                 "--skip-deploy",
             ]
-            if xlsx_mock.exists() and not xlsx_normal.exists():
-                cmd.append("--mock")
 
             result = _sp.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
@@ -4031,6 +4114,319 @@ def api_admin_clients():
 def serve_admin_panel(filename="index.html"):
     admin_dir = PROJECT_ROOT / "admin"
     return send_from_directory(str(admin_dir), filename)
+
+
+# ── Approval Workflow API ─────────────────────────────────────────────────────
+
+@app.route("/api/approval-status", methods=["GET"])
+def api_approval_status():
+    """Get approval states for a week from Baserow."""
+    week_of = request.args.get("week_of", "")
+    try:
+        import baserow_client
+        if not baserow_client.is_configured():
+            return jsonify({"approvals": [], "configured": False})
+        approvals = baserow_client.get_week_approvals(_active_client, week_of)
+        return jsonify({"approvals": approvals, "configured": True})
+    except (ImportError, Exception) as e:
+        return jsonify({"approvals": [], "configured": False, "error": str(e)})
+
+
+@app.route("/api/approve-content", methods=["POST"])
+def api_approve_content():
+    """Approve content for a topic. Unlocks image generation."""
+    data = request.get_json(force=True)
+    week_of = data.get("week_of", "")
+    topic_index = int(data.get("topic_index", 0))
+    platform = data.get("platform", "Twitter")
+    try:
+        import baserow_client
+        row_id = baserow_client.set_content_approval(
+            _active_client, week_of, topic_index, platform, "approved"
+        )
+        return jsonify({"ok": True, "row_id": row_id})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/reject-content", methods=["POST"])
+def api_reject_content():
+    """Reject content with optional notes."""
+    data = request.get_json(force=True)
+    week_of = data.get("week_of", "")
+    topic_index = int(data.get("topic_index", 0))
+    platform = data.get("platform", "Twitter")
+    notes = data.get("notes", "")
+    try:
+        import baserow_client
+        row_id = baserow_client.set_content_approval(
+            _active_client, week_of, topic_index, platform, "rejected", notes
+        )
+        return jsonify({"ok": True, "row_id": row_id})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/approve-image", methods=["POST"])
+def api_approve_image():
+    """Approve image for a topic. Unlocks translation."""
+    data = request.get_json(force=True)
+    week_of = data.get("week_of", "")
+    topic_index = int(data.get("topic_index", 0))
+    platform = data.get("platform", "Twitter")
+    try:
+        import baserow_client
+        row_id = baserow_client.set_image_approval(
+            _active_client, week_of, topic_index, platform, "approved"
+        )
+        return jsonify({"ok": True, "row_id": row_id})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/reject-image", methods=["POST"])
+def api_reject_image():
+    """Reject image."""
+    data = request.get_json(force=True)
+    week_of = data.get("week_of", "")
+    topic_index = int(data.get("topic_index", 0))
+    platform = data.get("platform", "Twitter")
+    try:
+        import baserow_client
+        row_id = baserow_client.set_image_approval(
+            _active_client, week_of, topic_index, platform, "rejected"
+        )
+        return jsonify({"ok": True, "row_id": row_id})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/translate-item", methods=["POST"])
+def api_translate_item():
+    """Translate content + generate RU image for an approved item."""
+    data = request.get_json(force=True)
+    week_of = data.get("week_of", "")
+    topic_index = int(data.get("topic_index", 0))
+    try:
+        import baserow_client
+        baserow_client.set_translation_status(
+            _active_client, week_of, topic_index, "Twitter", "completed"
+        )
+        baserow_client.set_translation_status(
+            _active_client, week_of, topic_index, "Telegram", "completed"
+        )
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ── Blog Generation API ─────────────────────────────────────────────────────
+
+@app.route("/api/generate-blog", methods=["POST"])
+def api_generate_blog():
+    """Generate a blog post from a social media topic."""
+    data = request.get_json(force=True)
+    week_of = data.get("week_of", "")
+    topic_index = int(data.get("topic_index", 0))
+    platform = data.get("platform", "twitter")
+    extra_context = data.get("extra_context", "")
+
+    # Load source content from Airtable or Excel
+    topics = []
+    available = list_available_dates()
+    date_key = f"week:{week_of}" if not week_of.startswith("week:") else week_of
+    if HAS_AIRTABLE_WRITER and _client_config.get("airtable", {}).get("enabled"):
+        topics = load_content_from_airtable(date_key, _active_client)
+    if not topics:
+        xlsx = find_excel(date_key)
+        if xlsx:
+            topics = load_content(xlsx)
+
+    if topic_index >= len(topics):
+        return jsonify({"ok": False, "error": f"Topic index {topic_index} out of range"}), 400
+
+    topic = topics[topic_index]
+    source_content = topic.get("twitter", "") if platform == "twitter" else topic.get("telegram", "")
+
+    try:
+        import blog_generator
+        blog = blog_generator.generate_blog(
+            topic=topic.get("topic", ""),
+            source_content=source_content,
+            platform=platform,
+            bucket=topic.get("bucket", "trending"),
+            client_id=_active_client,
+            extra_context=extra_context,
+        )
+        path = blog_generator.save_blog(blog, _active_client, week_of)
+        return jsonify({"ok": True, "blog": blog, "path": str(path)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/blogs/<client_id>/<week_of>")
+def api_list_blogs(client_id, week_of):
+    """List all generated blogs for a client/week."""
+    blogs_dir = client_config.get_output_dir(client_id) / "blogs"
+    if not blogs_dir.exists():
+        return jsonify({"blogs": []})
+
+    blogs = []
+    for f in sorted(blogs_dir.glob("*.md")):
+        text = f.read_text(encoding="utf-8")
+        # Parse frontmatter
+        if text.startswith("---"):
+            parts = text.split("---", 2)
+            if len(parts) >= 3:
+                import yaml
+                try:
+                    meta = {}
+                    for line in parts[1].strip().split("\n"):
+                        if ":" in line:
+                            k, v = line.split(":", 1)
+                            meta[k.strip()] = v.strip().strip('"')
+                    if meta.get("week_of") == week_of or not week_of:
+                        meta["slug"] = f.stem
+                        meta["body_preview"] = parts[2][:200].strip()
+                        blogs.append(meta)
+                except Exception:
+                    pass
+    return jsonify({"blogs": blogs})
+
+
+# ── Client Settings API ─────────────────────────────────────────────────────
+
+@app.route("/api/client-settings", methods=["GET"])
+def api_get_settings():
+    """Get client settings from Baserow."""
+    try:
+        import baserow_client
+        settings = baserow_client.get_client_settings(_active_client)
+        return jsonify({"ok": True, "settings": settings})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/api/client-settings", methods=["POST"])
+def api_save_settings():
+    """Save client settings to Baserow."""
+    data = request.get_json(force=True)
+    try:
+        import baserow_client
+        row_id = baserow_client.save_client_settings(_active_client, data)
+        return jsonify({"ok": True, "row_id": row_id})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/style-samples", methods=["POST"])
+def api_generate_style_samples():
+    """Generate 4 style sample images for the client using nano_banana.py.
+
+    Runs image generation for the first 4 style presets in a background thread.
+    Returns a job_id immediately; poll /api/job-status/<job_id> for progress.
+    After all images are generated, saves style preferences to Baserow.
+    """
+    import client_config as cc
+
+    config = cc.load_config(_active_client)
+    style_presets = config.get("image", {}).get("style_presets", {})
+    if not style_presets:
+        return jsonify({"ok": False, "error": "No style_presets defined in client config"}), 400
+
+    # Take the first 4 style presets
+    styles = list(style_presets.keys())[:4]
+    display_name = config.get("display_name", "Brand")
+    mascot_desc = config.get("brand", {}).get("mascot_description", "brand mascot")
+    sample_prompt = f"Professional branded image showing the {display_name} concept, featuring {mascot_desc}"
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {
+            "status": "running",
+            "completed": 0,
+            "total": len(styles),
+            "results": [],
+            "error": None,
+        }
+
+    def _run():
+        import subprocess as _sp
+        results = []
+        output_dir = cc.get_output_dir(_active_client) / "images" / "style-samples"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        for i, style_name in enumerate(styles):
+            output_path = str(output_dir / f"{_active_client}_{style_name}_sample.png")
+            cmd = [
+                sys.executable, str(PROJECT_ROOT / "scripts" / "nano_banana.py"),
+                "--prompt", sample_prompt,
+                "--style", style_name,
+                "--output", output_path,
+                "--client", _active_client,
+            ]
+            try:
+                result = _sp.run(cmd, capture_output=True, text=True, timeout=300)
+                if result.returncode != 0:
+                    error_msg = result.stderr.strip() or f"nano_banana.py exited with code {result.returncode}"
+                    results.append({"style": style_name, "ok": False, "error": error_msg})
+                else:
+                    image_url = ""
+                    # Upload to R2 if configured
+                    try:
+                        import r2_uploader
+                        if r2_uploader.is_configured():
+                            r2_key = r2_uploader.make_key(_active_client, f"style-samples/{_active_client}_{style_name}_sample.png")
+                            image_url = r2_uploader.upload_file(output_path, r2_key) or ""
+                    except Exception as r2_err:
+                        print(f"Warning: R2 upload failed for style {style_name}: {r2_err}")
+
+                    # Save to Baserow
+                    try:
+                        import baserow_client
+                        baserow_client.save_style_preference(
+                            _active_client, style_name, image_url, sample_prompt
+                        )
+                    except Exception as br_err:
+                        print(f"Warning: Baserow save failed for style {style_name}: {br_err}")
+
+                    results.append({
+                        "style": style_name,
+                        "ok": True,
+                        "image_url": image_url,
+                        "local_path": output_path,
+                    })
+            except _sp.TimeoutExpired:
+                results.append({"style": style_name, "ok": False, "error": "Image generation timed out"})
+            except Exception as e:
+                results.append({"style": style_name, "ok": False, "error": str(e)})
+
+            with _jobs_lock:
+                _jobs[job_id]["completed"] = i + 1
+                _jobs[job_id]["results"] = list(results)
+
+        # Mark job as done
+        all_ok = all(r.get("ok") for r in results)
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "done" if all_ok else "partial"
+            _jobs[job_id]["results"] = results
+            _jobs[job_id]["error"] = None if all_ok else "Some style samples failed to generate"
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"ok": True, "job_id": job_id})
+
+
+@app.route("/api/select-style", methods=["POST"])
+def api_select_style():
+    """Select a style preference."""
+    data = request.get_json(force=True)
+    style_id = int(data.get("style_id", 0))
+    try:
+        import baserow_client
+        baserow_client.select_style(_active_client, style_id)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/api/job-status/<job_id>")

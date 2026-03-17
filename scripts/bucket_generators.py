@@ -29,39 +29,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from utils import call_gemini as _call_gemini, extract_json_from_llm as _extract_json
+
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
-
-def _call_gemini(prompt: str, client_id: str = None) -> str:
-    """Call Gemini and return text. Raises on failure."""
-    import client_config
-    from client_config import get_api_key
-    api_key = get_api_key(client_id or "bobe", "gemini")
-    if not api_key:
-        raise ValueError("GOOGLE_AI_API_KEY not set.")
-    try:
-        from google import genai
-        gc = genai.Client(api_key=api_key)
-        resp = gc.models.generate_content(model="gemini-2.0-flash", contents=prompt)
-        return resp.text
-    except ImportError:
-        import google.generativeai as genai2
-        genai2.configure(api_key=api_key)
-        m = genai2.GenerativeModel("gemini-2.0-flash")
-        return m.generate_content(prompt).text
-
-
-def _extract_json(text: str):
-    """Extract first JSON array or object from text."""
-    match = re.search(r"```(?:json)?\s*([\[\{][\s\S]*?[\]\}])\s*```", text)
-    if match:
-        return json.loads(match.group(1))
-    match = re.search(r"([\[\{][\s\S]*[\]\}])", text)
-    if match:
-        return json.loads(match.group(1))
-    raise ValueError(f"No valid JSON in response:\n{text[:300]}")
 
 
 def _build_day_dates(week_of: str) -> dict:
@@ -743,8 +713,38 @@ def generate_bucket(bucket_type: str, config: dict, week_of: str, day_dates: dic
     elif bucket_type == "education":
         return generate_education_topics(config, week_of, day_dates, mock)
     elif bucket_type == "announcements":
-        text = client_inputs.get("announcements", {}).get("text", "")
-        return generate_announcement_placeholders(config, week_of, day_dates, text, mock)
+        # Support both single-input mode (list of texts) and legacy mode (single text)
+        ann_data = client_inputs.get("announcements", {})
+        if isinstance(ann_data, dict) and "texts" in ann_data:
+            # New mode: list of individual announcement texts, 1 topic per text
+            texts = ann_data["texts"]
+            all_topics = []
+            for i, txt in enumerate(texts[:7]):
+                topics = generate_announcement_placeholders(
+                    config, week_of, day_dates, txt, mock, count=1
+                )
+                if topics:
+                    t = topics[0]
+                    t["topic_num"] = i + 1
+                    t["day"] = DAYS[i]
+                    t["date"] = day_dates[DAYS[i]]
+                    all_topics.append(t)
+            # Fill remaining slots with placeholders
+            for j in range(len(all_topics), 7):
+                all_topics.append({
+                    "bucket": "announcements",
+                    "topic_num": j + 1,
+                    "day": DAYS[j],
+                    "date": day_dates[DAYS[j]],
+                    "topic": "[Announcement — Awaiting client input]",
+                    "angle": "Announcement",
+                    "source": "Pending",
+                    "status": "Pending Input",
+                })
+            return all_topics
+        else:
+            text = ann_data.get("text", "") if isinstance(ann_data, dict) else ""
+            return generate_announcement_placeholders(config, week_of, day_dates, text, mock)
     elif bucket_type == "social_proof":
         text = client_inputs.get("social_proof", {}).get("text", "")
         return generate_social_proof_topics(config, week_of, day_dates, text, mock)

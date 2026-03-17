@@ -132,19 +132,21 @@ Each week creates a new table (`Week-YYYY-MM-DD`) with these fields:
 | Field | Description |
 |---|---|
 | Date | Post date (YYYY-MM-DD) |
+| Bucket | Content bucket (Trending, Education, Announcements) |
 | Day | Day of week (Mon, Tue, etc.) |
 | Topic | The content topic |
 | Platform | Twitter or Telegram |
 | Format | thread, single, or post |
 | Content | Full English content |
 | Image_Prompt | Prompt used to generate the image |
-| Image_Path | Local file path to the generated image |
+| Image_URL_EN | Public R2 URL for English image |
 | Hashtags | English hashtags |
 | Content_RU | Full Russian content |
 | Image_Prompt_RU | Russian image prompt |
-| Image_Path_RU | Local path to Russian image |
+| Image_URL_RU | Public R2 URL for Russian image |
 | Hashtags_RU | Russian hashtags |
-| Status | Draft / Approved / Scheduled |
+| Status | Draft / Approved / Published |
+| Tweet_URL | Published tweet URL(s) |
 | Week | Week start date |
 | Client | Client ID |
 
@@ -152,48 +154,39 @@ Each week creates a new table (`Week-YYYY-MM-DD`) with these fields:
 
 ## Enabling Inline Image Previews
 
-By default, image fields are stored as plain text file paths. To make images appear inline as viewable thumbnails in Airtable:
+Images are stored in Cloudflare R2 (S3-compatible, zero egress fees) and referenced by public URL in Airtable's `Image_URL_EN` and `Image_URL_RU` fields.
 
-**Step 1: Deploy your content dashboard**
+**Step 1: Set up Cloudflare R2**
 
-Run the deploy command to publish your images to GitHub Pages:
+Follow the R2 setup instructions in `reference/api-setup.md` (Cloudflare R2 section). You need:
+- An R2 bucket with public access enabled
+- R2 credentials in `.env`
 
-```bash
-# In Claude Code
-/deploy
-```
+**Step 2: Add the R2 public URL to your client config**
 
-This publishes your generated images to: `https://rtadik.github.io/bobe-content-dashboard`
-
-**Step 2: Add the deployed URL to your client config**
-
-Open `clients/{client_id}/config.json` and set `airtable.images_base_url`:
+Open `clients/{client_id}/config.json` and set both `r2` and `airtable.images_base_url`:
 
 ```json
+"r2": {
+  "enabled": true,
+  "bucket_name": "your-bucket-name",
+  "public_url": "https://pub-XXXX.r2.dev"
+},
 "airtable": {
   "enabled": true,
   "base_id": "appXXXXXXXXXX",
   "api_key_env": "AIRTABLE_API_KEY",
-  "images_base_url": "https://rtadik.github.io/bobe-content-dashboard"
+  "images_base_url": "https://pub-XXXX.r2.dev"
 }
 ```
 
 > **BoBe note:** This is already configured. No action needed for BoBe.
 
-**Step 3: Sync again**
+**Step 3: Run the pipeline**
 
-The next `/weekly-pipeline` run will automatically attach images. Or manually re-sync:
+The pipeline automatically uploads images to R2 and writes the public URLs to Airtable. Images appear as inline thumbnails in Airtable's gallery view.
 
-```bash
-source venv/bin/activate
-python scripts/airtable_sync.py --week-of YYYY-MM-DD
-```
-
-Images will now appear as inline thumbnails in Airtable's gallery view.
-
-> **Note:** Images must be deployed before syncing. The Airtable attachment URL points to GitHub Pages — if the image is not yet deployed, the attachment will show a broken link. Always run `/deploy` before syncing when you want inline images.
-
-> **Text-only mode:** Run with `--skip-images` to push content without attaching images (useful for reviewing copy before images are finalized).
+> **Text-only mode:** Run with `--skip-images` to push content without generating images (useful for reviewing copy before images are finalized).
 
 ---
 

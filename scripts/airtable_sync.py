@@ -4,7 +4,7 @@ Airtable Sync
 
 Pushes weekly content from the local Excel workbook to the client's Airtable base.
 Each week gets its own Airtable table: "Week-YYYY-MM-DD".
-Records map 1:1 to Excel rows (15 content fields + Week + Client = 17 fields total).
+Records map 1:1 to Excel rows (16 content fields + Week + Client = 18 fields total).
 
 Image attachments: Airtable's API accepts images via public URLs (not local file upload).
 Images must be deployed to a public host (e.g. Cloudflare Pages via /deploy) first.
@@ -56,13 +56,15 @@ AIRTABLE_META_BASE = "https://api.airtable.com/v0/meta/bases"
 # Airtable batch limit: max 10 records per POST/PATCH
 BATCH_SIZE = 10
 
-# Fields that hold images — stored as multipleAttachments when images_base_url is set,
+# Fields that hold images — stored as url when images_base_url is set,
 # or as singleLineText (path strings) when it is not.
-ATTACHMENT_FIELD_EN = "Image_Path"
-ATTACHMENT_FIELD_RU = "Image_Path_RU"
+# Must match airtable_writer.py schema (Image_URL_EN / Image_URL_RU).
+ATTACHMENT_FIELD_EN = "Image_URL_EN"
+ATTACHMENT_FIELD_RU = "Image_URL_RU"
 
-# Excel column index → Airtable field name (1-based, 15-column workbook schema)
+# Excel column index → Airtable field name (1-based, 16-column workbook schema)
 # Column B (index 2) is now "Bucket" — all subsequent columns shifted +1 vs old schema
+# Image fields are renamed to Image_URL_EN / Image_URL_RU to match airtable_writer.py
 COLUMN_MAP = {
     1: "Date",
     2: "Bucket",
@@ -72,11 +74,11 @@ COLUMN_MAP = {
     6: "Format",
     7: "Content",
     8: "Image_Prompt",
-    9: "Image_Path",
+    9: "Image_URL_EN",
     10: "Hashtags",
     11: "Content_RU",
     12: "Image_Prompt_RU",
-    13: "Image_Path_RU",
+    13: "Image_URL_RU",
     14: "Hashtags_RU",
     15: "Status",
     16: "Tweet_URL",
@@ -89,10 +91,11 @@ EXPECTED_HEADERS = {v: k for k, v in COLUMN_MAP.items()}
 def build_table_fields(use_attachments: bool) -> list:
     """
     Return the TABLE_FIELDS list for table creation.
-    Image fields are multipleAttachments when images_base_url is configured,
+    Must match airtable_writer.py schema (18 fields).
+    Image fields are url type when images_base_url is configured,
     singleLineText otherwise.
     """
-    image_type = "multipleAttachments" if use_attachments else "singleLineText"
+    image_type = "url" if use_attachments else "singleLineText"
     return [
         {"name": "Date", "type": "singleLineText"},
         {"name": "Bucket", "type": "singleLineText"},
@@ -102,13 +105,14 @@ def build_table_fields(use_attachments: bool) -> list:
         {"name": "Format", "type": "singleLineText"},
         {"name": "Content", "type": "multilineText"},
         {"name": "Image_Prompt", "type": "multilineText"},
-        {"name": "Image_Path", "type": image_type},
+        {"name": "Image_URL_EN", "type": image_type},
         {"name": "Hashtags", "type": "singleLineText"},
         {"name": "Content_RU", "type": "multilineText"},
         {"name": "Image_Prompt_RU", "type": "multilineText"},
-        {"name": "Image_Path_RU", "type": image_type},
+        {"name": "Image_URL_RU", "type": image_type},
         {"name": "Hashtags_RU", "type": "singleLineText"},
         {"name": "Status", "type": "singleLineText"},
+        {"name": "Tweet_URL", "type": "singleLineText"},
         {"name": "Week", "type": "singleLineText"},
         {"name": "Client", "type": "singleLineText"},
     ]
@@ -282,23 +286,19 @@ def build_record_fields(row: dict, images_base_url: str, skip_images: bool) -> d
     Build the Airtable fields dict for one row.
 
     When images_base_url is set and skip_images is False:
-      - Image_Path and Image_Path_RU become multipleAttachments arrays with {url, filename}
+      - Image_URL_EN and Image_URL_RU are stored as public URLs
     Otherwise:
-      - Image_Path and Image_Path_RU remain plain text strings
+      - Image_URL_EN and Image_URL_RU remain plain text strings (local paths)
     """
     fields = {}
-    use_attachments = bool(images_base_url) and not skip_images
+    use_urls = bool(images_base_url) and not skip_images
 
     for field_name, value in row.items():
         if field_name in (ATTACHMENT_FIELD_EN, ATTACHMENT_FIELD_RU):
-            if use_attachments:
+            if use_urls:
                 url = image_path_to_url(value, images_base_url)
-                if url:
-                    filename = Path(value).name if value else "image.png"
-                    fields[field_name] = [{"url": url, "filename": filename}]
-                # If no URL, omit the field entirely (leave attachment empty)
+                fields[field_name] = url or ""
             else:
-                # Store as plain text path
                 fields[field_name] = value
         else:
             fields[field_name] = value
@@ -317,7 +317,7 @@ def push_records(base_id: str, table_id: str, rows: list, headers: dict,
     if mock:
         print(f"  [MOCK] Would push {len(rows)} records (images: {'as attachments' if use_attachments else 'as text'})")
         for i, row in enumerate(rows[:3], 1):
-            en_url = image_path_to_url(row.get("Image_Path", ""), images_base_url) if use_attachments else None
+            en_url = image_path_to_url(row.get("Image_URL_EN", ""), images_base_url) if use_attachments else None
             print(f"    Record {i}: {row.get('Date', '?')} | {row.get('Platform', '?')} | {row.get('Topic', '?')[:40]}")
             if en_url:
                 print(f"      EN image: {en_url}")
@@ -426,8 +426,8 @@ def main():
     # Count how many images we'll attach
     use_attachments = bool(images_base_url) and not args.skip_images
     if use_attachments:
-        en_count = sum(1 for r in rows if image_path_to_url(r.get("Image_Path", ""), images_base_url))
-        ru_count = sum(1 for r in rows if image_path_to_url(r.get("Image_Path_RU", ""), images_base_url))
+        en_count = sum(1 for r in rows if image_path_to_url(r.get("Image_URL_EN", ""), images_base_url))
+        ru_count = sum(1 for r in rows if image_path_to_url(r.get("Image_URL_RU", ""), images_base_url))
         print(f"  Will attach: {en_count} EN images + {ru_count} RU images")
 
     # Get or create the Airtable table

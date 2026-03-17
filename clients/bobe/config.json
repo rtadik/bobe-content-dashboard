@@ -134,12 +134,12 @@
     "enabled": true,
     "base_id": "appikOGb5GyhPqoCd",
     "api_key_env": "AIRTABLE_API_KEY",
-    "images_base_url": "https://pub-REPLACE_WITH_ACTUAL.r2.dev"
+    "images_base_url": "https://pub-afa75fbdf1cc4d43ac9fbe9f1eac5f5b.r2.dev"
   },
   "r2": {
     "enabled": true,
     "bucket_name": "bobe-content-images",
-    "public_url": "https://pub-REPLACE_WITH_ACTUAL.r2.dev"
+    "public_url": "https://pub-afa75fbdf1cc4d43ac9fbe9f1eac5f5b.r2.dev"
   },
   "x_publishing": {
     "enabled": false,

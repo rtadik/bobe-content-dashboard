@@ -685,7 +685,7 @@ jobs:
         with:
           name: initial-pipeline-${{ needs.onboard.outputs.client_id }}-${{ github.run_id }}
           path: outputs/content/${{ needs.onboard.outputs.client_id }}/
-          retention-days: 1
+          retention-days: 7
           if-no-files-found: warn
 
       - name: Upload Excel workbook as artifact
@@ -797,3 +797,13 @@ jobs:
           git commit -m "Deploy after auto-onboard: ${{ steps.parse.outputs.client_id }} $(date +%Y-%m-%d)"
           git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/rtadik/bobe-content-dashboard.git HEAD:gh-pages
           cd ..
+
+      - name: Health check deployed site
+        run: |
+          sleep 30
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://content.rejiglabs.com/ || echo "000")
+          if [ "$STATUS" = "200" ]; then
+            echo "Health check passed (HTTP $STATUS)"
+          else
+            echo "::warning::Health check returned HTTP $STATUS — site may not be fully propagated yet"
+          fi

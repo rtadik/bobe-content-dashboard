@@ -53,6 +53,7 @@ This file is the single source of truth for how Claude should understand and ope
 │   └── skills/
 │       ├── content-generator/    # Twitter/Telegram copy generation (client-aware)
 │       ├── image-generator/      # Branded image generation (client-aware)
+│       ├── blog-writer/          # Blog post generation from social content (+ /humanizer)
 │       ├── skill-creator/        # Create new Claude skills
 │       └── mcp-integration/      # MCP server integration guidance
 ├── admin/
@@ -182,6 +183,10 @@ This workspace supports multiple clients via a config-driven architecture:
 - **Onboarding**: Use `/onboard-client` to create a new client from `clients/_template/` (full Q&A + auto-draft)
 - **Switching**: Use `/switch-client` to change the active client
 - **Airtable delivery**: Opt-in per client — set `airtable.enabled: true` and `airtable.base_id` in `config.json`, add `AIRTABLE_API_KEY` to `.env`. See `reference/airtable-client-setup.md` for full setup guide.
+- **Baserow client state**: API keys, content approvals, and image style preferences are stored in Baserow tables. Run `python scripts/baserow_client.py --setup` to create tables. API key resolution: Baserow → config.json → env var fallback chain.
+- **Approval workflow**: Content generates first (content-only mode). Client approves or regenerates content before images generate. Image approval unlocks translation. All state tracked in Baserow `Content_Approvals` table.
+- **Settings page**: Each client dashboard has a `settings.html` page for API key management, brand customization, and image style selection. First-login wizard prompts for required API keys.
+- **Blog generation**: "Blog+" button on approved posts generates 800-1500 word blog via `blog_generator.py` with /humanizer post-processing. Blogs saved as markdown in `outputs/content/{client_id}/blogs/`.
 
 ---
 
@@ -203,7 +208,9 @@ This workspace supports multiple clients via a config-driven architecture:
 | `r2_uploader.py` | Cloudflare R2 image upload module (S3-compatible, boto3) | Import only: `upload_bytes()`, `upload_file()`, `make_key()`, `is_configured()`; CLI `--test` mode |
 | `x_publisher.py` | Publish Twitter thread to X via OAuth 1.0a; updates Excel Status + Tweet_URL cols | `--client`, `--week-of`, `--topic-index`, `--mock` |
 | `web_viewer.py` | Flask dashboard server with EN/RU toggle and bucket tabs | Runs on localhost:5001, `--client`; `/api/generate-announcement`, `/api/publish-to-x` endpoints |
-| `build_static.py` | Static site builder with EN/RU toggle, bucket tabs, admin panel | `--output`, `--date`, `--include-admin`, `--client` |
+| `baserow_client.py` | Baserow REST API client for client settings, approvals, style prefs | `--setup`, `--test`, `--client` |
+| `blog_generator.py` | Blog post generator from social content (Gemini + humanizer) | `--client`, `--topic`, `--source-content`, `--platform`, `--bucket`, `--mock` |
+| `build_static.py` | Static site builder with EN/RU toggle, bucket tabs, settings page, admin panel | `--output`, `--date`, `--include-admin`, `--client` |
 
 ---
 
@@ -222,7 +229,7 @@ This workspace supports multiple clients via a config-driven architecture:
 - Image styles: Pain Point → minimal, Education → tech, Announcement → notification
 - Images: 42 total — 21 EN via GPT-Image-1.5 (`nano_banana.py`) + 21 RU via Seedream 4.5 (`wavespeed_img.py`)
 - RU image naming: append `_ru` before `.png` (e.g., `topic_slug_twitter_ru.png`)
-- **Announcement flow**: Dashboard Announcements tab shows a textarea. Client types update → submits → Flask `/api/generate-announcement` (local) or `generate-announcement.yml` (live) generates 7 angles and rebuilds workbook/site
+- **Announcement flow**: Dedicated "Announcements" header tab (separate from week tabs) aggregates all announcements across weeks. Supports multiple announcements per week (stored as array in `bucket-inputs.json`). Client submits text → `generate-announcement.yml` (live) or Flask `/api/generate-announcement` (local) generates 7 angles per announcement. Weekly pages show only Trending + Education bucket tabs (announcements are not shown on weekly pages).
 - **Bucket config**: Each client's `config.json` has `content.content_types` (array of 3 type IDs) and `content.bucket_size` (default 7)
 - **`belief-journey.md`**: Auto-generated at onboarding from intake data by reading ICP/pain points/product; maps 7 buyer belief stages from awareness to action readiness
 
@@ -234,6 +241,7 @@ This workspace supports multiple clients via a config-driven architecture:
 |-------|---------|
 | `content-generator` | Generate Twitter/Telegram copy from topics, using active client's tone and config |
 | `image-generator` | Create branded images using WaveSpeed APIs + client's mascot/brand config |
+| `blog-writer` | Generate blog posts from approved social content, with mandatory /humanizer post-processing |
 | `skill-creator` | Create new Claude skills |
 | `mcp-integration` | Integrate MCP servers into Claude workflows |
 
@@ -249,6 +257,7 @@ This workspace supports multiple clients via a config-driven architecture:
 | Airtable | `AIRTABLE_API_KEY` | Primary content store — written inline per item (optional, per client) |
 | Cloudflare R2 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL` | Image cloud storage (S3-compatible, 10GB free, zero egress). See `reference/r2-setup.md` |
 | X (Twitter) | `{CLIENT_ID_UPPER}_X_API_KEY`, `_X_API_SECRET`, `_X_ACCESS_TOKEN`, `_X_ACCESS_TOKEN_SECRET` | Direct publishing to X (optional, per client). See `reference/x-api-setup.md` |
+| Baserow | `BASEROW_API_TOKEN`, `BASEROW_DATABASE_ID`, `BASEROW_TABLE_CLIENT_SETTINGS`, `BASEROW_TABLE_CONTENT_APPROVALS`, `BASEROW_TABLE_IMAGE_STYLE_PREFS` | Client state store (API keys, approvals, style preferences). Run `python scripts/baserow_client.py --setup` to create tables. |
 | EmailJS | `intake/intake-config.js` | Credential email delivery from intake form (not an env var — stored in gitignored JS file) |
 
 Store in `.env` (never commit). See `reference/api-setup.md` for setup.
@@ -318,6 +327,9 @@ Implemented plans are archived in `plans/implemented/`. Active (pending) plans l
 | `2026-02-24-scalability-saas-plan.md` | Per-client API key isolation (`get_api_key()` in client_config.py), deployment serialization (concurrency groups in workflows, split generate/deploy jobs), per-client login pages, Cloudflare Worker proxy for regen buttons. |
 | Logo fix + client logo upload | Strengthened EN image prompts to enforce logo fidelity. Added `logo_url` field to intake form + auto-onboard workflow (downloads logo to brand/ on onboarding). `nano_banana.py` falls back to `logo_url` if local file missing. |
 | `2026-03-13-system-reliability-improvements.md` | System-wide reliability, performance, and security hardening: shared utils.py, parallel image gen (ThreadPoolExecutor), Airtable schema fix, active client validation, Excel header validation, workflow error handling (set -euo pipefail), R2 upload retry, Cyrillic validation, admin XSS fix, configurable REPO/CNAME, structured logging |
+
+| `2026-03-13-self-service-saas-platform.md` | Self-service SaaS platform: client settings panel (API keys in Baserow), first-login wizard, image style selection (4 variants), approval workflow (content → image → translate gates), announcements rework (1 per input), blog-writer skill with /humanizer, blog generator script, blogs tab on dashboard |
+| `2026-03-14-announcement-redesign.md` | Announcements redesign: dedicated header tab (before week tabs), aggregated announcements.html page, multiple announcements per week (array in bucket-inputs.json), loading states on cards, fixed generate button dispatch (correct workflow URL + inputs), removed announcements from weekly bucket tabs |
 
 ### Pending (active plans in `plans/`)
 

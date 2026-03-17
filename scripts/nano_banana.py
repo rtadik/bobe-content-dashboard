@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import client_config
 from client_config import get_api_key
+from utils import topic_slug as _topic_slug
 
 try:
     import r2_uploader
@@ -131,7 +132,7 @@ def build_prompt(
         )
         ref_block = f"""=== REFERENCE IMAGE INSTRUCTIONS (MANDATORY) ===
 You have been given {len(ref_images)} reference image(s). Follow these exactly:
-- Reference Image 1: This is the real {display_name} logo. You MUST copy it with 100% fidelity. DO NOT redesign it, recreate it from text, or invent a new logo. Place it in the top-left corner exactly as it appears in the reference.{mascot_ref_note}
+- Reference Image 1: This is the real {display_name} logo. You MUST copy it with 100% fidelity. DO NOT redesign it, recreate it from text, or invent a new logo. Place it in the top-left area with generous padding (at least 5% from the top and left edges so it is never clipped or cut off).{mascot_ref_note}
 
 Ignoring these reference images is not acceptable. The logo and mascot must match the references precisely.
 =================================================
@@ -141,7 +142,7 @@ Ignoring these reference images is not acceptable. The logo and mascot must matc
         ref_block = ""
 
     prompt = f"""{ref_block}Generate a new high-quality 16:9 social media banner image with these requirements:
-- LOGO: Copy the exact {display_name} logo from Reference Image 1 — place it top-left. DO NOT invent or redesign the logo.
+- LOGO: Copy the exact {display_name} logo from Reference Image 1 — place it in the top-left area with comfortable padding from the edges (never flush against the border). DO NOT invent or redesign the logo.
 - MASCOT: Replicate the exact character from the reference images ({mascot_desc}). Same face, same proportions, same style.
 - SCENE: {topic}
 - STYLE: {style_desc}
@@ -186,7 +187,7 @@ def _inject_reference_header(prompt: str, ref_count: int, client_id: str = None)
     )
     header = f"""=== MANDATORY REFERENCE INSTRUCTIONS ===
 You have {ref_count} reference image(s). You MUST follow these:
-- Reference Image 1: The REAL {display_name} logo. Copy it with 100% fidelity into the top-left corner. DO NOT redesign, reinvent, or create a new logo from text. Use ONLY what is shown in the reference.{mascot_note}
+- Reference Image 1: The REAL {display_name} logo. Copy it with 100% fidelity into the top-left area with generous padding from edges (at least 5% margin so nothing is clipped). DO NOT redesign, reinvent, or create a new logo from text. Use ONLY what is shown in the reference.{mascot_note}
 =========================================
 
 """
@@ -312,7 +313,7 @@ def generate_for_content(topic: str, content_text: str, date: str, platform: str
 
     prompt = build_prompt(topic=topic, headline=headline, style=style, client_id=client_id)
     output_dir = client_config.get_output_dir(client_id)
-    topic_slug = topic.lower().replace(" ", "_")[:30]
+    topic_slug = _topic_slug(topic)
     filename = f"{date}_{topic_slug}_{platform}.png"
     output_path = output_dir / filename
 
@@ -382,7 +383,7 @@ def main():
         output_path = args.output
     else:
         date_str = datetime.now().strftime("%Y-%m-%d")
-        topic_slug = args.topic.lower().replace(" ", "_")[:30]
+        topic_slug = _topic_slug(args.topic)
         output_path = str(output_dir / f"{date_str}_{topic_slug}.png")
 
     output_dir.mkdir(parents=True, exist_ok=True)
