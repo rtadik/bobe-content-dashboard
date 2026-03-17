@@ -16,6 +16,8 @@ outputs/content/images/
 outputs/content/*.json
 dist/
 .active-client
+.wrangler/
+outputs/pipeline-status.json
 
 # Intake JSONs (may contain client PII + plaintext passwords)
 clients/intake/*.json

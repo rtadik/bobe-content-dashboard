@@ -92,17 +92,28 @@ def build_table_fields(use_attachments: bool) -> list:
     """
     Return the TABLE_FIELDS list for table creation.
     Must match airtable_writer.py schema (18 fields).
-    Image fields are url type when images_base_url is configured,
-    singleLineText otherwise.
+    Image fields use multipleAttachments when images_base_url is configured,
+    singleLineText otherwise. Status and Bucket use singleSelect for dropdowns.
     """
-    image_type = "url" if use_attachments else "singleLineText"
+    image_type = "multipleAttachments" if use_attachments else "singleLineText"
     return [
         {"name": "Date", "type": "singleLineText"},
-        {"name": "Bucket", "type": "singleLineText"},
+        {"name": "Bucket", "type": "singleSelect", "options": {"choices": [
+            {"name": "Trending",      "color": "cyanLight2"},
+            {"name": "Education",     "color": "purpleLight2"},
+            {"name": "Announcements", "color": "orangeLight2"},
+        ]}},
         {"name": "Day", "type": "singleLineText"},
         {"name": "Topic", "type": "multilineText"},
-        {"name": "Platform", "type": "singleLineText"},
-        {"name": "Format", "type": "singleLineText"},
+        {"name": "Platform", "type": "singleSelect", "options": {"choices": [
+            {"name": "Twitter",  "color": "blueLight2"},
+            {"name": "Telegram", "color": "tealLight2"},
+        ]}},
+        {"name": "Format", "type": "singleSelect", "options": {"choices": [
+            {"name": "thread",  "color": "purpleLight2"},
+            {"name": "single",  "color": "greenLight2"},
+            {"name": "post",    "color": "orangeLight2"},
+        ]}},
         {"name": "Content", "type": "multilineText"},
         {"name": "Image_Prompt", "type": "multilineText"},
         {"name": "Image_URL_EN", "type": image_type},
@@ -111,7 +122,13 @@ def build_table_fields(use_attachments: bool) -> list:
         {"name": "Image_Prompt_RU", "type": "multilineText"},
         {"name": "Image_URL_RU", "type": image_type},
         {"name": "Hashtags_RU", "type": "singleLineText"},
-        {"name": "Status", "type": "singleLineText"},
+        {"name": "Status", "type": "singleSelect", "options": {"choices": [
+            {"name": "Draft",         "color": "yellowLight2"},
+            {"name": "Approved",      "color": "greenLight2"},
+            {"name": "Published",     "color": "blueLight2"},
+            {"name": "Rejected",      "color": "redLight2"},
+            {"name": "Pending Input", "color": "grayLight2"},
+        ]}},
         {"name": "Tweet_URL", "type": "singleLineText"},
         {"name": "Week", "type": "singleLineText"},
         {"name": "Client", "type": "singleLineText"},
@@ -286,9 +303,10 @@ def build_record_fields(row: dict, images_base_url: str, skip_images: bool) -> d
     Build the Airtable fields dict for one row.
 
     When images_base_url is set and skip_images is False:
-      - Image_URL_EN and Image_URL_RU are stored as public URLs
+      - Image_URL_EN and Image_URL_RU are stored as multipleAttachments [{url: ...}]
     Otherwise:
       - Image_URL_EN and Image_URL_RU remain plain text strings (local paths)
+    Status and Bucket use singleSelect format {name: ...}.
     """
     fields = {}
     use_urls = bool(images_base_url) and not skip_images
@@ -297,12 +315,27 @@ def build_record_fields(row: dict, images_base_url: str, skip_images: bool) -> d
         if field_name in (ATTACHMENT_FIELD_EN, ATTACHMENT_FIELD_RU):
             if use_urls:
                 url = image_path_to_url(value, images_base_url)
-                fields[field_name] = url or ""
+                fields[field_name] = [{"url": url}] if url else None
             else:
                 fields[field_name] = value
+        elif field_name == "Bucket" and value:
+            # Capitalize to match singleSelect choice names (plain string for writes)
+            bucket_val = value.strip().capitalize()
+            if bucket_val.lower() == "announcements":
+                bucket_val = "Announcements"
+            fields[field_name] = bucket_val
+        elif field_name == "Status" and value:
+            fields[field_name] = value.strip()
+        elif field_name == "Platform" and value:
+            # Capitalize to match singleSelect choice names
+            fields[field_name] = value.strip().capitalize()
+        elif field_name == "Format" and value:
+            fields[field_name] = value.strip().lower()
         else:
             fields[field_name] = value
 
+    # Remove None values
+    fields = {k: v for k, v in fields.items() if v is not None}
     return fields
 
 

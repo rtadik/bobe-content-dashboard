@@ -4573,6 +4573,30 @@ def index():
     )
 
 
+# ── Pipeline Status Monitor ────────────────────────────────────────────────────
+
+ADMIN_DIR = PROJECT_ROOT / "admin"
+
+@app.route("/pipeline-status")
+def pipeline_status_page():
+    return send_from_directory(str(ADMIN_DIR), "pipeline-status.html")
+
+@app.route("/pipeline-status.css")
+def pipeline_status_css():
+    return send_from_directory(str(ADMIN_DIR), "pipeline-status.css")
+
+@app.route("/pipeline-status.js")
+def pipeline_status_js():
+    return send_from_directory(str(ADMIN_DIR), "pipeline-status.js")
+
+@app.route("/api/pipeline-status")
+def pipeline_status_data():
+    status_file = PROJECT_ROOT / "outputs" / "pipeline-status.json"
+    if status_file.exists():
+        return send_from_directory(str(status_file.parent), status_file.name, mimetype="application/json")
+    return jsonify({"runs": []})
+
+
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

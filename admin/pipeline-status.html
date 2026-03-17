@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pipeline Monitor</title>
+  <link rel="stylesheet" href="pipeline-status.css">
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <h1>Pipeline Monitor</h1>
+      <span class="header-subtitle">Real-time pipeline execution tracker</span>
+    </div>
+    <div class="header-right">
+      <div class="live-indicator" id="live-indicator">
+        <span class="live-dot"></span>
+        <span>LIVE</span>
+      </div>
+      <div class="last-updated" id="last-updated">Last refresh: --:--:--</div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <main>
+      <!-- Empty state -->
+      <section class="empty-state" id="empty-state">
+        <div class="empty-icon">&#9881;</div>
+        <h2>No pipeline runs yet</h2>
+        <p>Start a pipeline to see real-time status updates here.</p>
+        <code class="empty-cmd">python scripts/pipeline_runner.py --client bobe</code>
+        <p class="empty-hint">This page checks for new runs every 10 seconds.</p>
+      </section>
+
+      <!-- Run info bar -->
+      <section class="run-info" id="run-info" style="display:none">
+        <div class="run-info-top">
+          <span class="run-badge run-client" id="ri-client"></span>
+          <span class="run-badge run-mode" id="ri-mode"></span>
+          <span class="run-badge" id="ri-week"></span>
+          <span class="run-badge" id="ri-duration"></span>
+          <span class="run-badge" id="ri-progress" style="display:none"></span>
+          <span class="run-status-badge" id="ri-status"></span>
+        </div>
+        <div class="run-error" id="ri-error"></div>
+      </section>
+
+      <!-- Node graph -->
+      <section class="node-graph" id="node-graph" style="display:none"></section>
+
+      <!-- Phase hint -->
+      <p class="phase-hint" id="phase-hint">Click any node above to see details</p>
+
+      <!-- Topic detail panel -->
+      <section class="topic-detail" id="topic-detail" style="display:none">
+        <h2 id="topic-detail-title"></h2>
+        <div class="topic-grid" id="topic-grid"></div>
+      </section>
+    </main>
+
+    <!-- Run history sidebar -->
+    <aside class="run-history" id="run-history-panel">
+      <h2>Run History</h2>
+      <div class="run-list" id="run-list"></div>
+    </aside>
+  </div>
+
+  <script src="pipeline-status.js"></script>
+</body>
+</html>

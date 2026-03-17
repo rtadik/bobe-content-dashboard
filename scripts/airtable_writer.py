@@ -34,6 +34,49 @@ import client_config
 AIRTABLE_BASE_URL = "https://api.airtable.com/v0"
 AIRTABLE_META_URL = "https://api.airtable.com/v0/meta/bases"
 
+# singleSelect choices for structured fields
+STATUS_CHOICES = [
+    {"name": "Draft",         "color": "yellowLight2"},
+    {"name": "Approved",      "color": "greenLight2"},
+    {"name": "Published",     "color": "blueLight2"},
+    {"name": "Rejected",      "color": "redLight2"},
+    {"name": "Pending Input", "color": "grayLight2"},
+]
+BUCKET_CHOICES = [
+    {"name": "Trending",      "color": "cyanLight2"},
+    {"name": "Education",     "color": "purpleLight2"},
+    {"name": "Announcements", "color": "orangeLight2"},
+]
+PLATFORM_CHOICES = [
+    {"name": "Twitter",  "color": "blueLight2"},
+    {"name": "Telegram", "color": "tealLight2"},
+]
+FORMAT_CHOICES = [
+    {"name": "thread",  "color": "purpleLight2"},
+    {"name": "single",  "color": "greenLight2"},
+    {"name": "post",    "color": "orangeLight2"},
+]
+
+
+def _wrap_attachment(url: str):
+    """Wrap a URL string in Airtable multipleAttachments format."""
+    if not url:
+        return None
+    return [{"url": url}]
+
+
+def _extract_attachment_url(value) -> str:
+    """Extract URL from an Airtable attachment field value (list of dicts) or plain string."""
+    if not value:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list) and len(value) > 0:
+        first = value[0]
+        if isinstance(first, dict):
+            return first.get("url", "") or first.get("thumbnails", {}).get("large", {}).get("url", "")
+    return ""
+
 
 def get_api_key(client_id: str = None) -> str:
     """Return the Airtable API key for the given client."""
@@ -65,22 +108,24 @@ def get_or_create_table(base_id: str, week_of: str, api_key: str) -> str:
             return t["id"]
 
     # Create table with the full 18-field schema
+    # Image fields use multipleAttachments so images render inline in Airtable
+    # Status and Bucket use singleSelect for dropdowns and colored labels
     fields = [
         {"name": "Date",           "type": "singleLineText"},
-        {"name": "Bucket",         "type": "singleLineText"},
+        {"name": "Bucket",         "type": "singleSelect", "options": {"choices": BUCKET_CHOICES}},
         {"name": "Day",            "type": "singleLineText"},
         {"name": "Topic",          "type": "singleLineText"},
-        {"name": "Platform",       "type": "singleLineText"},
-        {"name": "Format",         "type": "singleLineText"},
+        {"name": "Platform",       "type": "singleSelect", "options": {"choices": PLATFORM_CHOICES}},
+        {"name": "Format",         "type": "singleSelect", "options": {"choices": FORMAT_CHOICES}},
         {"name": "Content",        "type": "multilineText"},
         {"name": "Image_Prompt",   "type": "multilineText"},
-        {"name": "Image_URL_EN",   "type": "url"},
+        {"name": "Image_URL_EN",   "type": "multipleAttachments"},
         {"name": "Hashtags",       "type": "singleLineText"},
         {"name": "Content_RU",     "type": "multilineText"},
         {"name": "Image_Prompt_RU","type": "multilineText"},
-        {"name": "Image_URL_RU",   "type": "url"},
+        {"name": "Image_URL_RU",   "type": "multipleAttachments"},
         {"name": "Hashtags_RU",    "type": "singleLineText"},
-        {"name": "Status",         "type": "singleLineText"},
+        {"name": "Status",         "type": "singleSelect", "options": {"choices": STATUS_CHOICES}},
         {"name": "Tweet_URL",      "type": "url"},
         {"name": "Week",           "type": "singleLineText"},
         {"name": "Client",         "type": "singleLineText"},
@@ -119,27 +164,33 @@ def write_record(
     if isinstance(hashtags_ru, list):
         hashtags_ru = ", ".join(hashtags_ru)
 
+    # Capitalize bucket name to match singleSelect choices
+    bucket_raw = item.get("bucket", "")
+    bucket_val = bucket_raw.strip().capitalize() if bucket_raw else ""
+    if bucket_val.lower() == "announcements":
+        bucket_val = "Announcements"
+
     fields = {
         "Date":            str(item.get("date", "")),
-        "Bucket":          item.get("bucket", ""),
+        "Bucket":          bucket_val or None,
         "Day":             item.get("day", ""),
         "Topic":           item.get("topic", ""),
         "Platform":        item.get("platform", ""),
         "Format":          item.get("format", ""),
         "Content":         item.get("content", ""),
         "Image_Prompt":    item.get("image_prompt", ""),
-        "Image_URL_EN":    item.get("image_url_en") or None,
+        "Image_URL_EN":    _wrap_attachment(item.get("image_url_en")),
         "Hashtags":        hashtags,
         "Content_RU":      item.get("content_ru", ""),
         "Image_Prompt_RU": item.get("image_prompt_ru", ""),
-        "Image_URL_RU":    item.get("image_url_ru") or None,
+        "Image_URL_RU":    _wrap_attachment(item.get("image_url_ru")),
         "Hashtags_RU":     hashtags_ru,
         "Status":          item.get("status", "Draft"),
         "Tweet_URL":       item.get("tweet_url") or None,
         "Week":            week_of,
         "Client":          client_id,
     }
-    # Remove None values — Airtable rejects null for url-type fields
+    # Remove None values — Airtable rejects null for attachment/url-type fields
     fields = {k: v for k, v in fields.items() if v is not None}
 
     headers = {
@@ -160,12 +211,12 @@ def update_image_urls(
     image_url_ru: str = None,
     api_key: str = "",
 ):
-    """Patch Image_URL_EN and/or Image_URL_RU on an existing record."""
+    """Patch Image_URL_EN and/or Image_URL_RU on an existing record (attachment format)."""
     fields = {}
     if image_url_en:
-        fields["Image_URL_EN"] = image_url_en
+        fields["Image_URL_EN"] = _wrap_attachment(image_url_en)
     if image_url_ru:
-        fields["Image_URL_RU"] = image_url_ru
+        fields["Image_URL_RU"] = _wrap_attachment(image_url_ru)
     if not fields:
         return
 
@@ -271,29 +322,41 @@ def records_to_topics(records: list) -> list:
         content_ru = f.get("Content_RU", "")
         hashtags = f.get("Hashtags", "")
         hashtags_ru = f.get("Hashtags_RU", "")
+        # Extract image URLs from attachment objects or plain strings
+        image_en_raw = f.get("Image_URL_EN", "")
+        image_ru_raw = f.get("Image_URL_RU", "")
+        image_en = _extract_attachment_url(image_en_raw)
+        image_ru = _extract_attachment_url(image_ru_raw)
+        # Extract singleSelect values (may be dict with "name" key or plain string)
+        bucket_raw = f.get("Bucket") or "trending"
+        if isinstance(bucket_raw, dict):
+            bucket_raw = bucket_raw.get("name", "trending")
+        status_raw = f.get("Status", "Draft")
+        if isinstance(status_raw, dict):
+            status_raw = status_raw.get("name", "Draft")
 
         if topic_name not in topics:
             topics[topic_name] = {
                 "topic":          topic_name,
                 "date":           str(f.get("Date", "")),
                 "day":            f.get("Day", ""),
-                "bucket":         (f.get("Bucket") or "trending").strip().lower(),
+                "bucket":         bucket_raw.strip().lower(),
                 "img_prompt":     f.get("Image_Prompt", ""),
-                "image_url_en":   f.get("Image_URL_EN", "") or "",
+                "image_url_en":   image_en,
                 "img_prompt_ru":  f.get("Image_Prompt_RU", ""),
-                "image_url_ru":   f.get("Image_URL_RU", "") or "",
+                "image_url_ru":   image_ru,
                 # Legacy fields for backwards compat with web_viewer image resolution
                 "image_filename":    None,
                 "image_filename_ru": None,
-                "raw_image_path":    f.get("Image_URL_EN", "") or "",
-                "raw_image_path_ru": f.get("Image_URL_RU", "") or "",
+                "raw_image_path":    image_en,
+                "raw_image_path_ru": image_ru,
                 "twitter":        None,
                 "telegram":       None,
                 "twitter_ru":     None,
                 "telegram_ru":    None,
                 "hashtags":       hashtags,
                 "hashtags_ru":    hashtags_ru,
-                "status":         f.get("Status", "Draft"),
+                "status":         status_raw,
                 "tweet_url":      f.get("Tweet_URL", "") or "",
                 "airtable_id":    rec.get("id", ""),
             }
@@ -303,16 +366,16 @@ def records_to_topics(records: list) -> list:
             topics[topic_name]["twitter"] = content
             if content_ru:
                 topics[topic_name]["twitter_ru"] = content_ru
-            topics[topic_name]["status"] = f.get("Status", "Draft")
+            topics[topic_name]["status"] = status_raw
             topics[topic_name]["tweet_url"] = f.get("Tweet_URL", "") or ""
             topics[topic_name]["airtable_id"] = rec.get("id", "")
-            # Image URLs come from Twitter row
-            if f.get("Image_URL_EN"):
-                topics[topic_name]["image_url_en"] = f["Image_URL_EN"]
-                topics[topic_name]["raw_image_path"] = f["Image_URL_EN"]
-            if f.get("Image_URL_RU"):
-                topics[topic_name]["image_url_ru"] = f["Image_URL_RU"]
-                topics[topic_name]["raw_image_path_ru"] = f["Image_URL_RU"]
+            # Image URLs come from Twitter row (handle attachment objects)
+            if image_en:
+                topics[topic_name]["image_url_en"] = image_en
+                topics[topic_name]["raw_image_path"] = image_en
+            if image_ru:
+                topics[topic_name]["image_url_ru"] = image_ru
+                topics[topic_name]["raw_image_path_ru"] = image_ru
         elif "telegram" in platform:
             topics[topic_name]["telegram"] = content
             if content_ru:

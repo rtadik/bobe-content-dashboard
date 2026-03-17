@@ -51,6 +51,7 @@ import client_config
 import bucket_generators
 from client_config import get_api_key
 from utils import is_cyrillic
+from pipeline_status import PipelineStatus
 
 try:
     import airtable_writer
@@ -310,7 +311,7 @@ MOCK_CONTENT = {
 
 def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                  skip_airtable=False, skip_deploy=False, export_excel=False,
-                 parallel_workers=4):
+                 parallel_workers=4, status=None):
     """Run the full autonomous content pipeline."""
 
     config = client_config.load_config(client_id)
@@ -345,6 +346,9 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
 
     # ── Phase 1: Scrape Topics (for trending bucket) ──────────────────────────
     print("Phase 1: Scraping trending topics...")
+    if status:
+        try: status.start_phase("Scrape Topics")
+        except Exception: pass
     scraped_topics = []
 
     if not mock:
@@ -364,11 +368,20 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                 print("  Warning: scraper produced no output, using evergreen fallback")
         except Exception as e:
             print(f"  Warning: scraping failed ({e}), using evergreen fallback")
+            if status:
+                try: status.fail_phase("Scrape Topics", str(e))
+                except Exception: pass
     else:
         print("  [mock] Skipping scrape")
+    if status:
+        try: status.complete_phase("Scrape Topics", item_count=len(scraped_topics))
+        except Exception: pass
 
     # ── Phase 2: Assemble 21 Topics (3 buckets × 7 topics) ───────────────────
     print("\nPhase 2: Assembling 3-bucket topic pool...")
+    if status:
+        try: status.start_phase("Assemble Buckets")
+        except Exception: pass
 
     content_types = client_config.get_content_types(client_id)
     bucket_size = client_config.get_bucket_size(client_id)
@@ -446,6 +459,9 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
             f"{t.get('angle', ''):<18} {t['topic'][:40]}"
         )
     print()
+    if status:
+        try: status.complete_phase("Assemble Buckets", item_count=len(topics))
+        except Exception: pass
 
     # ── Phase 3: Create Workbook (opt-in via --export-excel) ──────────────────
     workbook_suffix = "mock-weekly-content" if mock else "weekly-content"
@@ -466,7 +482,14 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
 
     # ── Phase 4: Content Generation Loop ─────────────────────────────────────
     print(f"\nPhase 4: Generating 42 content items (21 topics x 2 platforms)...")
+    if status:
+        try: status.start_phase("Generate Content")
+        except Exception: pass
+        if use_airtable and at_table_id:
+            try: status.start_phase("Write to Airtable")
+            except Exception: pass
     content_items = []
+    content_success_count = 0
 
     for topic_data in topics:
         topic_num = topic_data["topic_num"]
@@ -481,6 +504,11 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
 
         slug = topic_slug(topic)
         style_key, style_desc = get_style_preset(config, angle)
+
+        if status:
+            try: status.update_topic("Generate Content", topic_num - 1, topic, "running", bucket=topic_data.get("bucket", ""))
+            except Exception: pass
+        topic_had_error = False
 
         for platform in ["Twitter", "Telegram"]:
             item_num = (topic_num - 1) * 2 + (1 if platform == "Twitter" else 2)
@@ -545,6 +573,7 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                 except Exception as e:
                     print(f"    Warning: content generation failed for item {item_num}: {e}")
                     errors.append(f"Item {item_num} content: {e}")
+                    topic_had_error = True
                     c = dict(MOCK_CONTENT)
                     c["content"] = f"[Fallback EN] {topic}"
                     c["content_ru"] = f"[Запасной RU] {topic}"
@@ -590,6 +619,9 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
 
             # Write to Airtable inline (both Twitter and Telegram rows)
             if use_airtable and at_table_id:
+                if status and platform == "Twitter":
+                    try: status.update_topic("Write to Airtable", topic_num - 1, topic, "running", bucket=topic_data.get("bucket", ""))
+                    except Exception: pass
                 try:
                     at_rec_id = airtable_writer.write_record(
                         at_base_id, at_table_id, content_json, week_of, client_id, at_api_key
@@ -602,6 +634,9 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                 except Exception as e:
                     print(f"    Warning: Airtable write failed: {e}")
                     errors.append(f"AT write item {item_num}: {e}")
+                    if status and platform == "Telegram":
+                        try: status.update_topic("Write to Airtable", topic_num - 1, topic, "failed", error=str(e), bucket=topic_data.get("bucket", ""))
+                        except Exception: pass
 
             # Write to Excel (only if --export-excel)
             if export_excel:
@@ -619,12 +654,42 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
 
             content_items.append(content_json)
 
+        # Update per-topic status after both platforms processed
+        if status:
+            try:
+                if topic_had_error:
+                    status.update_topic("Generate Content", topic_num - 1, topic, "failed",
+                                       error=f"Content gen errors for topic {topic_num}", bucket=topic_data.get("bucket", ""))
+                else:
+                    content_success_count += 1
+                    status.update_topic("Generate Content", topic_num - 1, topic, "success", bucket=topic_data.get("bucket", ""))
+                # Mark Airtable write success for this topic (if we got here without AT error)
+                if use_airtable and at_table_id and topic_num in topic_at_records:
+                    status.update_topic("Write to Airtable", topic_num - 1, topic, "success", bucket=topic_data.get("bucket", ""))
+            except Exception:
+                pass
+
+    if status:
+        try: status.complete_phase("Generate Content", item_count=content_success_count)
+        except Exception: pass
+        if use_airtable and at_table_id:
+            try: status.complete_phase("Write to Airtable", item_count=len(topic_at_records))
+            except Exception: pass
+        else:
+            try: status.skip_phase("Write to Airtable", reason="Airtable not enabled")
+            except Exception: pass
     print(f"\n  Content: {len(content_items)} items generated, {len(errors)} errors so far")
 
     # ── Phase 5: Image Generation Loop ───────────────────────────────────────
     if not skip_images:
         num_workers = parallel_workers
         logger.info(f"Phase 5: Generating images ({num_workers} parallel workers)...")
+        if status:
+            try:
+                status.start_phase("Generate Images")
+                status.start_phase("Upload to R2")
+                status.start_phase("Update Airtable Images")
+            except Exception: pass
         phase5_start = time.time()
 
         def _gen_images_for_topic(topic_data):
@@ -634,6 +699,9 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
             day = topic_data["day"]
             topic = topic_data["topic"]
             angle = topic_data.get("angle", "Education")
+            if status:
+                try: status.update_topic("Generate Images", topic_num - 1, topic, "running", bucket=topic_data.get("bucket", ""))
+                except Exception: pass
 
             twitter_item = next(
                 (c for c in content_items
@@ -669,13 +737,26 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                         f'--client {client_id}'
                     )
                     logger.info(f"    EN: {Path(en_img).name}")
+
+                    # R2 upload (tracked separately)
                     if use_airtable and HAS_CLOUD_MODULES and r2_uploader.is_configured():
+                        if status:
+                            try: status.update_topic("Upload to R2", topic_num - 1, topic, "running", bucket=topic_data.get("bucket", ""))
+                            except Exception: pass
                         try:
                             en_img_abs = str(PROJECT_ROOT / en_img)
                             if Path(en_img_abs).exists():
                                 r2_key_en = r2_uploader.make_key(client_id, week_of, Path(en_img).name)
                                 r2_url_en = r2_uploader.upload_file(en_img_abs, r2_key_en)
                                 logger.info(f"    R2 EN: {r2_url_en}")
+                                if status:
+                                    try: status.update_topic("Upload to R2", topic_num - 1, topic, "success", bucket=topic_data.get("bucket", ""))
+                                    except Exception: pass
+
+                                # Update Airtable with image URL (tracked separately)
+                                if status:
+                                    try: status.update_topic("Update Airtable Images", topic_num - 1, topic, "running", bucket=topic_data.get("bucket", ""))
+                                    except Exception: pass
                                 for plat_key in ["twitter", "telegram"]:
                                     rec_id = topic_at_records.get(topic_num, {}).get(plat_key)
                                     if rec_id:
@@ -683,9 +764,15 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                                             at_base_id, at_table_id, rec_id,
                                             image_url_en=r2_url_en, api_key=at_api_key
                                         )
+                                if status:
+                                    try: status.update_topic("Update Airtable Images", topic_num - 1, topic, "success", bucket=topic_data.get("bucket", ""))
+                                    except Exception: pass
                         except Exception as e:
                             logger.warning(f"    R2/AT EN image update failed: {e}")
                             topic_errors.append(f"R2/AT EN image topic {topic_num}: {e}")
+                            if status:
+                                try: status.update_topic("Upload to R2", topic_num - 1, topic, "failed", error=str(e), bucket=topic_data.get("bucket", ""))
+                                except Exception: pass
                 except Exception as e:
                     logger.warning(f"    EN image failed for topic {topic_num}: {e}")
                     topic_errors.append(f"EN image topic {topic_num}: {e}")
@@ -694,7 +781,21 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                 logger.info(f"    RU: skipped (generated on EN approval)")
             else:
                 logger.info(f"    [mock] Skipping image API calls")
+                if status:
+                    try:
+                        status.update_topic("Upload to R2", topic_num - 1, topic, "skipped", bucket=topic_data.get("bucket", ""))
+                        status.update_topic("Update Airtable Images", topic_num - 1, topic, "skipped", bucket=topic_data.get("bucket", ""))
+                    except Exception: pass
 
+            if status:
+                try:
+                    if topic_errors:
+                        status.update_topic("Generate Images", topic_num - 1, topic, "failed",
+                                           error="; ".join(topic_errors), bucket=topic_data.get("bucket", ""))
+                    else:
+                        status.update_topic("Generate Images", topic_num - 1, topic, "success", bucket=topic_data.get("bucket", ""))
+                except Exception:
+                    pass
             return topic_errors
 
         with ThreadPoolExecutor(max_workers=num_workers) as pool:
@@ -713,10 +814,25 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
 
         phase5_elapsed = time.time() - phase5_start
         logger.info(f"  Phase 5 complete in {phase5_elapsed:.0f}s")
+        if status:
+            try:
+                status.complete_phase("Generate Images", item_count=len(topics))
+                status.complete_phase("Upload to R2", item_count=len(topics))
+                status.complete_phase("Update Airtable Images", item_count=len(topics))
+            except Exception: pass
     else:
         print("\nPhase 5: Skipping image generation (--skip-images)")
+        if status:
+            try:
+                status.skip_phase("Generate Images", reason="--skip-images flag")
+                status.skip_phase("Upload to R2", reason="--skip-images flag")
+                status.skip_phase("Update Airtable Images", reason="--skip-images flag")
+            except Exception: pass
 
     # ── Phase 6: Finalize Workbook (only if --export-excel) ───────────────────
+    if status:
+        try: status.start_phase("Finalize")
+        except Exception: pass
     if export_excel:
         print("\nPhase 6: Finalizing workbook...")
         try:
@@ -725,11 +841,20 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                 f"--action finalize --week-of {week_of} --client {client_id}{mock_flag}"
             )
             print("  Workbook finalized")
+            if status:
+                try: status.complete_phase("Finalize")
+                except Exception: pass
         except Exception as e:
             print(f"  Warning: finalize failed: {e}")
             errors.append(f"Finalize: {e}")
+            if status:
+                try: status.fail_phase("Finalize", str(e))
+                except Exception: pass
     else:
         print("\nPhase 6: Skipped (use --export-excel to generate Excel workbook)")
+        if status:
+            try: status.skip_phase("Finalize", reason="Excel export not enabled")
+            except Exception: pass
 
     # Phase 6.5 removed: Airtable writes now happen inline in Phase 4
     if use_airtable:
@@ -740,10 +865,16 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
         print("\nPhase 6.5: Skipped (Airtable not enabled for this client)")
 
     # ── Phase 7: Build Static Site ────────────────────────────────────────────
+    if status:
+        try: status.start_phase("Deploy")
+        except Exception: pass
     if not skip_deploy:
         print("\nPhase 7: Building static site...")
         if mock:
             print("  [mock] Skipping static site build")
+            if status:
+                try: status.skip_phase("Deploy", reason="Mock mode")
+                except Exception: pass
         else:
             try:
                 run_cmd(
@@ -751,11 +882,20 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                     f"--output dist --include-admin --client {client_id}"
                 )
                 print("  Static site built: dist/")
+                if status:
+                    try: status.complete_phase("Deploy")
+                    except Exception: pass
             except Exception as e:
                 print(f"  Warning: static site build failed: {e}")
                 errors.append(f"Static build: {e}")
+                if status:
+                    try: status.fail_phase("Deploy", str(e))
+                    except Exception: pass
     else:
         print("\nPhase 7: Skipping static site build (--skip-deploy)")
+        if status:
+            try: status.skip_phase("Deploy", reason="--skip-deploy flag")
+            except Exception: pass
 
     # ── Summary ───────────────────────────────────────────────────────────────
     print(f"\n{'='*60}")
@@ -773,6 +913,10 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
         print(f"  Airtable: Week-{week_of} table updated ({at_base_id})")
     print(f"  Images: outputs/content/{client_id}/images/{week_of}-weekly/")
     print(f"{'='*60}\n")
+
+    if status:
+        try: status.complete_run()
+        except Exception: pass
 
     return len(errors) == 0
 
@@ -1198,6 +1342,7 @@ def main():
     # Content-only mode: run Phases 1-4, skip images. Creates approval rows in Baserow.
     if args.mode == "content-only":
         logger.info(f"Content-only mode: {client_id}, week {week_of}")
+        ps = PipelineStatus(client_id, week_of, mode="content-only")
         run_pipeline(
             client_id=client_id,
             week_of=week_of,
@@ -1207,6 +1352,7 @@ def main():
             skip_deploy=args.skip_deploy,
             export_excel=args.export_excel,
             parallel_workers=args.parallel_workers,
+            status=ps,
         )
         # Initialize approval rows in Baserow
         try:
@@ -1221,6 +1367,7 @@ def main():
     # Images-approved mode: generate images only for content with approved status
     if args.mode == "images-approved":
         logger.info(f"Images-approved mode: {client_id}, week {week_of}")
+        ps = PipelineStatus(client_id, week_of, mode="images-approved")
         try:
             import baserow_client
             approvals = baserow_client.get_week_approvals(client_id, week_of)
@@ -1231,10 +1378,8 @@ def main():
             logger.info(f"Found {len(approved_indices)} approved topics for image generation")
             if not approved_indices:
                 logger.info("No approved topics found. Nothing to generate.")
+                ps.complete_run()
                 sys.exit(0)
-            # Run pipeline with skip_images=False, but we'll need to filter
-            # For now, run full pipeline and let it handle all images
-            # TODO: filter to only approved indices
             run_pipeline(
                 client_id=client_id,
                 week_of=week_of,
@@ -1244,6 +1389,7 @@ def main():
                 skip_deploy=args.skip_deploy,
                 export_excel=args.export_excel,
                 parallel_workers=args.parallel_workers,
+                status=ps,
             )
         except (ImportError, Exception) as e:
             logger.error(f"Images-approved mode failed: {e}")
@@ -1256,6 +1402,7 @@ def main():
         phase = args.phase
         ann_index = getattr(args, 'announcement_index', 0) or 0
         print(f"\nAnnouncement mode: {client_id}, week {week_of}, count={ann_count}, phase={phase}, announcement_index={ann_index}")
+        ann_ps = PipelineStatus(client_id, week_of, mode="announcement")
         cfg = client_config.load_config(client_id)
         out_dir = client_config.get_output_dir(client_id)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -1523,9 +1670,21 @@ def main():
             pass
 
         print(f"\nAnnouncement mode complete. Phase: {phase}, count: {ann_count}, week: {week_of}")
+        try:
+            ann_ps.complete_run()
+        except Exception:
+            pass
         sys.exit(0)
 
     if args.regen_topic is not None or args.regen_topic_name:
+        ps = PipelineStatus(client_id, week_of, mode="regen")
+        regen_phase = f"Regen {args.regen_type}"
+        try:
+            ps.start_phase(regen_phase)
+            ps.update_topic(regen_phase, args.regen_topic or 0,
+                          args.regen_topic_name or f"topic-{args.regen_topic}", "running")
+        except Exception:
+            pass
         success = run_regen_item(
             client_id=client_id,
             week_of=week_of,
@@ -1534,8 +1693,22 @@ def main():
             mock=args.mock,
             topic_name=args.regen_topic_name,
         )
+        try:
+            if success:
+                ps.update_topic(regen_phase, args.regen_topic or 0,
+                              args.regen_topic_name or f"topic-{args.regen_topic}", "success")
+                ps.complete_phase(regen_phase, item_count=1)
+            else:
+                ps.update_topic(regen_phase, args.regen_topic or 0,
+                              args.regen_topic_name or f"topic-{args.regen_topic}", "failed",
+                              error="Regen returned failure")
+                ps.fail_phase(regen_phase, "Regen returned failure")
+            ps.complete_run()
+        except Exception:
+            pass
         sys.exit(0 if success else 1)
 
+    ps = PipelineStatus(client_id, week_of, mode=args.mode)
     success = run_pipeline(
         client_id=client_id,
         week_of=week_of,
@@ -1545,6 +1718,7 @@ def main():
         skip_deploy=args.skip_deploy,
         export_excel=args.export_excel,
         parallel_workers=args.parallel_workers,
+        status=ps,
     )
 
     if success and args.mode == "full" and args.purge_older_than > 0:

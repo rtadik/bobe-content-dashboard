@@ -129,26 +129,26 @@ python scripts/airtable_sync.py --week-of YYYY-MM-DD
 
 Each week creates a new table (`Week-YYYY-MM-DD`) with these fields:
 
-| Field | Description |
-|---|---|
-| Date | Post date (YYYY-MM-DD) |
-| Bucket | Content bucket (Trending, Education, Announcements) |
-| Day | Day of week (Mon, Tue, etc.) |
-| Topic | The content topic |
-| Platform | Twitter or Telegram |
-| Format | thread, single, or post |
-| Content | Full English content |
-| Image_Prompt | Prompt used to generate the image |
-| Image_URL_EN | Public R2 URL for English image |
-| Hashtags | English hashtags |
-| Content_RU | Full Russian content |
-| Image_Prompt_RU | Russian image prompt |
-| Image_URL_RU | Public R2 URL for Russian image |
-| Hashtags_RU | Russian hashtags |
-| Status | Draft / Approved / Published |
-| Tweet_URL | Published tweet URL(s) |
-| Week | Week start date |
-| Client | Client ID |
+| Field | Type | Description |
+|---|---|---|
+| Date | text | Post date (YYYY-MM-DD) |
+| Bucket | singleSelect | Content bucket (Trending, Education, Announcements) - colored dropdown |
+| Day | text | Day of week (Mon, Tue, etc.) |
+| Topic | text | The content topic |
+| Platform | text | Twitter or Telegram |
+| Format | text | thread, single, or post |
+| Content | multiline text | Full English content |
+| Image_Prompt | multiline text | Prompt used to generate the image |
+| Image_URL_EN | attachment | English image (renders inline as thumbnail) |
+| Hashtags | text | English hashtags |
+| Content_RU | multiline text | Full Russian content |
+| Image_Prompt_RU | multiline text | Russian image prompt |
+| Image_URL_RU | attachment | Russian image (renders inline as thumbnail) |
+| Hashtags_RU | text | Russian hashtags |
+| Status | singleSelect | Draft / Approved / Published / Rejected - colored dropdown |
+| Tweet_URL | url | Published tweet URL(s) |
+| Week | text | Week start date |
+| Client | text | Client ID |
 
 ---
 
@@ -192,17 +192,20 @@ The pipeline automatically uploads images to R2 and writes the public URLs to Ai
 
 ## Tips for Using Airtable
 
-**Switch to Gallery view** to see content cards visually:
-- Click the view switcher (top left) → **Gallery** → group by Platform
+**Switch to Gallery view** to see content cards with image thumbnails:
+- Click the view switcher (top left) -> **Gallery** -> set cover to Image_URL_EN -> group by Bucket
+
+**Use the Status dropdown** to approve content:
+- Click the Status field in any row -> select "Approved" from the colored dropdown
 
 **Filter by Status** to see only Draft items:
-- Click **Filter** → Status is "Draft"
+- Click **Filter** -> Status is "Draft"
 
 **Share a view with your team:**
-- Click **Share** → Create a shared link (read-only or edit)
+- Click **Share** -> Create a shared link (read-only or edit)
 
-**Mark content as Approved:**
-- Click the Status field in any row → change to "Approved"
+**Set up visual Interfaces** for Gallery, Review, Dashboard, and Kanban views:
+- See `reference/airtable-interface-setup.md` for step-by-step instructions
 
 ---
 

@@ -59,7 +59,10 @@ This file is the single source of truth for how Claude should understand and ope
 ├── admin/
 │   ├── index.html                # Password-protected admin panel UI
 │   ├── admin.css                 # Dark theme styles
-│   └── admin.js                  # GitHub API calls, auth, status polling
+│   ├── admin.js                  # GitHub API calls, auth, status polling
+│   ├── pipeline-status.html      # Pipeline monitor — visual node graph (local only, not deployed)
+│   ├── pipeline-status.css       # Pipeline monitor dark theme styles
+│   └── pipeline-status.js        # Pipeline monitor client-side logic (polling, rendering)
 ├── intake/
 │   ├── index.html                # Client self-serve intake form (9 sections, contextual tips)
 │   ├── intake.css                # Dark theme styles + tip box + progress bar
@@ -91,6 +94,7 @@ This file is the single source of truth for how Claude should understand and ope
 │   ├── api-setup.md              # All API setup instructions (Apify, Google AI, WaveSpeed, Airtable)
 │   ├── airtable-client-setup.md  # Step-by-step Airtable setup guide for clients (token, base, config)
 │   ├── emailjs-setup.md          # EmailJS one-time setup for intake form credential emails
+│   ├── airtable-interface-setup.md  # Airtable Interface Designer guide (Gallery, Review, Dashboard, Kanban)
 │   └── github-actions-setup.md   # GitHub Secrets, Pages, workflow permissions, PAT creation
 ├── outputs/
 │   └── content/
@@ -204,12 +208,14 @@ This workspace supports multiple clients via a config-driven architecture:
 | `bucket_generators.py` | 3-bucket topic generators dispatched by type | Import only: `generate_bucket(type, config, week_of, ...)`, `BUCKET_DISPLAY_NAMES` |
 | `pipeline_runner.py` | Standalone end-to-end pipeline (Gemini-powered); writes directly to Airtable + R2; Excel is opt-in; Phase 5 parallelizes image gen via ThreadPoolExecutor | `--client`, `--week-of`, `--mock`, `--skip-images`, `--skip-airtable`, `--skip-deploy`, `--export-excel`, `--mode {full,announcement}`, `--announcement-text`, `--regen-topic INT`, `--regen-type {image_en,image_ru,content,content_ru}`, `--parallel-workers N` |
 | `airtable_sync.py` | Push weekly Excel content to client's Airtable base (batch; legacy — pipeline_runner writes inline) | `--week-of`, `--mock`, `--client` |
-| `airtable_writer.py` | Inline Airtable write/update module used by pipeline_runner (18-field schema, per-item writes) | Import only: `get_or_create_table()`, `write_record()`, `update_image_urls()`, `load_records()`, `list_week_tables()`, `records_to_topics()` |
+| `airtable_writer.py` | Inline Airtable write/update module used by pipeline_runner (18-field schema with multipleAttachments for images, singleSelect for Status/Bucket) | Import only: `get_or_create_table()`, `write_record()`, `update_image_urls()`, `load_records()`, `list_week_tables()`, `records_to_topics()` |
+| `airtable_migrate.py` | One-time migration: converts existing Week tables to visual schema (attachment images, singleSelect dropdowns) | `--client`, `--dry-run` |
 | `r2_uploader.py` | Cloudflare R2 image upload module (S3-compatible, boto3) | Import only: `upload_bytes()`, `upload_file()`, `make_key()`, `is_configured()`; CLI `--test` mode |
 | `x_publisher.py` | Publish Twitter thread to X via OAuth 1.0a; updates Excel Status + Tweet_URL cols | `--client`, `--week-of`, `--topic-index`, `--mock` |
-| `web_viewer.py` | Flask dashboard server with EN/RU toggle and bucket tabs | Runs on localhost:5001, `--client`; `/api/generate-announcement`, `/api/publish-to-x` endpoints |
+| `web_viewer.py` | Flask dashboard server with EN/RU toggle and bucket tabs | Runs on localhost:5001, `--client`; `/api/generate-announcement`, `/api/publish-to-x`, `/pipeline-status`, `/api/pipeline-status` endpoints |
 | `baserow_client.py` | Baserow REST API client for client settings, approvals, style prefs | `--setup`, `--test`, `--client` |
 | `blog_generator.py` | Blog post generator from social content (Gemini + humanizer) | `--client`, `--topic`, `--source-content`, `--platform`, `--bucket`, `--mock` |
+| `pipeline_status.py` | Pipeline run status tracker — writes real-time JSON status during pipeline execution | Import only: `PipelineStatus` class |
 | `build_static.py` | Static site builder with EN/RU toggle, bucket tabs, settings page, admin panel | `--output`, `--date`, `--include-admin`, `--client` |
 
 ---
@@ -221,8 +227,8 @@ This workspace supports multiple clients via a config-driven architecture:
   - **Bucket 2: Education** — 7 belief-building topics from `clients/{client_id}/belief-journey.md`
   - **Bucket 3: Announcements** — client inputs ONE text update → Gemini generates 7 content angles
 - Each topic gets Twitter + Telegram in English AND Russian = **42 content items**
-- **Primary storage**: Airtable (18-field schema: Date, Bucket, Day, Topic, Platform, Format, Content, Image_Prompt, Image_URL_EN, Hashtags, Content_RU, Image_Prompt_RU, Image_URL_RU, Hashtags_RU, Status, Tweet_URL, Week, Client). Written inline per item during Phase 4.
-- **Image storage**: Cloudflare R2 (S3-compatible). R2 URLs stored in `Image_URL_EN`/`Image_URL_RU` Airtable fields.
+- **Primary storage**: Airtable (18-field schema). Image fields (`Image_URL_EN`, `Image_URL_RU`) use `multipleAttachments` type so images render inline. `Status` and `Bucket` use `singleSelect` with colored dropdowns. Written inline per item during Phase 4. See `reference/airtable-interface-setup.md` for visual Interface layouts.
+- **Image storage**: Cloudflare R2 (S3-compatible). R2 URLs wrapped in attachment format `[{"url": "..."}]` and stored in `Image_URL_EN`/`Image_URL_RU` Airtable fields.
 - **Excel workbook** (opt-in via `--export-excel`): 16 columns (Date, Bucket, Day, Topic, Platform, Format, Content, Image Prompt, Image Path, Hashtags, Content_RU, Image_Prompt_RU, Image_Path_RU, Hashtags_RU, Status, Tweet_URL). Tweet_URL col (P) written by `x_publisher.py`; backward-compatible.
 - Interleaved day order: Mon = [Trending#1, Education#1, Announcement#1], Tue = [Trending#2, Education#2, Announcement#2], etc.
 - Per day: topics 1-2 (positions 1 and 2 in the day) get Twitter thread format (5 tweets); topic 3 gets single tweet format
@@ -271,6 +277,7 @@ Store in `.env` (never commit). See `reference/api-setup.md` for setup.
 The content dashboard can be deployed as a static site for client access:
 
 - **Local viewing**: `/view-content` runs Flask on localhost:5001
+- **Pipeline monitor**: `http://localhost:5001/pipeline-status` — visual node graph showing real-time pipeline phase/topic status, run history (local only, not deployed)
 - **Client access**: `/deploy` builds static HTML + admin panel and deploys to GitHub Pages (`gh-pages` branch of `rtadik/bobe-content-dashboard`)
 - **Remote pipeline**: `pipeline_runner.py` runs the full pipeline autonomously via GitHub Actions (Gemini-powered); writes content to Airtable and images to Cloudflare R2
 
@@ -330,6 +337,8 @@ Implemented plans are archived in `plans/implemented/`. Active (pending) plans l
 
 | `2026-03-13-self-service-saas-platform.md` | Self-service SaaS platform: client settings panel (API keys in Baserow), first-login wizard, image style selection (4 variants), approval workflow (content → image → translate gates), announcements rework (1 per input), blog-writer skill with /humanizer, blog generator script, blogs tab on dashboard |
 | `2026-03-14-announcement-redesign.md` | Announcements redesign: dedicated header tab (before week tabs), aggregated announcements.html page, multiple announcements per week (array in bucket-inputs.json), loading states on cards, fixed generate button dispatch (correct workflow URL + inputs), removed announcements from weekly bucket tabs |
+| `2026-03-17-airtable-visual-frontend.md` | Airtable visual frontend: Image fields migrated to multipleAttachments (inline thumbnails), Status/Bucket to singleSelect (colored dropdowns), migration script for existing tables, Interface Designer setup guide (Gallery, Record Review, Dashboard, Kanban) |
+| `2026-03-17-pipeline-observability-dashboard.md` | Pipeline monitor: real-time status JSON emitted by pipeline_runner.py, visual node graph at localhost:5001/pipeline-status showing phase/topic status with drill-down, run history (last 20 runs), auto-refresh during active runs |
 
 ### Pending (active plans in `plans/`)
 
