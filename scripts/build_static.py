@@ -2271,7 +2271,7 @@ window.APPROVALS_TABLE_ID = '{{ approvals_table_id }}';
 window.CURRENT_CLIENT_ID = '{{ client_id }}';
 </script>
 
-{{ setup_wizard_html }}
+{{ setup_wizard_html | safe }}
 
 </body>
 </html>"""

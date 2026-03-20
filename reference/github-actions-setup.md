@@ -19,7 +19,7 @@ Click **New repository secret** and add each of the following (values from your 
 
 All four secrets must be present. The pipeline will fail with a clear error message if any are missing.
 
-> **Dashboard login credentials are auto-generated** — no secret needed. Each client's login is derived automatically from their client ID: username `admin`, password `{client_id}123` (e.g. `bobe123`). When a new client is onboarded and the pipeline runs, their credentials are baked in automatically.
+> **Dashboard auth is handled by Cloudflare Access** — no GitHub secret needed. Authentication uses email OTP via Cloudflare Zero Trust. Client emails are configured in the CF Access policy and the `EMAIL_MAP` environment variable in the Cloudflare Pages project settings. See `reference/cloudflare-access-setup.md`.
 
 ---
 

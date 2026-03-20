@@ -141,7 +141,7 @@ def generate_trending_topics(config: dict, week_of: str, day_dates: dict,
     )
 
     try:
-        response = _call_gemini(prompt, client_id)
+        response = _call_gemini(prompt, client_id=client_id)
         topics = _extract_json(response)
         for i, t in enumerate(topics):
             t["bucket"] = "trending"
@@ -257,7 +257,7 @@ def generate_education_topics(config: dict, week_of: str, day_dates: dict,
     )
 
     try:
-        response = _call_gemini(prompt, client_id)
+        response = _call_gemini(prompt, client_id=client_id)
         topics = _extract_json(response)
         for i, t in enumerate(topics):
             t["bucket"] = "education"
@@ -292,7 +292,7 @@ Return ONLY a JSON array of 7 objects:
 Days: {', '.join(f'{d} {day_dates[d]}' for d in DAYS)}"""
 
     try:
-        response = _call_gemini(prompt, client_id)
+        response = _call_gemini(prompt, client_id=client_id)
         topics = _extract_json(response)
         for i, t in enumerate(topics):
             t["bucket"] = "education"
@@ -399,7 +399,7 @@ def generate_announcement_placeholders(config: dict, week_of: str, day_dates: di
     )
 
     try:
-        response = _call_gemini(prompt, client_id)
+        response = _call_gemini(prompt, client_id=client_id)
         topics = _extract_json(response)
         for i, t in enumerate(topics):
             t["bucket"] = "announcements"
@@ -463,7 +463,7 @@ Return ONLY a JSON array of 7 objects:
 Days: {', '.join(f'{d} {day_dates[d]}' for d in DAYS)}"""
 
     try:
-        response = _call_gemini(prompt, client_id)
+        response = _call_gemini(prompt, client_id=client_id)
         topics = _extract_json(response)
         for i, t in enumerate(topics):
             t["bucket"] = "social_proof"
@@ -526,7 +526,7 @@ Return ONLY a JSON array of 7 objects:
 Days: {', '.join(f'{d} {day_dates[d]}' for d in DAYS)}"""
 
     try:
-        response = _call_gemini(prompt, client_id)
+        response = _call_gemini(prompt, client_id=client_id)
         topics = _extract_json(response)
         for i, t in enumerate(topics):
             t["bucket"] = "behind_the_scenes"
@@ -584,7 +584,7 @@ Return ONLY a JSON array of 7 objects:
 Days: {', '.join(f'{d} {day_dates[d]}' for d in DAYS)}"""
 
     try:
-        response = _call_gemini(prompt, client_id)
+        response = _call_gemini(prompt, client_id=client_id)
         topics = _extract_json(response)
         for i, t in enumerate(topics):
             t["bucket"] = "community_engagement"
@@ -651,7 +651,7 @@ Return ONLY a JSON array of 7 objects:
 Days: {', '.join(f'{d} {day_dates[d]}' for d in DAYS)}"""
 
     try:
-        response = _call_gemini(prompt, client_id)
+        response = _call_gemini(prompt, client_id=client_id)
         topics = _extract_json(response)
         for i, t in enumerate(topics):
             t["bucket"] = "market_commentary"

@@ -116,33 +116,21 @@ def build_prompt(
     style_desc = style_presets.get(style, style_presets.get("tech", "tech fintech aesthetic"))
 
     mascot_desc = brand.get("mascot_description", "brand mascot character")
-    logo_desc = brand.get("logo_description", f"{display_name} logo in the top-left corner")
     bg_style = brand.get("background_style", "Deep dark navy gradient")
+    include_logo = brand.get("include_logo", True)
 
     headline_part = f'\n- Include the bold white headline text: "{headline}"' if headline else ""
 
     # Build reference image instructions dynamically
     ref_images = brand.get("reference_images", [])
 
-    if ref_images:
-        mascot_ref_note = (
-            f"\n- Reference Images 2-{len(ref_images)}: The {display_name} mascot character. "
-            f"Replicate this character exactly: same face, proportions, clothing, style. DO NOT create a different character."
-            if len(ref_images) > 1 else ""
-        )
-        ref_block = f"""=== REFERENCE IMAGE INSTRUCTIONS (MANDATORY) ===
-You have been given {len(ref_images)} reference image(s). Follow these exactly:
-- Reference Image 1: This is the real {display_name} logo. You MUST copy it with 100% fidelity. DO NOT redesign it, recreate it from text, or invent a new logo. Place it in the top-left area with generous padding (at least 5% from the top and left edges so it is never clipped or cut off).{mascot_ref_note}
-
-Ignoring these reference images is not acceptable. The logo and mascot must match the references precisely.
-=================================================
-
-"""
+    if include_logo:
+        logo_desc = brand.get("logo_description", f"{display_name} logo in the top-left corner")
+        logo_line = f"\n- LOGO: Copy the exact {display_name} logo from Reference Image 1 — place it in the top-left area with comfortable padding from the edges (never flush against the border). DO NOT invent or redesign the logo."
     else:
-        ref_block = ""
+        logo_line = "\n- NO LOGO: Do not include any logo, brand watermark, or text overlay for the brand name."
 
-    prompt = f"""{ref_block}Generate a new high-quality 16:9 social media banner image with these requirements:
-- LOGO: Copy the exact {display_name} logo from Reference Image 1 — place it in the top-left area with comfortable padding from the edges (never flush against the border). DO NOT invent or redesign the logo.
+    prompt = f"""Generate a new high-quality 16:9 social media banner image with these requirements:{logo_line}
 - MASCOT: Replicate the exact character from the reference images ({mascot_desc}). Same face, same proportions, same style.
 - SCENE: {topic}
 - STYLE: {style_desc}
@@ -174,20 +162,32 @@ def _poll_result(request_id, headers, timeout=180):
 
 def _inject_reference_header(prompt: str, ref_count: int, client_id: str = None) -> str:
     """Prepend mandatory reference image instructions to any prompt when references are present.
-    This ensures logo/mascot fidelity even when the prompt was generated externally (e.g. by Gemini).
+    This ensures mascot fidelity even when the prompt was generated externally (e.g. by Gemini).
     """
     if ref_count == 0:
         return prompt
     config = client_config.load_config(client_id)
     display_name = config.get("display_name", "Brand")
-    mascot_desc = config.get("brand", {}).get("mascot_description", "brand mascot character")
-    mascot_note = (
-        f"\n- Reference Images 2-{ref_count}: Mascot character ({mascot_desc}). Copy exactly — same face, proportions, clothing. DO NOT create a different character."
-        if ref_count > 1 else ""
-    )
-    header = f"""=== MANDATORY REFERENCE INSTRUCTIONS ===
+    brand = config.get("brand", {})
+    mascot_desc = brand.get("mascot_description", "brand mascot character")
+    include_logo = brand.get("include_logo", True)
+
+    if include_logo:
+        mascot_note = (
+            f"\n- Reference Images 2-{ref_count}: Mascot character ({mascot_desc}). Copy exactly — same face, proportions, clothing. DO NOT create a different character."
+            if ref_count > 1 else ""
+        )
+        header = f"""=== MANDATORY REFERENCE INSTRUCTIONS ===
 You have {ref_count} reference image(s). You MUST follow these:
 - Reference Image 1: The REAL {display_name} logo. Copy it with 100% fidelity into the top-left area with generous padding from edges (at least 5% margin so nothing is clipped). DO NOT redesign, reinvent, or create a new logo from text. Use ONLY what is shown in the reference.{mascot_note}
+=========================================
+
+"""
+    else:
+        header = f"""=== MANDATORY REFERENCE INSTRUCTIONS ===
+You have {ref_count} reference image(s) showing the brand mascot and visual style. You MUST follow these:
+- Reference Images 1-{ref_count}: Mascot character ({mascot_desc}). Copy exactly — same face, proportions, clothing. DO NOT create a different character.
+- Do NOT add any logo, brand watermark, or text logo overlay to the image.
 =========================================
 
 """

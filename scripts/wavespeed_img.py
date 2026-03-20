@@ -108,11 +108,17 @@ def build_prompt_ru(topic, headline_ru, style="tech", client_id=None):
     display_name = config.get("display_name", "Brand")
 
     mascot_desc = brand.get("mascot_description", "brand mascot character")
-    logo_desc = brand.get("logo_description", f'Small "{display_name}" logo text in bright blue')
     bg_style = brand.get("background_style", "Dark navy to deep midnight blue gradient")
+    include_logo = brand.get("include_logo", True)
 
     style_presets = config.get("image", {}).get("style_presets", {})
     style_desc = style_presets.get(style, style_presets.get("tech", "tech fintech aesthetic"))
+
+    if include_logo:
+        logo_desc = brand.get("logo_description", f'Small "{display_name}" logo text in bright blue')
+        logo_block = f"\nLogo (REQUIRED): Top-left area with generous padding from edges (at least 5% margin so nothing is clipped) — {logo_desc}. The logo must be clearly visible and never flush against the image border."
+    else:
+        logo_block = "\nNo Logo: Do not include any logo, brand watermark, or text logo overlay."
 
     return f"""Create a 16:9 banner image for {display_name}.
 
@@ -122,9 +128,7 @@ Character (REQUIRED): {mascot_desc}. Place the mascot prominently on the right s
 
 Text: Include bold white Cyrillic headline text: "{headline_ru}"
 Place the headline on the left side, large and readable.
-
-Logo (REQUIRED): Top-left area with generous padding from edges (at least 5% margin so nothing is clipped) — {logo_desc}. The logo must be clearly visible and never flush against the image border.
-
+{logo_block}
 Style: Cinematic 3D render, professional aesthetic.
 Topic context: {topic}"""
 
@@ -139,18 +143,23 @@ def translate_image(source_path, output_path, size="2560*1440", timeout=120, cli
 
     config = client_config.load_config(client_id)
     display_name = config.get("display_name", "Brand")
+    include_logo = config.get("brand", {}).get("include_logo", True)
 
     b64 = base64.b64encode(Path(source_path).read_bytes()).decode()
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
     }
+    logo_instruction = (
+        f"Keep the '{display_name}' logo exactly as-is in the top-left corner. "
+        if include_logo else ""
+    )
     payload = {
         "prompt": (
             "Translate all English text in this image to Russian (Cyrillic). "
             "Keep the same layout, colors, and overall design unchanged. "
             "Keep the mascot character exactly as-is — same pose, outfit, expression, and style. "
-            f"Keep the '{display_name}' logo exactly as-is in the top-left corner. "
+            f"{logo_instruction}"
             "Only translate the text; do not alter any visual elements."
         ),
         "images": [f"data:image/png;base64,{b64}"],

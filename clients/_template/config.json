@@ -110,5 +110,8 @@
     "wavespeed_en": "",
     "wavespeed_ru": ""
   },
-  "github_regen_token": ""
+  "github_regen_token": "",
+  "auth": {
+    "email": ""
+  }
 }

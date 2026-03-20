@@ -99,19 +99,18 @@ This file is the single source of truth for how Claude should understand and ope
 ├── outputs/
 │   └── content/
 │       └── {client_id}/          # Client-scoped output directory
-│           ├── {date}-weekly-content.xlsx      # Weekly workbooks (15-col, bilingual, 3-bucket)
 │           ├── {date}-bucket-inputs.json       # Announcement text input (written on dashboard submit)
 │           ├── {date}-approvals.json           # Image approval state (local only)
 │           └── images/
-│               └── {date}-weekly/              # Weekly images (EN + RU, 42 total)
+│               └── {date}-weekly/              # Weekly images (14 EN; RU after approval)
 ├── scripts/
 │   ├── client_config.py          # Multi-client config loader (central module)
 │   ├── apify_scraper.py          # Twitter + Reddit scraping via Apify API
 │   ├── excel_manager.py          # Excel styling helpers (library only)
 │   ├── nano_banana.py            # EN image generation via WaveSpeed GPT-Image-1.5
 │   ├── wavespeed_img.py          # RU image generation via WaveSpeed Seedream 4.5
-│   ├── weekly_pipeline.py        # Weekly pipeline orchestrator (15-col, bilingual, 3-bucket)
-│   ├── bucket_generators.py      # 3-bucket topic generators (trending, education, announcements + 4 more)
+│   ├── weekly_pipeline.py        # Weekly pipeline orchestrator (legacy Excel-based; not used by pipeline_runner)
+│   ├── bucket_generators.py      # Bucket topic generators by type (trending, education, announcements, etc.)
 │   ├── airtable_sync.py          # Push weekly content to client's Airtable base (opt-in)
 │   ├── web_viewer.py             # Flask dashboard server (localhost:5001, EN/RU toggle, bucket tabs)
 │   └── build_static.py           # Static site builder for deployment (EN/RU toggle, bucket tabs)
@@ -127,10 +126,10 @@ This file is the single source of truth for how Claude should understand and ope
 Initialize a new session. Reads CLAUDE.md and context files, summarizes understanding, confirms readiness. **Run this at the start of every session.**
 
 ### /weekly-pipeline [week-of]
-Fully automated bilingual weekly content pipeline for the active client. Assembles 21 topics across 3 buckets (7 Trending, 7 Education, 7 Announcements), generates all 42 content items in English AND Russian, generates 42 images (21 EN via GPT-Image-1.5 + 21 RU via Seedream 4.5), saves to weekly Excel workbook. Zero user input after triggering. Announcement topics are placeholders until the client submits input via the dashboard.
+Fully automated bilingual weekly content pipeline for the active client. Assembles 14 topics across 2 buckets (7 Trending + 7 Education), generates all 28 content items in English AND Russian, generates 28 EN images via GPT-Image-1.5 (RU images generate after EN approval). Writes all content directly to Airtable. Zero user input after triggering. Announcements are handled separately via the dedicated Announcements tab.
 
-- Output: `outputs/content/{client_id}/{week-of}-weekly-content.xlsx` (15-column, bilingual, 3-bucket)
-- Images: `outputs/content/{client_id}/images/{week-of}-weekly/` (EN + RU images)
+- Primary storage: Airtable (written inline per topic)
+- Images: `outputs/content/{client_id}/images/{week-of}-weekly/` (EN images; RU after approval)
 - Example: `/weekly-pipeline` or `/weekly-pipeline 2026-02-16`
 
 ### /view-content [week-of]
@@ -205,10 +204,10 @@ This workspace supports multiple clients via a config-driven architecture:
 | `wavespeed_img.py` | Generate RU branded images via WaveSpeed Seedream 4.5; uploads to R2 if configured | `--prompt`, `--topic`, `--headline`, `--style`, `--output`, `--mock`, `--no-r2`, `--client` |
 | `weekly_pipeline.py` | Weekly pipeline orchestrator (15-col bilingual workbook, 3-bucket) | `--action` (scrape, create-workbook, save-content, finalize, sync-airtable), `--week-of`, `--mock`, `--client` |
 | `utils.py` | Shared utilities: JSON extraction from LLM, Gemini API helper, topic slug generator, Cyrillic validator | Import only: `extract_json_from_llm()`, `call_gemini()`, `topic_slug()`, `is_cyrillic()` |
-| `bucket_generators.py` | 3-bucket topic generators dispatched by type | Import only: `generate_bucket(type, config, week_of, ...)`, `BUCKET_DISPLAY_NAMES` |
+| `bucket_generators.py` | Bucket topic generators dispatched by type (trending, education, announcements, etc.) | Import only: `generate_bucket(type, config, week_of, ...)`, `BUCKET_DISPLAY_NAMES`. **Bug note**: always call internal `_call_gemini(prompt, client_id=client_id)` with keyword arg — not positional. |
 | `pipeline_runner.py` | Standalone end-to-end pipeline (Gemini-powered); writes directly to Airtable + R2; Excel is opt-in; Phase 5 parallelizes image gen via ThreadPoolExecutor | `--client`, `--week-of`, `--mock`, `--skip-images`, `--skip-airtable`, `--skip-deploy`, `--export-excel`, `--mode {full,announcement}`, `--announcement-text`, `--regen-topic INT`, `--regen-type {image_en,image_ru,content,content_ru}`, `--parallel-workers N` |
 | `airtable_sync.py` | Push weekly Excel content to client's Airtable base (batch; legacy — pipeline_runner writes inline) | `--week-of`, `--mock`, `--client` |
-| `airtable_writer.py` | Inline Airtable write/update module used by pipeline_runner (18-field schema with multipleAttachments for images, singleSelect for Status/Bucket) | Import only: `get_or_create_table()`, `write_record()`, `update_image_urls()`, `load_records()`, `list_week_tables()`, `records_to_topics()` |
+| `airtable_writer.py` | Inline Airtable write/update module used by pipeline_runner (18-field schema with multipleAttachments for images, singleSelect for Status/Bucket) | Import only: `get_or_create_table()`, `write_record()`, `update_image_urls()`, `patch_record()`, `load_records()`, `list_week_tables()`, `records_to_topics()` |
 | `airtable_migrate.py` | One-time migration: converts existing Week tables to visual schema (attachment images, singleSelect dropdowns) | `--client`, `--dry-run` |
 | `r2_uploader.py` | Cloudflare R2 image upload module (S3-compatible, boto3) | Import only: `upload_bytes()`, `upload_file()`, `make_key()`, `is_configured()`; CLI `--test` mode |
 | `x_publisher.py` | Publish Twitter thread to X via OAuth 1.0a; updates Excel Status + Tweet_URL cols | `--client`, `--week-of`, `--topic-index`, `--mock` |
@@ -216,28 +215,28 @@ This workspace supports multiple clients via a config-driven architecture:
 | `baserow_client.py` | Baserow REST API client for client settings, approvals, style prefs | `--setup`, `--test`, `--client` |
 | `blog_generator.py` | Blog post generator from social content (Gemini + humanizer) | `--client`, `--topic`, `--source-content`, `--platform`, `--bucket`, `--mock` |
 | `pipeline_status.py` | Pipeline run status tracker — writes real-time JSON status during pipeline execution | Import only: `PipelineStatus` class |
-| `build_static.py` | Static site builder with EN/RU toggle, bucket tabs, settings page, admin panel | `--output`, `--date`, `--include-admin`, `--client` |
+| `build_static.py` | Static site builder with EN/RU toggle, bucket tabs, settings page, admin panel. Login page replaced with CF Access redirect. | `--output`, `--date`, `--include-admin`, `--client` |
 
 ---
 
 ## Weekly Pipeline Structure
 
-- 21 topics per week = **3 buckets × 7 topics** (1 topic per bucket per day, interleaved)
+- 14 topics per week = **2 buckets × 7 topics** (1 topic per bucket per day, interleaved)
   - **Bucket 1: Trending** — 7 scraped/relevant topics from X and Reddit
   - **Bucket 2: Education** — 7 belief-building topics from `clients/{client_id}/belief-journey.md`
-  - **Bucket 3: Announcements** — client inputs ONE text update → Gemini generates 7 content angles
-- Each topic gets Twitter + Telegram in English AND Russian = **42 content items**
-- **Primary storage**: Airtable (18-field schema). Image fields (`Image_URL_EN`, `Image_URL_RU`) use `multipleAttachments` type so images render inline. `Status` and `Bucket` use `singleSelect` with colored dropdowns. Written inline per item during Phase 4. See `reference/airtable-interface-setup.md` for visual Interface layouts.
+- Each topic gets Twitter + Telegram in English AND Russian = **28 content items**
+- **Primary storage**: Airtable (18-field schema). Image fields (`Image_URL_EN`, `Image_URL_RU`) use `multipleAttachments` type so images render inline. `Status` and `Bucket` use `singleSelect` with colored dropdowns. Written inline per item during content generation. See `reference/airtable-interface-setup.md` for visual Interface layouts.
 - **Image storage**: Cloudflare R2 (S3-compatible). R2 URLs wrapped in attachment format `[{"url": "..."}]` and stored in `Image_URL_EN`/`Image_URL_RU` Airtable fields.
-- **Excel workbook** (opt-in via `--export-excel`): 16 columns (Date, Bucket, Day, Topic, Platform, Format, Content, Image Prompt, Image Path, Hashtags, Content_RU, Image_Prompt_RU, Image_Path_RU, Hashtags_RU, Status, Tweet_URL). Tweet_URL col (P) written by `x_publisher.py`; backward-compatible.
-- Interleaved day order: Mon = [Trending#1, Education#1, Announcement#1], Tue = [Trending#2, Education#2, Announcement#2], etc.
-- Per day: topics 1-2 (positions 1 and 2 in the day) get Twitter thread format (5 tweets); topic 3 gets single tweet format
-- Image styles: Pain Point → minimal, Education → tech, Announcement → notification
-- Images: 42 total — 21 EN via GPT-Image-1.5 (`nano_banana.py`) + 21 RU via Seedream 4.5 (`wavespeed_img.py`)
+- **Excel**: removed from pipeline — Airtable is the sole data store. (`weekly_pipeline.py` and `excel_manager.py` remain as legacy scripts but are not invoked by `pipeline_runner.py`.)
+- Interleaved day order: Mon = [Trending#1, Education#1], Tue = [Trending#2, Education#2], etc.
+- Per day: both topics get Twitter thread format (5 tweets) + Telegram post format
+- Image styles: Pain Point → minimal, Education → tech
+- Images: 14 EN via GPT-Image-1.5 (`nano_banana.py`); RU images generate via Seedream 4.5 after EN approval
 - RU image naming: append `_ru` before `.png` (e.g., `topic_slug_twitter_ru.png`)
-- **Announcement flow**: Dedicated "Announcements" header tab (separate from week tabs) aggregates all announcements across weeks. Supports multiple announcements per week (stored as array in `bucket-inputs.json`). Client submits text → `generate-announcement.yml` (live) or Flask `/api/generate-announcement` (local) generates 7 angles per announcement. Weekly pages show only Trending + Education bucket tabs (announcements are not shown on weekly pages).
-- **Bucket config**: Each client's `config.json` has `content.content_types` (array of 3 type IDs) and `content.bucket_size` (default 7)
+- **Announcement flow**: Separate from the weekly pipeline. Dedicated "Announcements" header tab on dashboard. Client submits text → `generate-announcement.yml` (live) or Flask `/api/generate-announcement` (local). Weekly dashboard pages show only Trending and Education bucket tabs.
+- **Bucket config**: Each client's `config.json` has `content.content_types` (array of bucket type IDs) and `content.bucket_size` (default 7). BoBe is configured for `["trending", "education"]`.
 - **`belief-journey.md`**: Auto-generated at onboarding from intake data by reading ICP/pain points/product; maps 7 buyer belief stages from awareness to action readiness
+- **`bucket_generators.py` bug note**: `_call_gemini()` must always be called with `client_id` as a keyword arg (`_call_gemini(prompt, client_id=client_id)`), not positional — otherwise it sets the model name to the client ID.
 
 ---
 
@@ -262,6 +261,7 @@ This workspace supports multiple clients via a config-driven architecture:
 | WaveSpeed | `WAVESPEED_API_KEY` | GPT-Image-1.5 (EN) + Seedream 4.5 (RU) image generation |
 | Airtable | `AIRTABLE_API_KEY` | Primary content store — written inline per item (optional, per client) |
 | Cloudflare R2 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL` | Image cloud storage (S3-compatible, 10GB free, zero egress). See `reference/r2-setup.md` |
+| Cloudflare Access | `EMAIL_MAP`, `ADMIN_EMAIL` (Cloudflare Pages env vars) | Email → client_id routing for dashboard auth. Set in CF Pages project settings, not in .env. |
 | X (Twitter) | `{CLIENT_ID_UPPER}_X_API_KEY`, `_X_API_SECRET`, `_X_ACCESS_TOKEN`, `_X_ACCESS_TOKEN_SECRET` | Direct publishing to X (optional, per client). See `reference/x-api-setup.md` |
 | Baserow | `BASEROW_API_TOKEN`, `BASEROW_DATABASE_ID`, `BASEROW_TABLE_CLIENT_SETTINGS`, `BASEROW_TABLE_CONTENT_APPROVALS`, `BASEROW_TABLE_IMAGE_STYLE_PREFS` | Client state store (API keys, approvals, style preferences). Run `python scripts/baserow_client.py --setup` to create tables. |
 | EmailJS | `intake/intake-config.js` | Credential email delivery from intake form (not an env var — stored in gitignored JS file) |
@@ -292,7 +292,7 @@ The deployed dashboard has a landing page, login form, and per-client auth. Clie
 **Cost**: $0/month
 **Note**: Migrated from GitHub Pages on 2026-03-12 (GitHub Actions disabled on rtadik account). Deploy via `npx wrangler pages deploy dist --project-name bobe-content-dashboard`.
 
-**Credentials**: Auto-generated from client IDs — no manual config or secrets required. Username: `admin`, password: `{client_id}123` (e.g. `bobe123`). New clients get credentials automatically on next deploy.
+**Auth**: Cloudflare Access (Zero Trust) gates the entire domain with email OTP. Client emails → client dashboards via Pages Function auto-routing (`functions/auth-route.js`). No passwords to manage or remember. Add/revoke clients via CF Zero Trust dashboard (instant, no redeploy needed). See `reference/cloudflare-access-setup.md`.
 
 ### GitHub Actions
 
@@ -339,6 +339,7 @@ Implemented plans are archived in `plans/implemented/`. Active (pending) plans l
 | `2026-03-14-announcement-redesign.md` | Announcements redesign: dedicated header tab (before week tabs), aggregated announcements.html page, multiple announcements per week (array in bucket-inputs.json), loading states on cards, fixed generate button dispatch (correct workflow URL + inputs), removed announcements from weekly bucket tabs |
 | `2026-03-17-airtable-visual-frontend.md` | Airtable visual frontend: Image fields migrated to multipleAttachments (inline thumbnails), Status/Bucket to singleSelect (colored dropdowns), migration script for existing tables, Interface Designer setup guide (Gallery, Record Review, Dashboard, Kanban) |
 | `2026-03-17-pipeline-observability-dashboard.md` | Pipeline monitor: real-time status JSON emitted by pipeline_runner.py, visual node graph at localhost:5001/pipeline-status showing phase/topic status with drill-down, run history (last 20 runs), auto-refresh during active runs |
+| 2-bucket pipeline + Airtable-only (2026-03-20) | Removed Announcements bucket from weekly pipeline (now handled separately). Pipeline generates 14 topics (2 × 7) and 28 content items. Excel removed entirely from pipeline_runner.py — Airtable is sole data store. Fixed `bucket_generators.py` Gemini call bug (client_id was passed positionally, set as model name). Added `patch_record()` to `airtable_writer.py`. Fixed Telegram format value from `"long-form"` → `"post"`. Fixed image prompt duplication in `nano_banana.py` (duplicate ref header). Removed Announcements tab from Flask weekly view. |
 
 ### Pending (active plans in `plans/`)
 

@@ -1208,16 +1208,6 @@ HTML = """<!DOCTYPE html>
 <div class="bucket-tabs" id="bucket-tabs">
   <button class="bucket-tab active" data-bucket="trending" onclick="switchBucket('trending')">📈 Trending</button>
   <button class="bucket-tab" data-bucket="education" onclick="switchBucket('education')">🎓 Education</button>
-  <button class="bucket-tab" data-bucket="announcements" onclick="switchBucket('announcements')">📣 Announcements</button>
-</div>
-
-<!-- Announcement input panel (shown only on announcements tab) -->
-<div class="announcement-input-panel" id="announcement-input-panel" style="display:none">
-  <h3>Weekly Announcement</h3>
-  <p>Paste your weekly update below. The system will generate 7 different content angles from it (one per day).</p>
-  <textarea id="announcement-text" rows="4" placeholder="e.g. We launched a new grid bot feature for ETH/USDT pairs..."></textarea>
-  <button class="btn-generate-announcement" id="btn-gen-ann" onclick="submitAnnouncement()">Generate 7 Content Angles</button>
-  <div id="announcement-status"></div>
 </div>
 
 <main class="grid">
@@ -2049,10 +2039,6 @@ function switchBucket(bucket) {
     var cardBucket = card.dataset.bucket || 'trending';
     card.style.display = cardBucket === bucket ? '' : 'none';
   });
-  var inputPanel = document.getElementById('announcement-input-panel');
-  if (inputPanel) {
-    inputPanel.style.display = bucket === 'announcements' ? 'block' : 'none';
-  }
   try { localStorage.setItem('active-bucket', bucket); } catch(e) {}
 }
 

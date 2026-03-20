@@ -310,7 +310,7 @@ MOCK_CONTENT = {
 # ── Main pipeline ──────────────────────────────────────────────────────────────
 
 def run_pipeline(client_id, week_of, mock=False, skip_images=False,
-                 skip_airtable=False, skip_deploy=False, export_excel=False,
+                 skip_airtable=False, skip_deploy=False,
                  parallel_workers=4, status=None):
     """Run the full autonomous content pipeline."""
 
@@ -322,7 +322,7 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
     print(f"\n{'='*60}")
     print(f"  {display_name} Pipeline Runner")
     print(f"  Client: {client_id} | Week: {week_of}")
-    print(f"  Mock: {mock} | Skip images: {skip_images}")
+    print(f"  Mock: {mock} | Images: {'skip' if skip_images else 'yes'}")
     print(f"{'='*60}\n")
 
     # Day dates for the full week
@@ -463,25 +463,11 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
         try: status.complete_phase("Assemble Buckets", item_count=len(topics))
         except Exception: pass
 
-    # ── Phase 3: Create Workbook (opt-in via --export-excel) ──────────────────
-    workbook_suffix = "mock-weekly-content" if mock else "weekly-content"
-    mock_flag = " --mock" if mock else ""
-    if export_excel:
-        print("Phase 3: Creating workbook...")
-        try:
-            run_cmd(
-                f"{PY} scripts/weekly_pipeline.py "
-                f"--action create-workbook --week-of {week_of} --client {client_id}{mock_flag}"
-            )
-            print(f"  Workbook: outputs/content/{client_id}/{week_of}-{workbook_suffix}.xlsx")
-        except Exception as e:
-            print(f"  Error creating workbook: {e}")
-            raise
-    else:
-        print("Phase 3: Skipped (Airtable-primary mode; use --export-excel to generate Excel)")
+    # Phase 3: Workbook creation removed (Airtable-primary)
 
     # ── Phase 4: Content Generation Loop ─────────────────────────────────────
-    print(f"\nPhase 4: Generating 42 content items (21 topics x 2 platforms)...")
+    expected_items = len(topics) * 2
+    print(f"\nPhase 4: Generating {expected_items} content items ({len(topics)} topics x 2 platforms)...")
     if status:
         try: status.start_phase("Generate Content")
         except Exception: pass
@@ -512,9 +498,9 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
 
         for platform in ["Twitter", "Telegram"]:
             item_num = (topic_num - 1) * 2 + (1 if platform == "Twitter" else 2)
-            fmt = twitter_fmt if platform == "Twitter" else "long-form"
+            fmt = twitter_fmt if platform == "Twitter" else "post"
 
-            print(f"  Generating {item_num}/42: {day} #{topic_num} {platform} ({fmt})...")
+            print(f"  Generating {item_num}/{len(topics)*2}: {day} #{topic_num} {platform} ({fmt})...")
 
             en_path = make_image_path(client_id, week_of, day, slug, platform)
             ru_path = make_image_path(client_id, week_of, day, slug, platform, ru=True)
@@ -637,20 +623,6 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                     if status and platform == "Telegram":
                         try: status.update_topic("Write to Airtable", topic_num - 1, topic, "failed", error=str(e), bucket=topic_data.get("bucket", ""))
                         except Exception: pass
-
-            # Write to Excel (only if --export-excel)
-            if export_excel:
-                tmp_file = f"/tmp/pipeline_content_{item_num}.json"
-                with open(tmp_file, "w", encoding="utf-8") as f:
-                    json.dump(content_json, f, ensure_ascii=False, indent=2)
-                try:
-                    run_cmd(
-                        f"{PY} scripts/weekly_pipeline.py --action save-content "
-                        f"--week-of {week_of} --content-file {tmp_file} --client {client_id}{mock_flag}"
-                    )
-                except Exception as e:
-                    print(f"    Warning: failed to save item {item_num} to Excel: {e}")
-                    errors.append(f"Excel save item {item_num}: {e}")
 
             content_items.append(content_json)
 
@@ -829,32 +801,7 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
                 status.skip_phase("Update Airtable Images", reason="--skip-images flag")
             except Exception: pass
 
-    # ── Phase 6: Finalize Workbook (only if --export-excel) ───────────────────
-    if status:
-        try: status.start_phase("Finalize")
-        except Exception: pass
-    if export_excel:
-        print("\nPhase 6: Finalizing workbook...")
-        try:
-            run_cmd(
-                f"{PY} scripts/weekly_pipeline.py "
-                f"--action finalize --week-of {week_of} --client {client_id}{mock_flag}"
-            )
-            print("  Workbook finalized")
-            if status:
-                try: status.complete_phase("Finalize")
-                except Exception: pass
-        except Exception as e:
-            print(f"  Warning: finalize failed: {e}")
-            errors.append(f"Finalize: {e}")
-            if status:
-                try: status.fail_phase("Finalize", str(e))
-                except Exception: pass
-    else:
-        print("\nPhase 6: Skipped (use --export-excel to generate Excel workbook)")
-        if status:
-            try: status.skip_phase("Finalize", reason="Excel export not enabled")
-            except Exception: pass
+    # Phase 6: Workbook finalize removed (Airtable-primary)
 
     # Phase 6.5 removed: Airtable writes now happen inline in Phase 4
     if use_airtable:
@@ -901,14 +848,12 @@ def run_pipeline(client_id, week_of, mock=False, skip_images=False,
     print(f"\n{'='*60}")
     print(f"  {display_name} Pipeline Complete")
     print(f"  Week: {week_of}")
-    print(f"  Content: {len(content_items)}/42 items generated")
+    print(f"  Content: {len(content_items)}/{len(topics)*2} items generated")
     print(f"  Errors: {len(errors)}")
     if errors:
         print(f"\n  Error log (first 10):")
         for err in errors[:10]:
             print(f"    - {err}")
-    if export_excel:
-        print(f"\n  Excel:  outputs/content/{client_id}/{week_of}-{workbook_suffix}.xlsx")
     if use_airtable:
         print(f"  Airtable: Week-{week_of} table updated ({at_base_id})")
     print(f"  Images: outputs/content/{client_id}/images/{week_of}-weekly/")
@@ -1014,83 +959,123 @@ def _update_image_after_regen(client_id, week_of, topic_name, img_path, lang="en
 
 
 def run_regen_item(client_id, week_of, topic_index, regen_type, mock=False, topic_name=None):
-    """Regenerate a single topic item (image or content) and update the workbook.
-
-    Args:
-        topic_name: If provided, look up topic by name (stable identifier).
-                    Falls back to topic_index if topic_name is not found.
-    """
-    from openpyxl import load_workbook as opxl_load
-
+    """Regenerate a single topic item (image or content). Airtable-primary; Excel fallback."""
     config = client_config.load_config(client_id)
     display_name = config.get("display_name", client_id.capitalize())
-    tone = config.get("tone", "educational and transparent")
+    tone = config.get("content", {}).get("tone", "educational and transparent")
 
-    xlsx_path = (
-        PROJECT_ROOT / f"outputs/content/{client_id}/{week_of}-weekly-content.xlsx"
-    )
-    if not xlsx_path.exists():
-        print(f"  Error: workbook not found: {xlsx_path}")
-        return False
+    print(f"  Regen type: {regen_type}, topic index: {topic_index}, topic_name: {topic_name or '(none)'}")
 
-    print(f"  Regen type: {regen_type}, topic index: {topic_index}, topic_name: {topic_name or '(none)'}, workbook: {xlsx_path.name}")
-
-    # ── Read workbook to find rows for this topic ─────────────────────────────
-    wb = opxl_load(xlsx_path)
-    ws = wb.active
-    header_row = None
-    data_rows = []
-    for row in ws.iter_rows(values_only=True):
-        if row[0] == "Date" or row[0] == "date":
-            header_row = row
-            continue
-        if any(row):
-            data_rows.append(row)
-
-    # Build ordered list of unique topics (by first appearance)
-    topic_order = []
-    seen = set()
-    for row in data_rows:
-        t = row[2]  # Column C = Topic
-        if t and t not in seen:
-            seen.add(t)
-            topic_order.append(t)
-
-    # Resolve target topic: prefer topic_name (stable), fall back to index
+    # ── Load topic data from Airtable (primary) ───────────────────────────────
     target_topic = None
-    if topic_name:
-        # Exact match first
-        if topic_name in seen:
-            target_topic = topic_name
-        else:
-            # Case-insensitive fallback
-            for t in topic_order:
+    en_content = ""
+    img_prompt = ""
+    img_path = ""
+    img_prompt_ru = ""
+    img_path_ru = ""
+    at_records = []
+
+    at_cfg = config.get("airtable", {})
+    at_base_id = at_cfg.get("base_id", "")
+    at_api_key = get_api_key(client_id, "airtable")
+    at_table_id = None
+    use_at = HAS_CLOUD_MODULES and at_cfg.get("enabled") and at_base_id and at_api_key
+
+    if use_at:
+        try:
+            at_table_id = airtable_writer.get_or_create_table(at_base_id, week_of, at_api_key)
+            at_records = airtable_writer.load_records(at_base_id, at_table_id, at_api_key)
+
+            # Build ordered unique topic list
+            topics_unique = []
+            for rec in at_records:
+                t = rec.get("fields", {}).get("Topic", "")
+                if t and t not in topics_unique:
+                    topics_unique.append(t)
+
+            if topic_name:
+                for t in topics_unique:
+                    if t.lower().strip() == topic_name.lower().strip():
+                        target_topic = t
+                        break
+            if not target_topic and topic_index < len(topics_unique):
+                target_topic = topics_unique[topic_index]
+
+            if target_topic:
+                # Get the Twitter record for this topic (holds image prompts + EN content)
+                twitter_rec = next(
+                    (r for r in at_records
+                     if r.get("fields", {}).get("Topic", "").strip() == target_topic
+                     and r.get("fields", {}).get("Platform", "").lower() == "twitter"),
+                    next((r for r in at_records
+                          if r.get("fields", {}).get("Topic", "").strip() == target_topic), None)
+                )
+                if twitter_rec:
+                    f = twitter_rec.get("fields", {})
+                    en_content = f.get("Content", "")
+                    img_prompt = f.get("Image_Prompt", "")
+                    img_prompt_ru = f.get("Image_Prompt_RU", "")
+                    # Reconstruct image paths from topic slug + day
+                    slug = topic_slug(target_topic)
+                    day = f.get("Day", "mon").lower()
+                    img_path = make_image_path(client_id, week_of, day, slug, "twitter")
+                    img_path_ru = make_image_path(client_id, week_of, day, slug, "twitter", ru=True)
+                print(f"  Loaded from Airtable: '{target_topic}'")
+        except Exception as e:
+            print(f"  Warning: Airtable load failed: {e}")
+            at_records = []
+
+    # ── Fallback: Excel ───────────────────────────────────────────────────────
+    if not target_topic:
+        from openpyxl import load_workbook as opxl_load
+        xlsx_path = PROJECT_ROOT / f"outputs/content/{client_id}/{week_of}-weekly-content.xlsx"
+        if not xlsx_path.exists():
+            print(f"  Error: topic not found in Airtable and no Excel fallback at {xlsx_path}")
+            return False
+
+        wb = opxl_load(xlsx_path)
+        ws = wb.active
+        data_rows = [r for r in ws.iter_rows(values_only=True)
+                     if any(r) and r[0] not in ("Date", "date")]
+        topics_unique = []
+        for row in data_rows:
+            t = row[2]
+            if t and t not in topics_unique:
+                topics_unique.append(t)
+
+        if topic_name:
+            for t in topics_unique:
                 if t.lower().strip() == topic_name.lower().strip():
                     target_topic = t
                     break
-        if target_topic:
-            print(f"  Resolved by topic name: '{target_topic}'")
-        else:
-            print(f"  Warning: topic_name '{topic_name}' not found in workbook, falling back to index {topic_index}")
+        if not target_topic:
+            if topic_index >= len(topics_unique):
+                print(f"  Error: topic_index {topic_index} out of range ({len(topics_unique)} topics found)")
+                return False
+            target_topic = topics_unique[topic_index]
 
-    if not target_topic:
-        if topic_index >= len(topic_order):
-            print(f"  Error: topic_index {topic_index} out of range (found {len(topic_order)} topics)")
-            return False
-        target_topic = topic_order[topic_index]
-    topic_rows = [r for r in data_rows if r[2] == target_topic]
-    twitter_row = next((r for r in topic_rows if str(r[3]).lower() == "twitter"), topic_rows[0])
+        topic_rows = [r for r in data_rows if r[2] == target_topic]
+        twitter_row = next((r for r in topic_rows if str(r[3]).lower() == "twitter"), topic_rows[0])
+        en_content = twitter_row[5] if len(twitter_row) > 5 else ""
+        img_prompt = twitter_row[6] if len(twitter_row) > 6 else ""
+        img_path = twitter_row[7] if len(twitter_row) > 7 else ""
+        img_prompt_ru = twitter_row[10] if len(twitter_row) > 10 else ""
+        img_path_ru = twitter_row[11] if len(twitter_row) > 11 else ""
+        print(f"  Loaded from Excel: '{target_topic}'")
 
     print(f"  Topic: {target_topic}")
 
-    # ── content: regenerate EN content via weekly_pipeline ────────────────────
+    # ── content: regenerate EN content ────────────────────────────────────────
     if regen_type == "content":
+        # Requires Excel (weekly_pipeline.regenerate_topic_content writes back to xlsx)
+        xlsx_path = PROJECT_ROOT / f"outputs/content/{client_id}/{week_of}-weekly-content.xlsx"
+        if not xlsx_path.exists():
+            print("  Content regen requires an Excel workbook. None found for this week.")
+            return False
         sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
         from weekly_pipeline import regenerate_topic_content
         try:
-            result = regenerate_topic_content(
-                str(xlsx_path), topic_index, client_id=client_id, mock=mock
-            )
+            result = regenerate_topic_content(str(xlsx_path), topic_index, client_id=client_id, mock=mock)
             print(f"  Content regenerated: twitter={result.get('twitter','')[:60]}...")
             return True
         except Exception as e:
@@ -1099,12 +1084,9 @@ def run_regen_item(client_id, week_of, topic_index, regen_type, mock=False, topi
 
     # ── content_ru: re-translate EN content to Russian ────────────────────────
     elif regen_type == "content_ru":
-        # Col F (index 5) = Content EN, Col J (index 9) = Content_RU
-        en_content = twitter_row[5] if len(twitter_row) > 5 else ""
         if not en_content:
             print("  No EN content found to translate")
             return False
-
         if mock:
             print("  [mock] Skipping Gemini translation")
             return True
@@ -1118,42 +1100,36 @@ def run_regen_item(client_id, week_of, topic_index, regen_type, mock=False, topi
             print(f"  Error calling Gemini for translation: {e}")
             return False
 
-        # Write new RU content to all rows for this topic (col J, index 10 in 1-based)
-        wb2 = opxl_load(xlsx_path)
-        ws2 = wb2.active
-        rows_updated = 0
-        in_data = False
-        for row in ws2.iter_rows():
-            vals = [c.value for c in row]
-            if vals[0] == "Date" or vals[0] == "date":
-                in_data = True
-                continue
-            if in_data and vals[2] == target_topic:
-                row[9].value = ru_text  # Column J
-                rows_updated += 1
-        wb2.save(xlsx_path)
-        print(f"  RU content updated in {rows_updated} rows")
-        return rows_updated > 0
-
-    # ── image_en: regenerate EN image via nano_banana.py ─────────────────────
-    elif regen_type == "image_en":
-        # Col G (index 6) = Image Prompt, Col H (index 7) = Image Path
-        img_prompt = twitter_row[6] if len(twitter_row) > 6 else ""
-        img_path = twitter_row[7] if len(twitter_row) > 7 else ""
-        if not img_prompt or not img_path:
-            print("  No EN image prompt/path found in workbook")
+        # Write back to Airtable
+        if use_at and at_table_id and at_records:
+            updated = 0
+            for rec in at_records:
+                if rec.get("fields", {}).get("Topic", "").strip() == target_topic.strip():
+                    try:
+                        airtable_writer.patch_record(
+                            at_base_id, at_table_id, rec["id"], {"Content_RU": ru_text}, at_api_key
+                        )
+                        updated += 1
+                    except Exception as e:
+                        print(f"    Warning: Airtable patch failed for {rec['id']}: {e}")
+            print(f"  RU content updated in {updated} Airtable record(s)")
+            return updated > 0
+        else:
+            print("  Airtable not available; translation generated but not saved")
             return False
 
+    # ── image_en: regenerate EN image ─────────────────────────────────────────
+    elif regen_type == "image_en":
+        if not img_prompt or not img_path:
+            print("  No EN image prompt/path found")
+            return False
         img_dir = (PROJECT_ROOT / img_path).parent
         img_dir.mkdir(parents=True, exist_ok=True)
-
-        style_key = "tech"  # default; could be derived from angle if needed
+        style_key = "tech"
         safe_prompt = img_prompt.replace('"', "'")
-
         if mock:
             print(f"  [mock] Would generate EN image: {img_path}")
             return True
-
         try:
             run_cmd(
                 f'{PY} scripts/nano_banana.py '
@@ -1163,55 +1139,42 @@ def run_regen_item(client_id, week_of, topic_index, regen_type, mock=False, topi
                 f'--client {client_id}'
             )
             print(f"  EN image regenerated: {Path(img_path).name}")
-
-            # Upload to R2 and update Airtable with new URL
             _update_image_after_regen(client_id, week_of, target_topic, img_path, "en")
-
             return True
         except Exception as e:
             print(f"  Error generating EN image: {e}")
             return False
 
-    # ── image_ru: regenerate RU image via wavespeed_img.py (translate from EN) ──
+    # ── image_ru: regenerate RU image ─────────────────────────────────────────
     elif regen_type == "image_ru":
-        # Col K (index 10) = Image_Prompt_RU, Col L (index 11) = Image_Path_RU
-        ru_prompt = twitter_row[10] if len(twitter_row) > 10 else ""
-        ru_path = twitter_row[11] if len(twitter_row) > 11 else ""
-        en_path = twitter_row[7] if len(twitter_row) > 7 else ""  # Col H (index 7) = EN Image Path
-        if not ru_path:
-            print("  No RU image path found in workbook")
+        if not img_path_ru:
+            print("  No RU image path found")
             return False
-
-        img_dir = (PROJECT_ROOT / ru_path).parent
+        img_dir = (PROJECT_ROOT / img_path_ru).parent
         img_dir.mkdir(parents=True, exist_ok=True)
-
         if mock:
-            print(f"  [mock] Would generate RU image: {ru_path}")
+            print(f"  [mock] Would generate RU image: {img_path_ru}")
             return True
-
-        en_img_abs = str(PROJECT_ROOT / en_path) if en_path else ""
+        en_img_abs = str(PROJECT_ROOT / img_path) if img_path else ""
         try:
             if en_img_abs and Path(en_img_abs).exists():
                 run_cmd(
                     f'{PY} scripts/wavespeed_img.py '
                     f'--edit-image "{en_img_abs}" '
-                    f'--output "{ru_path}" '
+                    f'--output "{img_path_ru}" '
                     f'--client {client_id}'
                 )
             else:
-                safe_prompt = ru_prompt.replace('"', "'")
+                safe_prompt_ru = img_prompt_ru.replace('"', "'") if img_prompt_ru else img_prompt.replace('"', "'")
                 print("  EN image not found, falling back to prompt generation")
                 run_cmd(
                     f'{PY} scripts/wavespeed_img.py '
-                    f'--prompt "{safe_prompt}" '
-                    f'--output "{ru_path}" '
+                    f'--prompt "{safe_prompt_ru}" '
+                    f'--output "{img_path_ru}" '
                     f'--client {client_id}'
                 )
-            print(f"  RU image regenerated: {Path(ru_path).name}")
-
-            # Upload to R2 and update Airtable with new URL
-            _update_image_after_regen(client_id, week_of, target_topic, ru_path, "ru")
-
+            print(f"  RU image regenerated: {Path(img_path_ru).name}")
+            _update_image_after_regen(client_id, week_of, target_topic, img_path_ru, "ru")
             return True
         except Exception as e:
             print(f"  Error generating RU image: {e}")
@@ -1287,10 +1250,6 @@ def main():
         help="Skip static site build (GH Actions handles deploy as a separate step)",
     )
     parser.add_argument(
-        "--export-excel", action="store_true",
-        help="Also generate local Excel workbook (in addition to Airtable)",
-    )
-    parser.add_argument(
         "--regen-topic", type=int, default=None,
         help="Regenerate a single topic item (0-based index). Skips full pipeline.",
     )
@@ -1350,7 +1309,7 @@ def main():
             skip_images=True,
             skip_airtable=args.skip_airtable,
             skip_deploy=args.skip_deploy,
-            export_excel=args.export_excel,
+
             parallel_workers=args.parallel_workers,
             status=ps,
         )
@@ -1387,7 +1346,7 @@ def main():
                 skip_images=False,
                 skip_airtable=args.skip_airtable,
                 skip_deploy=args.skip_deploy,
-                export_excel=args.export_excel,
+    
                 parallel_workers=args.parallel_workers,
                 status=ps,
             )
@@ -1500,7 +1459,7 @@ def main():
             for platform in ["Twitter", "Telegram"]:
                 day_pos = topic_data["topic_num"]
                 twitter_fmt = "thread" if day_pos <= 2 else "single"
-                fmt = twitter_fmt if platform == "Twitter" else "long-form"
+                fmt = twitter_fmt if platform == "Twitter" else "post"
                 slug = topic_slug(topic_data["topic"])
                 style_key, style_desc = get_style_preset(cfg, topic_data.get("angle", "Product"))
 
@@ -1716,7 +1675,6 @@ def main():
         skip_images=args.skip_images,
         skip_airtable=args.skip_airtable,
         skip_deploy=args.skip_deploy,
-        export_excel=args.export_excel,
         parallel_workers=args.parallel_workers,
         status=ps,
     )

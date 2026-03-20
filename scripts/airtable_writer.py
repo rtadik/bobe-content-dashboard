@@ -229,6 +229,14 @@ def update_image_urls(
     resp.raise_for_status()
 
 
+def patch_record(base_id: str, table_id: str, record_id: str, fields: dict, api_key: str):
+    """Update arbitrary fields on an existing Airtable record."""
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    url = f"{AIRTABLE_BASE_URL}/{base_id}/{table_id}/{record_id}"
+    resp = requests.patch(url, headers=headers, json={"fields": fields}, timeout=15)
+    resp.raise_for_status()
+
+
 def update_publish_status(
     base_id: str,
     table_id: str,
@@ -283,9 +291,14 @@ def load_records(base_id: str, table_id: str, api_key: str) -> list:
 
 def list_week_tables(base_id: str, api_key: str) -> list:
     """
-    Return sorted list of week_of strings for all Week-* tables in the base.
+    Return sorted list of week_of strings for all Week tables in the base.
+    Supports both naming formats:
+      - "Week-YYYY-MM-DD" (pipeline-generated, preferred)
+      - "Week N" (manually renamed, e.g. "Week 1") — reads the Week field from
+        the first record to get the actual date string.
     E.g. ["2026-03-09", "2026-03-02", "2026-02-16"]
     """
+    import re as _re
     headers = {"Authorization": f"Bearer {api_key}"}
     resp = requests.get(f"{AIRTABLE_META_URL}/{base_id}/tables", headers=headers, timeout=15)
     resp.raise_for_status()
@@ -293,9 +306,35 @@ def list_week_tables(base_id: str, api_key: str) -> list:
     weeks = []
     for t in tables:
         name = t.get("name", "")
-        if name.startswith("Week-") and len(name) == 15:  # "Week-YYYY-MM-DD"
-            weeks.append(name[5:])  # strip "Week-"
-    return sorted(weeks, reverse=True)
+        # Format 1: Week-YYYY-MM-DD (pipeline-generated)
+        if name.startswith("Week-") and len(name) == 15:
+            weeks.append((name[5:], t["id"]))
+            continue
+        # Format 2: "Week N" (manually renamed) — read Week field from first record
+        if _re.match(r"^Week\s+\d+$", name):
+            try:
+                rec_resp = requests.get(
+                    f"{AIRTABLE_BASE_URL}/{base_id}/{t['id']}",
+                    headers=headers,
+                    params={"maxRecords": 1, "fields[]": "Week"},
+                    timeout=10,
+                )
+                rec_resp.raise_for_status()
+                recs = rec_resp.json().get("records", [])
+                if recs:
+                    week_val = recs[0].get("fields", {}).get("Week", "")
+                    if _re.match(r"^\d{4}-\d{2}-\d{2}$", week_val):
+                        weeks.append((week_val, t["id"]))
+            except Exception:
+                pass
+    # Return just the date strings, sorted newest first, deduped
+    seen = set()
+    result = []
+    for date_str, _ in sorted(weeks, key=lambda x: x[0], reverse=True):
+        if date_str not in seen:
+            result.append(date_str)
+            seen.add(date_str)
+    return result
 
 
 def records_to_topics(records: list) -> list:
@@ -322,9 +361,10 @@ def records_to_topics(records: list) -> list:
         content_ru = f.get("Content_RU", "")
         hashtags = f.get("Hashtags", "")
         hashtags_ru = f.get("Hashtags_RU", "")
-        # Extract image URLs from attachment objects or plain strings
-        image_en_raw = f.get("Image_URL_EN", "")
-        image_ru_raw = f.get("Image_URL_RU", "")
+        # Extract image URLs from attachment objects or plain strings.
+        # Fall back to legacy Image_Path / Image_Path_RU field names (Week 1, Week 2).
+        image_en_raw = f.get("Image_URL_EN") or f.get("Image_Path", "")
+        image_ru_raw = f.get("Image_URL_RU") or f.get("Image_Path_RU", "")
         image_en = _extract_attachment_url(image_en_raw)
         image_ru = _extract_attachment_url(image_ru_raw)
         # Extract singleSelect values (may be dict with "name" key or plain string)

@@ -11,8 +11,8 @@
     "surface_color": "#111B32",
     "background_gradient": "#111B32 to #070A1B",
     "logo_path": "brand/logo.png",
+    "include_logo": false,
     "reference_images": [
-      "brand/logo.png",
       "brand/banner example 1.png",
       "brand/banner example 2.png",
       "brand/banner example 4.png"
@@ -53,8 +53,7 @@
     ],
     "content_types": [
       "trending",
-      "education",
-      "announcements"
+      "education"
     ],
     "bucket_size": 7,
     "platform_formats": {
@@ -150,5 +149,8 @@
     "wavespeed_en": "",
     "wavespeed_ru": ""
   },
-  "github_regen_token": ""
+  "github_regen_token": "",
+  "auth": {
+    "email": "adikari.rut@gmail.com"
+  }
 }
